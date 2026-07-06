@@ -15,6 +15,7 @@ node_modules/
 .openkan/server.pid
 .openkan/server.log
 .openkan/server.lock
+.openkan/changelog.jsonl
 .openkan/esbuild-cache/
 
 # Local agent / harness noise
