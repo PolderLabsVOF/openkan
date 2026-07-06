@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Discussions
+    url: https://github.com/PolderLabsVOF/openkan/discussions
+    about: Please ask and answer questions in Discussions if it is not a clear bug or feature request.

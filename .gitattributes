@@ -1,0 +1,11 @@
+# These settings are for the project repository. Do not remove.
+* text=auto eol=lf
+
+# Linguist overrides — ensure these are always detected correctly
+*.mdx linguist-detectable
+*.md linguist-detectable
+LICENSE linguist-detectable
+
+# Generated / vendored — hide from language stats
+node_modules/ linguist-vendored
+.openkan/ linguist-generated

@@ -1,0 +1,30 @@
+name: Question / support
+description: Ask a question about using openkan
+title: "[Question]: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for questions about setup, configuration, or behaviour
+        that are not clearly bugs or feature requests.
+
+        If the repository has GitHub Discussions enabled, non-issue questions
+        are welcome there too.
+  - type: textarea
+    id: goal
+    attributes:
+      label: What are you trying to do?
+      description: Describe your goal or the task you are working on.
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried?
+      description: What steps have you taken so far?
+  - type: input
+    id: environment
+    attributes:
+      label: Environment (optional)
+      placeholder: "OpenCode 1.x.x, Bun 1.1.x, macOS"

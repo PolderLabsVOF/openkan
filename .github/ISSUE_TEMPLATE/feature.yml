@@ -1,0 +1,47 @@
+name: Feature request
+description: Suggest an idea for openkan
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Suggest an improvement or new capability. If you are unsure whether
+        your idea fits, consider opening a Question / support issue first.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What is the problem or gap you are trying to solve?
+      placeholder: "It is cumbersome to ... because ..."
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How would you like openkan to behave?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds or alternative approaches have you tried?
+  - type: dropdown
+    id: contribution
+    attributes:
+      label: Would you submit a PR for this?
+      description: Let us know if you are willing to implement the feature yourself.
+      options:
+        - "Yes"
+        - "No"
+        - "Maybe — need guidance"
+    validations:
+      required: true
+  - type: input
+    id: milestone
+    attributes:
+      label: Milestone / area (optional)
+      description: If this relates to a specific milestone (M0–M6), mention it.
+      placeholder: "e.g. M2 (source links)"

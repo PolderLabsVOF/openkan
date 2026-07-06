@@ -1,0 +1,13 @@
+# Each line is a file pattern followed by one or more owners.
+# The repository must have a team named `polderlabs-maintainers` under
+# the `PolderLabs` organisation for these handles to resolve.
+
+* @PolderLabs/polderlabs-maintainers
+
+# Documentation changes can also be reviewed by the maintainers team.
+/docs/ @PolderLabs/polderlabs-maintainers
+
+# Community and governance files.
+/CODE_OF_CONDUCT.md @PolderLabs/polderlabs-maintainers
+/CONTRIBUTING.md @PolderLabs/polderlabs-maintainers
+/SECURITY.md @PolderLabs/polderlabs-maintainers

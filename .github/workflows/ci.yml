@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev, beta]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  typecheck:
+    name: Typecheck (${{ matrix.runtime }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - runtime: node
+            version: "22"
+          - runtime: bun
+            version: "1.1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        if: matrix.runtime == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.version }}
+
+      - name: Setup Bun
+        if: matrix.runtime == 'bun'
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: ${{ matrix.version }}
+
+      - name: Install dependencies
+        run: |
+          if [ "${{ matrix.runtime }}" = "node" ]; then
+            npm install
+          else
+            bun install --frozen-lockfile
+          fi
+
+      - name: Install TypeScript
+        if: matrix.runtime == 'bun'
+        run: bun add -d typescript
+
+      - name: Typecheck
+        run: |
+          TSC="npx -p typescript tsc"
+          if [ "${{ matrix.runtime }}" = "bun" ]; then
+            TSC="bunx tsc"
+          fi
+          $TSC --noEmit --allowJs --checkJs \
+               --target ES2022 --module ESNext \
+               --moduleResolution Bundler \
+               kanban/*.ts plugins/*.ts

@@ -1,0 +1,65 @@
+name: Bug report
+description: Report a problem with openkan
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report. Please provide
+        enough detail so the issue can be reproduced.
+  - type: input
+    id: version
+    attributes:
+      label: openkan version
+      description: What version or commit are you running?
+      placeholder: "0.1.0 (commit 6271b21)"
+    validations:
+      required: true
+  - type: input
+    id: opencode-version
+    attributes:
+      label: OpenCode version
+      description: Run `opencode --version` or check your config.
+      placeholder: "1.x.x"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug description
+      description: What happened? What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: How can we reproduce the bug?
+      placeholder: |
+        1. Start OpenCode with openkan installed
+        2. Open http://127.0.0.1:7777
+        3. Click on ...
+        4. See error
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or output
+      description: Copy any error messages from the OpenCode console or browser dev tools.
+      render: shell
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots (optional)
+      description: If applicable, add screenshots to help explain the problem.
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, browser, Node / Bun version, any relevant config.
+      placeholder: |
+        - OS: macOS 14.5
+        - Browser: Firefox 128
+        - Runtime: Bun 1.1.x
