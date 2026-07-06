@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode-ai/plugin";
 import { join } from "path";
-import { initBoard } from "../kanban/board.ts";
+import { initBoard, setProjectRoot } from "../kanban/board.ts";
 import { startServer, handleEvent, subscribeEvents, getServer } from "../kanban/server.ts";
 
 export const KanbanPlugin: Plugin = async ({ project, client, $, directory }) => {
@@ -27,6 +27,7 @@ export const KanbanPlugin: Plugin = async ({ project, client, $, directory }) =>
 
   // Initialise board
   await initBoard(ctx);
+  setProjectRoot(ctx.directory);
 
   // Start HTTP server (idempotent — returns existing if already started)
   const webRoot = join(import.meta.dir, "..", "web");

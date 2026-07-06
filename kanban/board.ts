@@ -36,6 +36,7 @@ export interface Task {
   updatedAt: string;
   artifact: string;       // repo-relative path to task MDX
   sessionArtifact: string | null;
+  source?: { path: string; line: number; slug: string };
 }
 
 export interface SessionRecord {
@@ -65,6 +66,15 @@ export const DEFAULT_COLUMNS: Column[] = [
 export let KANBAN_DIR = "";      // set by initBoard
 export const BOARD_FILE = "board.json";
 export const BOARD_MDX  = "board.mdx";
+
+// ─── Project root (set by plugins/kanban.ts on init; read by tools like kanban_import) ──
+
+let _projectRoot: string | null = null;
+export function setProjectRoot(dir: string): void { _projectRoot = dir; }
+export function getProjectRoot(): string {
+  if (!_projectRoot) throw new Error("Project root not initialised — call setProjectRoot first");
+  return _projectRoot;
+}
 
 // ─── Context & state ─────────────────────────────────────────────────────────
 

@@ -6,17 +6,37 @@
 //   - kanban_move
 //   - kanban_start
 //   - kanban_view
+//   - kanban_import
 //
 // Each tool mutates the shared board (via withWrite / getBoard) and broadcasts
 // events over the local SSE server (via getServer) so the UI updates live.
 
 import type { Plugin } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
-import { withWrite, newId, getBoard, type Task } from "../kanban/board.ts"
+import { withWrite, newId, getBoard, getProjectRoot, KANBAN_DIR, nowIso, type Task } from "../kanban/board.ts"
 import { getServer } from "../kanban/server.ts"
+import { writeTaskMdx } from "../kanban/mdx.ts"
+import { scanFiles, parseCheckboxes, stableImportId, slugFromRaw, type CheckboxHit } from "../kanban/import.ts"
+import { existsSync, readFileSync } from "fs"
+import { join, relative } from "path"
 
 const COLUMNS = ["backlog", "todo", "doing", "review", "done"] as const
 type ColumnId = (typeof COLUMNS)[number]
+
+interface ImportConfig {
+  include?: string[]
+  exclude?: string[]
+}
+
+function readImportConfig(root: string, configPath?: string): ImportConfig {
+  const cfgFile = configPath ?? join(root, ".openkan", "config.json")
+  if (!existsSync(cfgFile)) return {}
+  try {
+    return JSON.parse(readFileSync(cfgFile, "utf8")) as ImportConfig
+  } catch {
+    return {}
+  }
+}
 
 function asColumn(v: unknown, fallback: ColumnId = "todo"): ColumnId {
   return (COLUMNS as readonly string[]).includes(v as string)
@@ -232,6 +252,102 @@ export const OpenKanToolsPlugin: Plugin = async (ctx) => {
                 `[${t.id}] ${t.title} — column=${t.column} status=${t.status} agent=${t.agent || "(default)"}`,
             )
             .join("\n")
+        },
+      }),
+
+      kanban_import: tool({
+        description: "Scan the project for '- [ ]' checkboxes in .md/.mdx files and create one Backlog task per hit. Idempotent on unchanged content (M4 will add full source-line tracking).",
+        args: {
+          include: tool.schema.array(tool.schema.string()).optional()
+            .describe("Glob patterns to include (default: docs/**, *.md, *.mdx)"),
+          exclude: tool.schema.array(tool.schema.string()).optional()
+            .describe("Glob patterns to exclude"),
+          configPath: tool.schema.string().optional()
+            .describe("Path to .openkan/config.json; defaults to .openkan/config.json at project root"),
+        },
+        async execute(args) {
+          const root = getProjectRoot()
+
+          const include = args.include ?? []
+          const exclude = args.exclude ?? []
+          const cfg = readImportConfig(root, args.configPath)
+          const finalInclude = include.length ? include : (cfg.include ?? [])
+          const finalExclude = exclude.length ? exclude : (cfg.exclude ?? [])
+
+          const { files, scanned, skipped } = scanFiles({ root, include: finalInclude, exclude: finalExclude })
+          const hits: CheckboxHit[] = []
+          for (const f of files) {
+            let content: string
+            try { content = readFileSync(f, "utf8") } catch { continue }
+            hits.push(...parseCheckboxes(content, relative(root, f)))
+          }
+
+          const created: Task[] = []
+          const skippedExisting: string[] = []
+          await withWrite(async (board) => {
+            // Dedup by exact path:line:raw so two different checkboxes that happen
+            // to slug-collide (e.g. "Foo Bar" and "Foo--Bar") stay distinct.
+            const seen = new Set<string>()
+            for (const t of board.tasks) {
+              if (t.source) seen.add(`${t.source.path}:${t.source.line}:${t.source.slug}`)
+            }
+            let orderOffset = board.tasks.filter(t => t.column === "backlog").length
+            for (const h of hits) {
+              const slug = slugFromRaw(h.raw)
+              // Key uses raw text so distinct checkboxes aren't merged by slug normalisation.
+              const key = `${h.path}:${h.line}:${h.raw}`
+              if (seen.has(key)) {
+                skippedExisting.push(key)
+                continue
+              }
+              seen.add(key)
+              const id = stableImportId(h)
+              const task: Task = {
+                id,
+                title: h.raw || "(empty checkbox)",
+                description: "",
+                column: "backlog",
+                order: orderOffset++,
+                sessionId: null,
+                agent: "",
+                model: null,
+                status: "idle",
+                lastError: null,
+                createdAt: nowIso(),
+                updatedAt: nowIso(),
+                artifact: `.openkan/tasks/${id}.mdx`,
+                sessionArtifact: null,
+                source: { path: h.path, line: h.line, slug },
+              }
+              board.tasks.push(task)
+              created.push(task)
+            }
+          })
+
+          for (const t of created) {
+            broadcast("task.created", { task: t })
+          }
+
+          // Write a real MDX artifact for each imported task so "View Artifact" works
+          // and the file shows up in the board mirror. Mirrors what kanban/server.ts does
+          // for REST-initiated mutations.
+          if (created.length > 0) {
+            const board = await getBoard()
+            for (const t of created) {
+              try {
+                await writeTaskMdx(t, KANBAN_DIR, board)
+              } catch (e) {
+                await ctx.client.app.log({
+                  body: { service: "openkan", level: "warn", message: `writeTaskMdx failed for ${t.id}: ${(e as Error).message}` },
+                }).catch(() => {})
+              }
+            }
+          }
+
+          return (
+            `kanban_import: ${created.length} created, ${skippedExisting.length} already present; ` +
+            `scanned ${scanned} file(s), skipped ${skipped} (dir(s) excluded).`
+          )
         },
       }),
     },
