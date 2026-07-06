@@ -1,0 +1,30 @@
+---
+title: Roadmap
+---
+
+# Roadmap
+
+We have three milestones planned. The checkboxes below are the *promises* we
+owe ourselves; if the M1 import tool is working, every line below should
+appear in the Backlog column.
+
+## M1 — checkbox import
+
+- [ ] Implement scanFiles with a small glob matcher
+- [ ] Implement parseCheckboxes with backtick-fence tracking
+- [ ] Implement stableImportId derived from path + line + slug
+- [ ] Add Task.source field to the board schema
+- [ ] Register kanban_import tool in plugins/tools.ts
+- [ ] Add a setProjectRoot wiring so tools can find the repo
+
+## M2 — source links in the UI
+
+- [ ] Render `path:line` on every imported task card
+- [ ] Make the link clickable in the localhost UI
+- [ ] Avoid rendering source links for manually-created tasks
+
+## M3 — drift detection (out of scope for M1)
+
+- [ ] Hash imported source files
+- [ ] Add a `stale: true` flag to drifted tasks
+- [ ] Surface a stale badge in the web UI

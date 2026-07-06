@@ -1,0 +1,46 @@
+---
+title: Sprint 1 — Sample Tasks
+---
+
+This file is checked into `examples/sample-kanban-project/` so anyone running
+`kanban_import` for the first time has real content to scan. The checkboxes
+below are intentionally a mix of styles to exercise the M1 scanner.
+
+## Planned work
+
+- [ ] Set up the SQLite-backed cache layer
+- [ ] Wire up the drag-and-drop reorder handler
+- [ ] Add a "View Source" link to imported tasks
+- [ ] Hash imported source files so we can detect drift (M3)
+- [ ] Add a `kanban_export` tool that writes the board to MDX
+
+## Already done (should NOT show up in the board)
+
+- [x] Initial plugin scaffolding
+- [x] Choose MIT license
+- [x] Set up CI for Node 22 and Bun 1.1
+
+## Tilde-fenced code block (should NOT be parsed)
+
+~~~
+- [ ] A checkbox inside tilde fences (should be ignored)
+~~~
+
+## Triple-backtick code block (should NOT be parsed)
+
+```md
+- [ ] A checkbox inside triple backticks (should be ignored)
+```
+
+## Indented sub-task
+
+- [ ] Bigger feature
+  - [ ] Sub-task A
+  - [ ] Sub-task B
+  - [ ] Sub-task C
+
+## Notes
+
+- This file lives under `docs/tasks/`, so it matches the default `docs/**` glob.
+- Some items above use indented sub-bullets to verify that `parseCheckboxes`
+  handles leading whitespace correctly.
