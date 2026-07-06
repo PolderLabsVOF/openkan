@@ -1,0 +1,45 @@
+---
+title: "M1: Import checkboxes from project docs"
+status: next
+milestone: 1
+---
+
+## Goal
+
+Add a `kanban_import` custom tool that scans `*.md` and `*.mdx` files under the project for `- [ ]` checkboxes and creates one Backlog task per checkbox with a stable ID and a source pointer.
+
+## Why now
+
+The board today only shows manually-created tasks. The main value of openkan is pulling task intent from docs that already exist in the repo, so the board becomes a live cockpit without manual entry.
+
+## Scope
+
+- New `kanban/import.ts` — reads files with `fs`, parses checkboxes with a simple regex or `remark`, computes a stable ID per checkbox, creates tasks with `source: { path, line }`
+- New tool `kanban_import` in `plugins/tools.ts` — wraps `kanban/import.ts`, writes new tasks to board state
+- `plugins/kanban.ts` — register the new tool and route its output to the board
+- `kanban/board.ts` — add `source: { path: string; line: number }` field to the Task type (used by M2 and M3)
+- Optional: support `include` / `exclude` globs in `.openkan/config.json` to control which folders are scanned
+
+## Files touched
+
+- `kanban/import.ts` (new)
+- `plugins/tools.ts`
+- `plugins/kanban.ts`
+- `kanban/board.ts`
+
+## Acceptance criteria
+
+- [ ] `kanban_import` is a registered OpenCode tool callable as `kanban_import`
+- [ ] Scanning a docs folder containing ~10 `- [ ]` items produces 10 Backlog tasks in state
+- [ ] Each task has a stable ID derived from file path + line number + title slug
+- [ ] Each task records `source: { path, line }` pointing back to its checkbox
+- [ ] Re-scanning the same files does not create duplicate tasks (idempotency is M4 — M1 just validates the first-run flow)
+- [ ] Optional include/exclude globs in `.openkan/config.json` are respected if present
+
+## Out of scope
+
+- Source links rendered in the UI (M2)
+- Stale detection when source changes (M3)
+- Idempotent reimport logic (M4)
+- Structured handoff fields on imported tasks (M5)
+- Any MCP server, multi-agent adapter, SQLite, LLM call, or cloud sync

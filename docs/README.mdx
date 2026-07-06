@@ -1,0 +1,44 @@
+---
+title: Auto Kanban Parser — Roadmap
+summary: Lightweight milestone plan for turning project docs into a live kanban board and agent handoff packets.
+---
+
+## What this is
+
+openkan is a local-only OpenCode plugin that runs a localhost kanban at `http://127.0.0.1:7777`. It already ships with a five-column board, four custom tools, MDX artifacts, and SSE updates.
+
+This directory contains the small, focused milestone plan for extending openkan with checkbox scanning, source tracking, drift detection, idempotent reimport, structured handoff packets, and a sanity-check script.
+
+## What's shipped (M0)
+
+The base plugin is live. See [milestones/M0.mdx](./milestones/M0.mdx) for exactly what exists today.
+
+## Roadmap
+
+| Milestone | Status | Focus |
+|---|---|---|
+| [M0](./milestones/M0.mdx) | shipped | What already works |
+| [M1](./milestones/M1.mdx) | next | Import checkboxes from project docs |
+| [M2](./milestones/M2.mdx) | pending | Source link on every task |
+| [M3](./milestones/M3.mdx) | pending | Drift banner when source changes |
+| [M4](./milestones/M4.mdx) | pending | Idempotent reimport (no duplicates) |
+| [M5](./milestones/M5.mdx) | pending | Structured handoff packet as task MDX |
+| [M6](./milestones/M6.mdx) | pending | Sanity-check script |
+
+## Cut list
+
+The following were in the original technical plan and are deliberately excluded:
+
+- **MCP server** — local-only tool; agents can read task MDX files directly.
+- **Multi-agent adapters** (Claude/Codex/custom) — file-based handoff is agent-agnostic.
+- **SQLite** — JSON state files are sufficient for single-user local operation.
+- **LAN mode** — localhost-only by design.
+- **Auth tokens** — single-user, no remote access.
+- **Cloud sync / GitHub/Linear/Jira sync** — out of scope for local-first MVP.
+- **LLM enrichment** — deterministic parsing only; no API key required.
+- **Semantic duplicate detection** — stable ID scheme handles exact duplicates.
+- **Telemetry** — no external calls, no tracking.
+- **.kanbanignore machinery** — future option; not needed yet.
+- **Patch generators / drift reports** — planned in M3 as a banner, not a full report engine.
+- **Event log JSONL** — state transitions stay in the JSON state file for MVP.
+- **Package monorepo split** — single package; no apps/packages split.

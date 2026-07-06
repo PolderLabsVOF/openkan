@@ -1,0 +1,58 @@
+---
+title: "M5: Handoff packet = the task MDX"
+status: pending
+milestone: 5
+---
+
+## Goal
+
+The existing `.openkan/tasks/tsk_<id>.mdx` becomes a structured handoff packet with `Goal`, `Context`, `Acceptance`, and `Safety` sections that a coding agent can read and act on directly using only the file path.
+
+## Why now
+
+openkan's target users run coding agents (OpenCode, Claude Code, Codex, etc.). A structured MDX packet means the agent can be pointed at the file directly: `opencode "read .openkan/tasks/tsk_xxx.mdx"` and have everything it needs to start work.
+
+## Scope
+
+- `kanban/board.ts` — add optional fields to Task type: `goal?: string`, `context?: string`, `acceptance?: string[]`
+- `kanban/mdx.ts` — extend `taskToMarkdown` to emit four structured sections in the artifact:
+
+  ```mdx
+  ## Goal
+  <task.goal or title>
+
+  ## Context
+  <task.context or empty>
+
+  ## Acceptance criteria
+  <task.acceptance items or source checkbox>
+
+  ## Safety
+  - Do not modify unrelated files.
+  - Fill the completion note before marking done.
+  - Stop and ask if requirements conflict.
+  ```
+
+- `plugins/tools.ts` — extend `kanban_add` (and optionally `kanban_import`) to accept `--goal`, `--context`, and `--acceptance` arguments; persist them to the task and its MDX artifact
+
+## Files touched
+
+- `kanban/board.ts`
+- `kanban/mdx.ts`
+- `plugins/tools.ts`
+
+## Acceptance criteria
+
+- [ ] `kanban_add --goal "..." --acceptance "a,b,c"` writes a task with those fields
+- [ ] `taskToMarkdown` renders Goal / Context / Acceptance / Safety sections in the MDX artifact
+- [ ] An agent can read the task MDX file standalone and understand goal, context, and acceptance criteria
+- [ ] Imported tasks (M1) that lack these fields fall back to the checkbox text as the goal
+- [ ] The artifact remains valid MDX and readable as plain Markdown
+- [ ] No external services, no API keys, no MCP required for the agent to consume the file
+
+## Out of scope
+
+- MCP server or agent adapter layer
+- Automatic goal/context generation via LLM
+- Two-way sync back to source docs
+- Team sharing features

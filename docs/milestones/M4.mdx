@@ -1,0 +1,39 @@
+---
+title: "M4: Idempotent reimport"
+status: pending
+milestone: 4
+---
+
+## Goal
+
+Running `kanban_import` twice on the same docs creates zero new tasks. Running it after a source file has been edited leaves existing tasks alone unless the source checkbox is gone.
+
+## Why now
+
+Without idempotency, every `kanban_import` run creates duplicates, and the board fills with noise. This is the difference between a useful cockpit and a cluttered inbox.
+
+## Scope
+
+- `kanban/import.ts` — stable ID scheme: `ok-<file-hash8>-<line>-<title-slug>` where `file-hash8` is the first 8 chars of the source file's hash at import time. On reimport: if a task with that ID already exists, skip it (leave it alone); if a previously-imported task's source line no longer contains a checkbox, mark it `gone: true` on the task.
+- `kanban/board.ts` — add `gone: boolean` field to Task; tasks with `gone: true` remain in state but are surfaced as "removed from source" in the UI (not silently deleted)
+
+## Files touched
+
+- `kanban/import.ts`
+- `kanban/board.ts`
+
+## Acceptance criteria
+
+- [ ] Running `kanban_import` twice on the same docs creates zero new tasks
+- [ ] Stable ID derived from file hash + line + title slug is stable across reimports
+- [ ] If a source checkbox is removed from a doc, the corresponding task is marked `gone: true` (not deleted)
+- [ ] `gone: true` tasks render differently in the UI (e.g., greyed out or flagged)
+- [ ] The task MDX artifact is updated to reflect `gone: true` rather than deleted
+- [ ] No duplicates created even when a task title changes slightly (new ID from new slug)
+
+## Out of scope
+
+- Automatic removal of `gone` tasks from the board
+- Stale detection (M3) — handled separately
+- Handoff packet structure (M5)
+- Any network calls, MCP, or multi-agent adapters

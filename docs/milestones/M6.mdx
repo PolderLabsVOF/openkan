@@ -1,0 +1,43 @@
+---
+title: "M6: Sanity check script"
+status: pending
+milestone: 6
+---
+
+## Goal
+
+Add a `bun run openkan:check` script that fails with a clear, actionable message on three classes of problems: duplicate task IDs, missing source paths, and stale tasks sitting in the Done column.
+
+## Why now
+
+As the board accumulates imported tasks, it is easy to accidentally create duplicate IDs (e.g., by changing the ID-generation logic) or to end up with Done tasks whose source checkboxes were removed. A fast check script prevents silent data corruption and is cheap to run in CI or as a pre-commit hook.
+
+## Scope
+
+- `scripts/check.ts` — reads `.openkan/state.json` and all task artifacts under `.openkan/tasks/`, then validates:
+  1. No duplicate task IDs
+  2. For tasks with `source: { path, line }`, the file at `path` exists and the line contains a checkbox
+  3. No task has both `status: done` and `stale: true` (Done tasks with stale sources must be resolved manually)
+- `package.json` — add `"openkan:check": "bun run scripts/check.ts"` to the scripts section
+- No new npm dependencies — use only Node.js builtins (`fs`, `path`) and the existing board types from `kanban/board.ts`
+
+## Files touched
+
+- `scripts/check.ts` (new)
+- `package.json`
+
+## Acceptance criteria
+
+- [ ] Introducing a duplicate ID by hand causes `bun run openkan:check` to exit non-zero with a clear message listing the duplicate ID
+- [ ] A task whose `source.path` no longer exists causes a non-zero exit with the task ID and missing path
+- [ ] A task with `status: done` and `stale: true` causes a non-zero exit with the task ID
+- [ ] The script runs in under 1 second on a board with 500 tasks
+- [ ] No new runtime dependencies — only Node.js builtins
+- [ ] Output is human-readable without needing to parse JSON
+
+## Out of scope
+
+- Fix-mode that auto-resolves problems (manual resolution only)
+- Network calls, external APIs, MCP, or telemetry
+- Changes to board state or task artifacts
+- CI integration beyond the script existing and being runnable

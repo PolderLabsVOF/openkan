@@ -1,0 +1,45 @@
+---
+title: "M3: Drift banner when source changes"
+status: pending
+milestone: 3
+---
+
+## Goal
+
+When a source file that was imported has changed, the dependent task gets a `stale` flag surfaced on the card and in the MDX artifact. A banner or badge appears on next reload.
+
+## Why now
+
+If a checkbox is checked, removed, or moved in the source doc, the board silently becomes inaccurate. Surfacing the drift immediately builds trust that the board reflects the repo.
+
+## Scope
+
+- `kanban/import.ts` — on import, store `lastSeenHash: string` per task by hashing the source file content
+- `kanban/server.ts` — add a file watcher using `chokidar` (or `fs.watch`) on all imported source files; when a watched file changes, update matching tasks to `stale: true`
+- `kanban/board.ts` — add `stale: boolean` field to Task; if source file is modified, set `stale = true`; if source checkbox is checked off, set `stale = true` and optionally mark `gone = true`
+- `kanban/mdx.ts` — emit a `Stale: true` frontmatter flag and a warning banner in the rendered artifact when `stale` is true
+- `web/app.js` — show a "stale" badge on cards with `stale: true`
+
+## Files touched
+
+- `kanban/import.ts`
+- `kanban/server.ts`
+- `kanban/board.ts`
+- `kanban/mdx.ts`
+- `web/app.js`
+
+## Acceptance criteria
+
+- [ ] Imported tasks store `lastSeenHash` of their source file at import time
+- [ ] Server watches imported source files for changes
+- [ ] Editing a doc checkbox causes the board to show the stale badge on that task on next reload
+- [ ] The task MDX artifact includes `stale: true` in frontmatter when applicable
+- [ ] A card in Done column with `stale: true` does not auto-clear — user must resolve it
+- [ ] No external services, no telemetry, no cloud sync
+
+## Out of scope
+
+- Automatic re-import or checkbox sync back to docs
+- Multi-agent adapters or MCP server
+- LLM summarization of what changed
+- Full drift report beyond the stale badge

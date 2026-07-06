@@ -1,0 +1,43 @@
+---
+title: "M2: Source link on every task"
+status: pending
+milestone: 2
+---
+
+## Goal
+
+Every task card and every `.openkan/tasks/tsk_<id>.mdx` artifact shows `path:line` back to the source checkbox, clickable in the localhost UI.
+
+## Why now
+
+Imported tasks (M1) are useful only if the user can jump from a card back to the original checkbox in the source doc to verify or edit it. Without this the board is disconnected from the docs.
+
+## Scope
+
+- `kanban/board.ts` — confirm `source: { path, line }` field is present on Task (stubbed by M1)
+- `kanban/mdx.ts` — update `taskToMarkdown` to emit a `Source` section in the artifact: `Source: docs/tasks.mdx:42`
+- `web/index.html` — add a "View source" anchor element to each card
+- `web/app.js` — render the source path and line number as a clickable link (file URL or relative path)
+
+## Files touched
+
+- `kanban/mdx.ts`
+- `web/index.html`
+- `web/app.js`
+- `kanban/board.ts`
+
+## Acceptance criteria
+
+- [ ] Task type has `source: { path: string; line: number }` field
+- [ ] `taskToMarkdown` in `mdx.ts` emits a `Source: <path>:<line>` line in the artifact
+- [ ] `web/index.html` includes a source-link element in the card markup
+- [ ] `web/app.js` renders `path:line` as a link on each card
+- [ ] Clicking the source link opens the source file at the correct line in the local UI or editor
+- [ ] A manually created task (no source) shows no source link
+
+## Out of scope
+
+- Stale / drift detection (M3)
+- Idempotent reimport (M4)
+- Handoff packet structure (M5)
+- Any file watcher or background re-scan
