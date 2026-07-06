@@ -139,25 +139,41 @@ export function scanFiles(opts: ScanOptions): { files: string[]; scanned: number
 
 /**
  * Extract all checkbox lines from file content.
- * - Ignores checkboxes inside triple-backtick code fences.
+ * - Ignores checkboxes inside fenced code blocks (backtick OR tilde fences,
+ *   CommonMark style — closing fence must match opener kind).
  * - Matches indented checkboxes (leading whitespace preserved in raw).
  * - `- [x]` (done) → hit.done = true (caller filters as needed).
  */
 export function parseCheckboxes(content: string, repoRelPath: string): CheckboxHit[] {
   const hits: CheckboxHit[] = [];
   const lines = content.split("\n");
-  let inCodeFence = false;
+  // Track which delimiter opened the fence (` for backtick, ~ for tilde),
+  // null when not inside a fence. CommonMark: closing fence must use a
+  // delimiter that matches the opening one (or any ≥3-length sequence of
+  // the same char, but for our purposes same + ≥3 is enough).
+  let fenceChar: "`" | "~" | null = null;
 
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
     const trimmed = raw.trimStart();
 
-    // Track triple-backtick fences
-    if (/^```/.test(trimmed)) {
-      inCodeFence = !inCodeFence;
-      continue;
+    // Detect a fence line: at least three backticks or three tildes, followed by optional info string.
+    const fenceMatch = trimmed.match(/^(`{3,}|~{3,})(.*)$/);
+    if (fenceMatch) {
+      const opener = fenceMatch[1][0];
+      if (fenceChar === null) {
+        fenceChar = opener === "`" ? "`" : "~";
+        continue;
+      }
+      // Closing fence must match opener kind.
+      if (fenceChar === opener) {
+        fenceChar = null;
+        continue;
+      }
+      // Wrong-kind delimiter inside a fence is just content; skip in either case.
+      if (fenceChar !== null) continue;
     }
-    if (inCodeFence) continue;
+    if (fenceChar !== null) continue;
 
     // - [ ] or - [x] — allow leading whitespace
     const m = trimmed.match(/^-\s*\[([ x])\]\s*(.*)$/);

@@ -17,7 +17,7 @@ import { withWrite, newId, getBoard, getProjectRoot, KANBAN_DIR, nowIso, type Ta
 import { getServer } from "../kanban/server.ts"
 import { writeTaskMdx } from "../kanban/mdx.ts"
 import { scanFiles, parseCheckboxes, stableImportId, slugFromRaw, type CheckboxHit } from "../kanban/import.ts"
-import { existsSync, readFileSync } from "fs"
+import { existsSync, readFileSync, statSync } from "fs"
 import { join, relative } from "path"
 
 const COLUMNS = ["backlog", "todo", "doing", "review", "done"] as const
@@ -31,6 +31,12 @@ interface ImportConfig {
 function readImportConfig(root: string, configPath?: string): ImportConfig {
   const cfgFile = configPath ?? join(root, ".openkan", "config.json")
   if (!existsSync(cfgFile)) return {}
+  // existsSync returns true for directories; readFileSync would throw EISDIR.
+  try {
+    if (!statSync(cfgFile).isFile()) return {}
+  } catch {
+    return {}
+  }
   try {
     return JSON.parse(readFileSync(cfgFile, "utf8")) as ImportConfig
   } catch {

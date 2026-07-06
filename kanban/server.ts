@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, statSync } from "fs";
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import { join, extname } from "path";
@@ -53,6 +53,13 @@ async function renderMarkdown(raw: string): Promise<string> {
 async function renderArtifact(markdownPath: string, rawFlag: boolean): Promise<{ body: string; contentType: string }> {
   if (!existsSync(markdownPath)) {
     throw new Error(`Artifact not found: ${markdownPath}`);
+  }
+  // Reject directories up front — existsSync returns true for them,
+  // readFileSync would throw EISDIR.
+  try {
+    if (!statSync(markdownPath).isFile()) throw new Error("not a file");
+  } catch (e) {
+    throw new Error(`Artifact unavailable: ${markdownPath} (${(e as Error).message})`);
   }
   if (rawFlag) {
     return { body: readFileSync(markdownPath, "utf-8"), contentType: "text/markdown" };
@@ -166,8 +173,13 @@ async function writeResponse(res: ServerResponse, response: Response): Promise<v
 function serveStatic(root: string, urlPath: string): { body: Buffer; contentType: string } | null {
   const fileName = urlPath.replace(/^\//, "");
   const filePath = join(root, fileName);
-  if (!filePath.startsWith(root)) return null;   // path traversal guard
+  // Path traversal guard: anchored on `root + "/"` so `/foo` does NOT match `root = /foo-bar`.
+  if (filePath !== root && !filePath.startsWith(root + "/")) return null;
   if (!existsSync(filePath)) return null;
+  // Reject directories — existsSync returns true for them, readFileSync would throw EISDIR.
+  let st;
+  try { st = statSync(filePath); } catch { return null; }
+  if (!st.isFile()) return null;
   const ext = extname(fileName);
   const ctMap: Record<string, string> = {
     ".html": "text/html",
@@ -502,7 +514,8 @@ export async function startServer(
 
     // ── Static ───────────────────────────────────────────────────────────
     if (path === "/" || path === "/index.html" || path === "/style.css" || path === "/app.js") {
-      const sf = serveStatic(webRoot, path);
+      const pathForStatic = path === "/" ? "/index.html" : path;
+      const sf = serveStatic(webRoot, pathForStatic);
       if (sf) return new Response(sf.body, { headers: { "Content-Type": sf.contentType } });
       return errorResponse(`${path} not found`, 404);
     }
