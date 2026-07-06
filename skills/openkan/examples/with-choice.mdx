@@ -1,0 +1,51 @@
+---
+id: tsk-example-choice
+title: Pick the color palette for dark mode
+description: Three dark-mode color palettes to choose from. The user picks one, and I'll implement it across the app.
+tags:
+  - feature
+  - ux
+  - frontend
+category: frontend
+priority: normal
+effort: l
+state: waiting-for-input
+created: 2026-07-06
+---
+
+## Background
+
+The app already supports light mode. I'm adding a dark mode toggle and need to pick a color palette. I've narrowed it down to three options based on contrast ratios, WCAG compliance, and aesthetic fit.
+
+### Palette 1 — "Midnight"
+- Background: `#0f172a` (slate-900)
+- Surface: `#1e293b` (slate-800)
+- Primary: `#38bdf8` (sky-400)
+- Text: `#f1f5f9` (slate-100)
+- Accent: `#a78bfa` (violet-400)
+- Good for: data-heavy dashboards, professional tone
+
+### Palette 2 — "Onyx"
+- Background: `#18181b` (zinc-900)
+- Surface: `#27272a` (zinc-800)
+- Primary: `#34d399` (emerald-400)
+- Text: `#fafafa` (zinc-50)
+- Accent: `#fb923c` (orange-400)
+- Good for: creative tools, warm feel
+
+### Palette 3 — "Abyss"
+- Background: `#000000`
+- Surface: `#111111`
+- Primary: `#60a5fa` (blue-400)
+- Text: `#e5e7eb` (gray-200)
+- Accent: `#f472b6` (pink-400)
+- Good for: OLED screens, media consumption apps
+
+<Choice
+  question="Which palette should I use for dark mode?"
+  options={[
+    { id: "midnight", label: "Midnight", description: "Slate-based, professional, data-dashboards" },
+    { id: "onyx", label: "Onyx", description: "Zinc-based, warm, creative tools" },
+    { id: "abyss", label: "Abyss", description: "True black, OLED-friendly, media-focused" },
+  ]}
+/>

@@ -6,11 +6,11 @@ milestone: 5
 
 ## Goal
 
-The existing `.openkan/tasks/tsk_<id>.mdx` becomes a structured handoff packet with `Goal`, `Context`, `Acceptance`, and `Safety` sections that a coding agent can read and act on directly using only the file path.
+The existing `.openkan/tasks/tsk-<id>/task.mdx` becomes a structured handoff packet with `Goal`, `Context`, `Acceptance`, and `Safety` sections that a coding agent can read and act on directly using only the file path.
 
 ## Why now
 
-openkan's target users run coding agents (OpenCode, Claude Code, Codex, etc.). A structured MDX packet means the agent can be pointed at the file directly: `opencode "read .openkan/tasks/tsk_xxx.mdx"` and have everything it needs to start work.
+openkan's target users run coding agents (OpenCode, Claude Code, Codex, etc.). A structured MDX packet means the agent can be pointed at the file directly: `opencode "read .openkan/tasks/tsk-xxx/task.mdx"` and have everything it needs to start work.
 
 ## Scope
 

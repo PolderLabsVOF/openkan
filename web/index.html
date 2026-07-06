@@ -3,80 +3,362 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="dark light" />
     <title>OpenKan</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <header class="topbar">
+    <!-- M13: skip-link for keyboard / screen-reader users. Hidden until
+         focused, then promoted to the top-left of the viewport. -->
+    <a href="#board" class="skip-link">Skip to main content</a>
+
+    <header class="topbar" role="banner">
       <div class="brand">
         <span class="logo" aria-hidden="true"></span>
         <h1>OpenKan</h1>
+        <!-- Brand-level project chip: clicking it opens the same project
+             switcher dropdown as the topbar-right chip. Owned by app.js. -->
+        <button id="brand-project-chip" class="brand-project-chip" type="button"
+                title="Switch project" aria-label="Switch project">
+          <span class="brand-project-dot" aria-hidden="true"></span>
+          <span id="brand-project-name" class="brand-project-name">…</span>
+          <span class="brand-project-caret" aria-hidden="true">▾</span>
+        </button>
       </div>
+      <nav class="topbar-tabs" role="tablist" aria-label="Dashboard sections">
+        <button type="button" class="tab" role="tab" data-tab="tasks" aria-selected="true">Tasks</button>
+        <button type="button" class="tab" role="tab" data-tab="changelog" aria-selected="false">Changelog</button>
+        <button type="button" class="tab" role="tab" data-tab="contributors" aria-selected="false">Contributors</button>
+        <button type="button" class="tab" role="tab" data-tab="docs" aria-selected="false">Docs</button>
+      </nav>
       <div class="topbar-right">
         <span id="status-pill" class="pill pill-disconnected" role="status" aria-live="polite">
           <span class="pill-dot" aria-hidden="true"></span>
           <span id="status-text">Disconnected</span>
         </span>
         <button id="new-task-btn" class="btn btn-primary" type="button">+ New Task</button>
+        <!-- Project switcher: button shows the active project's name; clicking
+             opens a small popover listing every registered project. Owned by
+             web/app.js (OpenKanProjectSwitcher). -->
+        <div class="project-switcher" id="project-switcher">
+          <button id="project-switcher-btn" class="project-switcher-btn" type="button"
+                  aria-haspopup="menu" aria-expanded="false"
+                  title="Switch project">
+            <span class="project-switcher-dot" aria-hidden="true"></span>
+            <span id="project-switcher-label" class="project-switcher-label">…</span>
+            <span class="project-switcher-caret" aria-hidden="true">▾</span>
+          </button>
+          <div id="project-switcher-popover" class="project-switcher-popover" role="menu" hidden></div>
+        </div>
+        <button id="settings-btn" class="btn-icon" type="button" aria-label="Settings" title="Settings">⚙</button>
+        <button id="palette-btn" class="btn-icon" type="button"
+                aria-label="Open command palette (Cmd/Ctrl K)"
+                title="Command palette (Cmd/Ctrl K)">⌘K</button>
       </div>
     </header>
 
-    <main id="board" class="board" aria-label="Kanban board">
-      <!-- Columns are rendered by app.js -->
-    </main>
+    <!-- Toast container (used by settings / changelog / contributors) -->
+    <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
-    <!-- New Task Modal -->
-    <div id="modal-backdrop" class="modal-backdrop" hidden>
-      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-        <header class="modal-header">
-          <h2 id="modal-title">New Task</h2>
-          <button class="btn-icon" type="button" data-close-modal aria-label="Close">&times;</button>
-        </header>
-        <form id="new-task-form" class="modal-body">
-          <label class="field">
-            <span>Title</span>
-            <input name="title" type="text" required maxlength="200" autocomplete="off" />
-          </label>
-          <label class="field">
-            <span>Description</span>
-            <textarea name="description" rows="5" placeholder="Prompt for the agent. Markdown is fine."></textarea>
-          </label>
-          <div class="field-row">
-            <label class="field">
-              <span>Column</span>
-              <select name="column">
-                <option value="backlog">Backlog</option>
-                <option value="todo" selected>To Do</option>
-                <option value="doing">In Progress</option>
-                <option value="review">Review</option>
-                <option value="done">Done</option>
+    <main class="dashboard">
+      <!-- ─── TAB: Tasks ───────────────────────────────────────────────── -->
+      <section id="tab-tasks" class="tab-pane" role="tabpanel" data-tab="tasks">
+        <!-- Saved filter chips row (populated by app.js). Hidden when empty. -->
+        <div id="saved-filters-bar" class="saved-filters-bar" hidden>
+          <span class="filter-bar-label">Saved</span>
+          <div id="saved-filters-list" class="saved-filters-list"></div>
+        </div>
+
+        <!-- Category / tag / sort filter bar. Populated + wired up by app.js. -->
+        <div class="filter-bar" id="filter-bar" role="region" aria-label="Filter tasks">
+          <div class="filter-bar-row search" id="filter-search">
+            <span class="filter-bar-label">Search</span>
+            <input type="search" id="search-input" autocomplete="off" spellcheck="false"
+                   placeholder="Search titles, descriptions, tags, MDX content…"
+                   aria-label="Search tasks" />
+            <span class="search-meta" id="search-meta" aria-live="polite"></span>
+          </div>
+          <div class="filter-bar-row categories" id="filter-categories">
+            <span class="filter-bar-label">Category</span>
+            <button type="button" data-category="all" class="all active">All</button>
+            <button type="button" data-category="frontend" class="c-frontend">frontend</button>
+            <button type="button" data-category="backend" class="c-backend">backend</button>
+            <button type="button" data-category="infra" class="c-infra">infra</button>
+            <button type="button" data-category="docs" class="c-docs">docs</button>
+            <button type="button" data-category="test" class="c-test">test</button>
+            <button type="button" data-category="design" class="c-design">design</button>
+            <button type="button" data-category="data" class="c-data">data</button>
+            <button type="button" data-category="security" class="c-security">security</button>
+            <button type="button" data-category="task" class="c-task">task</button>
+          </div>
+          <div class="filter-bar-row tags" id="filter-tags">
+            <span class="filter-bar-label">Tags</span>
+            <button type="button" data-tag="bug" class="t-bug">bug</button>
+            <button type="button" data-tag="feature" class="t-feature">feature</button>
+            <button type="button" data-tag="refactor" class="t-refactor">refactor</button>
+            <button type="button" data-tag="docs" class="t-docs">docs</button>
+            <button type="button" data-tag="test" class="t-test">test</button>
+            <button type="button" data-tag="perf" class="t-perf">perf</button>
+            <button type="button" data-tag="security" class="t-security">security</button>
+            <button type="button" data-tag="a11y" class="t-a11y">a11y</button>
+          </div>
+          <div class="filter-bar-row contributors" id="filter-contributors">
+            <span class="filter-bar-label">Contributors</span>
+            <button type="button" data-contributor="all" class="active">all</button>
+            <button type="button" data-contributor="@me" class="contributor-me">@me</button>
+            <!-- Other contributors are populated by app.js from /api/contributors -->
+          </div>
+          <div class="filter-bar-row controls" id="filter-controls">
+            <span class="filter-bar-label">Sort</span>
+            <label class="select-wrap" id="sort-select-wrap">
+              <select id="sort-select" aria-label="Sort tasks">
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="priority">Priority (urgent→low)</option>
+                <option value="effort">Effort (xl→xs)</option>
+                <option value="activity">Last activity</option>
               </select>
             </label>
-            <label class="field">
-              <span>Agent</span>
-              <input name="agent" type="text" placeholder="e.g. build" autocomplete="off" />
-            </label>
-            <label class="field">
-              <span>Model</span>
-              <input name="model" type="text" placeholder="provider/model" autocomplete="off" />
-            </label>
+            <button type="button" id="save-filter-btn" class="filter-bar-save" title="Save current filter">💾 Save</button>
+            <span class="filter-bar-spacer"></span>
+            <div class="archive-toggle" role="group" aria-label="Archive filter">
+              <button type="button" data-archive="active" class="active">Active</button>
+              <button type="button" data-archive="archived">Archived</button>
+              <button type="button" data-archive="both">Both</button>
+            </div>
+            <button type="button" class="filter-bar-clear" id="filter-clear" aria-label="Clear filters">✕ Clear</button>
           </div>
-          <footer class="modal-footer">
-            <button type="button" class="btn" data-close-modal>Cancel</button>
-            <button type="submit" class="btn btn-primary">Create Task</button>
-          </footer>
-        </form>
+        </div>
+
+        <div id="main-content">
+          <main id="board" class="board" role="region" aria-label="Kanban board" tabindex="-1">
+            <!-- Columns are rendered by app.js -->
+          </main>
+        </div>
+
+        <!-- New Task Modal -->
+        <div id="modal-backdrop" class="modal-backdrop" hidden>
+          <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+            <header class="modal-header">
+              <h2 id="modal-title">New Task</h2>
+              <button class="btn-icon" type="button" data-close-modal aria-label="Close">&times;</button>
+            </header>
+            <form id="new-task-form" class="modal-body">
+              <label class="field">
+                <span>Title</span>
+                <input name="title" type="text" required maxlength="200" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span>Description</span>
+                <textarea name="description" rows="5" placeholder="Prompt for the agent. Markdown is fine."></textarea>
+              </label>
+              <div class="field-row">
+                <label class="field">
+                  <span>Column</span>
+                  <select name="column">
+                    <option value="backlog">Backlog</option>
+                    <option value="todo" selected>To Do</option>
+                    <option value="doing">In Progress</option>
+                    <option value="review">Review</option>
+                    <option value="done">Done</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Agent</span>
+                  <input name="agent" type="text" placeholder="e.g. build" autocomplete="off" />
+                </label>
+                <label class="field">
+                  <span>Model</span>
+                  <input name="model" type="text" placeholder="provider/model" autocomplete="off" />
+                </label>
+              </div>
+              <!-- Hidden parentId — populated when the modal is opened from
+                   a parent task's "+ Add subtask" button. Sent through to
+                   /api/tasks so the cascade knows about the link. -->
+              <input type="hidden" name="parentId" value="" />
+              <footer class="modal-footer">
+                <button type="button" class="btn" data-close-modal>Cancel</button>
+                <button type="submit" class="btn btn-primary">Create Task</button>
+              </footer>
+            </form>
+          </div>
+        </div>
+
+        <!-- Per-task action menu (positioned dynamically) -->
+        <div id="action-menu" class="action-menu" hidden role="menu"></div>
+
+        <!-- Bulk action bar (shown when ≥ 1 card is selected via Ctrl/Cmd-click) -->
+        <div id="bulk-bar" class="bulk-bar" hidden role="toolbar" aria-label="Bulk actions for selected tasks">
+          <span class="bulk-bar-count" id="bulk-bar-count">0 selected</span>
+          <div class="bulk-bar-group">
+            <div class="bulk-bar-dropdown" id="bulk-move-dropdown">
+              <button type="button" class="bulk-bar-btn" id="bulk-move-btn" aria-haspopup="menu" aria-expanded="false">
+                Move <span class="bulk-bar-caret" aria-hidden="true">▾</span>
+              </button>
+              <div class="bulk-bar-menu" id="bulk-move-menu" role="menu" hidden>
+                <button type="button" data-column="backlog" role="menuitem">Backlog</button>
+                <button type="button" data-column="todo" role="menuitem">To Do</button>
+                <button type="button" data-column="doing" role="menuitem">In Progress</button>
+                <button type="button" data-column="review" role="menuitem">Review</button>
+                <button type="button" data-column="done" role="menuitem">Done</button>
+              </div>
+            </div>
+            <div class="bulk-bar-dropdown" id="bulk-priority-dropdown">
+              <button type="button" class="bulk-bar-btn" id="bulk-priority-btn" aria-haspopup="menu" aria-expanded="false">
+                Priority <span class="bulk-bar-caret" aria-hidden="true">▾</span>
+              </button>
+              <div class="bulk-bar-menu" id="bulk-priority-menu" role="menu" hidden>
+                <button type="button" data-priority="urgent" role="menuitem">🚨 Urgent</button>
+                <button type="button" data-priority="high" role="menuitem">⬆ High</button>
+                <button type="button" data-priority="normal" role="menuitem">➡ Normal</button>
+                <button type="button" data-priority="low" role="menuitem">⬇ Low</button>
+              </div>
+            </div>
+            <button type="button" class="bulk-bar-btn" id="bulk-archive-btn" title="Archive all selected">
+              Archive
+            </button>
+            <button type="button" class="bulk-bar-btn danger" id="bulk-delete-btn" title="Delete all selected">
+              Delete
+            </button>
+          </div>
+          <span class="bulk-bar-spacer"></span>
+          <button type="button" class="bulk-bar-btn ghost" id="bulk-clear-btn" title="Clear selection (Esc)">
+            Clear
+          </button>
+        </div>
+      </section>
+
+      <!-- ─── TAB: Changelog ──────────────────────────────────────────── -->
+      <section id="tab-changelog" class="tab-pane" role="tabpanel" data-tab="changelog" hidden>
+        <div id="changelog-root" class="view-root"></div>
+      </section>
+
+      <!-- ─── TAB: Contributors ───────────────────────────────────────── -->
+      <section id="tab-contributors" class="tab-pane" role="tabpanel" data-tab="contributors" hidden>
+        <div id="contributors-root" class="view-root"></div>
+      </section>
+
+      <!-- ─── TAB: Docs ───────────────────────────────────────────────── -->
+      <section id="tab-docs" class="tab-pane" role="tabpanel" data-tab="docs" hidden>
+        <div class="docs-tab" id="docs-root">
+          <aside class="docs-tree">
+            <header class="docs-tree-header">
+              <span class="docs-tree-label">docs/</span>
+              <button id="docs-new-file-btn" class="btn btn-icon-sm" type="button"
+                      title="Create a new doc file">+ New file</button>
+            </header>
+            <div class="docs-tree-list-wrap">
+              <ul id="docs-tree-list" class="docs-tree-list" role="tree"></ul>
+            </div>
+          </aside>
+          <main class="docs-viewer">
+            <header class="docs-file-header">
+              <span id="docs-file-path" class="docs-file-path">/docs/</span>
+              <span class="docs-file-actions">
+                <a id="docs-open-raw" href="#" target="_blank" rel="noopener">Open raw</a>
+              </span>
+            </header>
+            <article id="docs-content" class="docs-content">
+              <div class="docs-empty">Select a file from the left to read it here.</div>
+            </article>
+          </main>
+        </div>
+      </section>
+
+      <!-- ─── Add Project modal (used by the project switcher) ─────────── -->
+      <div id="project-backdrop" class="modal-backdrop" hidden>
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="project-title">
+          <header class="modal-header">
+            <h2 id="project-title">Add project</h2>
+            <button class="btn-icon" type="button" data-close-project aria-label="Close">&times;</button>
+          </header>
+          <form id="project-form" class="modal-body">
+            <label class="field">
+              <span>Name</span>
+              <input name="name" type="text" required maxlength="80" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>Path</span>
+              <input name="root" type="text" required autocomplete="off"
+                     placeholder="/absolute/path/to/project" />
+            </label>
+            <footer class="modal-footer">
+              <button type="button" class="btn" data-close-project>Cancel</button>
+              <button type="submit" class="btn btn-primary">Add project</button>
+            </footer>
+          </form>
+        </div>
+      </div>
+
+      <!-- ─── Settings dialog (single instance, reused across opens) ──── -->
+      <div id="settings-backdrop" class="modal-backdrop" hidden>
+        <div class="modal settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+          <header class="modal-header">
+            <h2 id="settings-title">Settings</h2>
+            <button class="btn-icon" type="button" data-close-settings aria-label="Close">&times;</button>
+          </header>
+          <div class="settings-layout">
+            <nav id="settings-nav" class="settings-nav" aria-label="Settings sections"></nav>
+            <div class="settings-pane">
+              <div class="modal-body" id="settings-body">
+                <!-- Populated by settings.js on open. -->
+              </div>
+              <footer class="modal-footer" id="settings-footer">
+                <button type="button" class="btn" data-close-settings>Cancel</button>
+                <button type="button" id="settings-save" class="btn btn-primary">Save</button>
+              </footer>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- ─── Template help modal (single instance, reused) ──────────────── -->
+    <div id="template-backdrop" class="modal-backdrop" hidden>
+      <div class="modal template-dialog" role="dialog" aria-modal="true" aria-labelledby="template-title">
+        <header class="modal-header">
+          <h2 id="template-title">Task Template</h2>
+          <button class="btn-icon" type="button" data-close-template aria-label="Close">&times;</button>
+        </header>
+        <div class="modal-body" id="template-body">
+          <!-- Populated by task-view.js on open. -->
+        </div>
+        <footer class="modal-footer">
+          <button type="button" class="btn" id="template-copy-btn">Copy to clipboard</button>
+          <button type="button" class="btn btn-primary" data-close-template>Done</button>
+        </footer>
       </div>
     </div>
 
-    <!-- Per-task action menu (positioned dynamically) -->
-    <div id="action-menu" class="action-menu" hidden role="menu"></div>
+    <!-- Task detail view (hidden by default; lives outside the .dashboard
+         panes so it overlays everything when a card is clicked) -->
+    <div id="task-view" hidden></div>
+
+    <!-- Image lightbox overlay (filled by images.js when an image is opened). -->
+    <div id="image-lightbox" class="image-lightbox" role="dialog" aria-modal="true" aria-label="Image preview" hidden tabindex="-1">
+      <img class="image-lightbox-img" alt="" />
+      <button type="button" class="image-lightbox-close" aria-label="Close">×</button>
+    </div>
 
     <footer class="footer">
       <span>openkan v0.1</span>
     </footer>
 
+    <!-- api.js MUST load first; it exposes window.OpenKanAPI used by the others. -->
+    <script src="api.js" defer></script>
+    <!-- cross-tab.js exposes OpenKanCrossTab for sibling-tab sync (M13). -->
+    <script src="cross-tab.js" defer></script>
+    <script src="images.js" defer></script>
+    <script src="mdx-viewer.js" defer></script>
+    <script src="task-view.js" defer></script>
+    <script src="settings.js" defer></script>
+    <script src="changelog-view.js" defer></script>
+    <script src="contributors-view.js" defer></script>
+    <script src="docs-view.js" defer></script>
+    <!-- M13: keyboard module loads before the palette so the palette can
+         subscribe to "palette.open" / "palette.close" / "palette.isOpen". -->
+    <script src="keyboard.js" defer></script>
+    <script src="command-palette.js" defer></script>
     <script src="app.js" defer></script>
   </body>
 </html>

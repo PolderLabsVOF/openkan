@@ -1,0 +1,43 @@
+---
+title: "M8: Inline comments on rendered MDX"
+status: pending
+milestone: 8
+---
+
+## Goal
+
+A user viewing a task's MDX artifact can click anywhere on a rendered block (paragraph, heading, list, code, etc.) and leave a comment. Comments are anchored to the exact block so the agent reading the MDX (or the comments file) can see **what** the user was commenting on. The agent can also leave comments.
+
+## Why now
+
+The agent and the user need a back-and-forth channel that survives between sessions. A free-text comment on the whole task is too coarse — when the agent reads the comment, it can't tell which part of the artifact the user was reacting to. Anchored comments turn the MDX into a shared reviewable surface.
+
+## Scope
+
+- **Block-level anchoring** — server-side MDX rendering wraps every top-level block (heading, paragraph, list, code, blockquote, table, custom component) in `<section class="mdx-block" data-block-id="…" data-line="…">` where `data-line` is the 1-indexed line in the source MDX.
+- **Comments file** `tasks/<id>/comments.json` — array of `{ id, blockId, line, text, author, createdAt, resolved? }`.
+- **Web UI**:
+  - Click on any `.mdx-block` opens an inline composer anchored to the block.
+  - A right-hand "Comments" panel lists all comments grouped by block; clicking a comment scrolls the corresponding block into view and flashes it.
+  - The agent's comments are visually distinct (different author color/badge).
+  - "Resolve" hides the comment from the default view but keeps it in the file.
+- **Agent reads** — `kanban_view <taskId>` returns the comments with their block context; the agent also has `kanban_comments <taskId>` to read just the comment list.
+
+## Files touched
+
+- `kanban/mdx-render.ts` — emit `data-line` and `data-block-id` on every block
+- `kanban/comments.ts` — list/add/resolve/delete
+- `kanban/server.ts` — comment endpoints, include comments in task payload
+- `plugins/tools.ts` — `kanban_comments` tool
+- `web/mdx-viewer.js` (new) — viewer with click-to-comment and comments panel
+- `web/style.css` — block highlight, comment markers, panel layout
+
+## Acceptance criteria
+
+- [ ] Every block in the rendered MDX has a `data-line` and `data-block-id` attribute
+- [ ] Clicking a block opens an inline composer pre-targeted at that block
+- [ ] Saved comment appears in the comments panel with the block excerpt it was anchored to
+- [ ] Comments are persisted to `tasks/<id>/comments.json` and survive server restart
+- [ ] Agent can read all comments with block context via `kanban_comments <taskId>`
+- [ ] Resolved comments are hidden by default but still in the file
+- [ ] Comments work on a board of 100+ tasks with no perceptible lag (lazy-load per task)

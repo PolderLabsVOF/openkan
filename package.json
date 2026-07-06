@@ -4,11 +4,22 @@
   "description": "MDX-kanban task board plugin for OpenCode",
   "type": "module",
   "private": true,
+  "bin": {
+    "openkan": "./bin/openkan.mjs"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "test": "node --test --experimental-strip-types tests/*.test.mts tests/*.test.mjs",
+    "openkan": "node --experimental-strip-types bin/openkan.ts"
+  },
   "dependencies": {
     "@opencode-ai/plugin": "1.17.13",
     "marked": "^14.0.0",
     "nanoid": "^5.0.0",
-    "sanitize-html": "^2.13.0"
+    "sanitize-html": "^2.13.0",
+    "sucrase": "^3.34.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

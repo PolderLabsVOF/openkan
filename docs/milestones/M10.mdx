@@ -1,0 +1,135 @@
+---
+title: "M10: Dashboard tabs, full changelog, settings, git attribution, archive"
+status: next
+milestone: 10
+---
+
+## Goal
+
+Turn the localhost UI from a single board into a small **dashboard** with three tabs — **Tasks** (the existing kanban), **Changelog** (a structured, time-ordered feed of every state change), and **Contributors** (who's working on what, derived from `git log`). Add a settings page, support archiving tasks out of the board, and attribute work to people via git.
+
+## Why now
+
+The board is the live work surface, but it's missing two things a team-developing-on-the-same-repo needs: an audit trail (what changed, who changed it, when) and visibility into work done by other contributors. The `.openkan/` tree is already git-trackable (M7), so the data layer is in place — what's missing is the surface that exposes it.
+
+## Scope
+
+### Dashboard tabs
+
+The single board view is now a tabbed dashboard. The topbar gets three tab buttons: **Tasks**, **Changelog**, **Contributors**. The active tab is the only one rendered; the URL hash encodes the tab (`#tab=tasks`, `#tab=changelog`, `#tab=contributors`).
+
+- **Tasks tab** — the existing board. New: a settings gear icon in the topbar opens a modal with project-level settings.
+- **Changelog tab** — a vertical timeline of every state change in `.openkan/`. Newest first. Filterable by event type, by task, and by author. Each entry shows `{ ts, kind, taskId?, taskTitle?, author, summary, payload }`. Clicking an entry with a `taskId` opens that task in the Tasks tab.
+- **Contributors tab** — a list of contributors derived from `git log` (name, email, commit count, last seen, tasks attributed). Each contributor's row expands to show the tasks they touched.
+
+### Full changelog (`kanban/changelog.ts`)
+
+Append-only `JSONL` log at `.openkan/changelog.jsonl` — one event per line. Written via the same `writeFileAtomic` helper as the rest of the project. NEVER rewritten or compacted in v1; readers tolerate missing trailing lines.
+
+Each event:
+```ts
+interface ChangelogEvent {
+  id: string;            // chg-xxxxxxxx (nanoid)
+  ts: string;            // ISO timestamp
+  kind: string;          // "task.created" | "task.updated" | "task.moved" | "task.deleted" |
+                         // "task.archived" | "task.restored" | "task.commented" |
+                         // "task.input.asked" | "task.input.responded" |
+                         // "agent.started" | "agent.ended" | "agent.progress" |
+                         // "git.commit-attributed" | "settings.changed" | "kanban.organized"
+  taskId?: string;       // when relevant
+  author: string;        // git user.name (if available) or "agent:<name>" or "user" or "system"
+  summary: string;       // short human-readable line, e.g. "moved 'Refactor auth' to Review"
+  payload: Record<string, unknown>;  // structured detail
+}
+```
+
+Server helpers:
+- `recordEvent(kind, partial)` — appends a line; called from every mutating API handler and from the event subscription.
+- `readEvents(opts)` — reads with optional filters `{ since, until, kind, taskId, author, limit, offset }`. Reversed (newest first) by default.
+
+New endpoints:
+- `GET /api/changelog?since=…&until=…&kind=…&taskId=…&author=…&limit=200&offset=0` → `{ events, total }`
+- `GET /api/changelog/:id` → single event (rare; for deep links)
+- `GET /api/changelog/summary?days=30` → `{ byKind: Record<kind, count>, byAuthor: Record<author, count>, byDay: Record<date, count> }`
+
+### Git attribution (`kanban/git.ts`)
+
+Pure, side-effect-free module. Reads `git log` (via `child_process.spawnSync("git", ["log", …])`) and `git config user.name/user.email`. No git writes.
+
+- `listContributors(root, opts)` → `Array<{ name, email, commits, firstSeen, lastSeen, linesAdded, linesDeleted }>`.
+- `listCommits(root, opts)` → `Array<{ sha, author, email, ts, subject, body, files }>` where `files` is the list of paths the commit touched.
+- `attributeCommitsToTasks(root, tasks, opts)` → `Map<taskId, Array<{ sha, author, ts, subject, files }>>` matching commits to tasks by path overlap (a commit that touched a path in `task.source.path`, or any path under a directory listed in `task.scope`, or whose subject mentions the task id/title).
+- `currentUser(root)` → `{ name, email }` from `git config`.
+
+Used by:
+- `GET /api/contributors` → list
+- `GET /api/tasks/:id` → adds `contributors: ContributorOnTask[]` (commits that touched the task's scope)
+- `GET /api/tasks-index` → adds `contributors: { name, email, lastSeen }[]` (deduped, top 5) per task
+
+**Privacy**: only what's in the local git repo. No remote fetching. If the user wants other people's tasks, they `git pull` and the new commits show up.
+
+### Settings page
+
+A modal/dialog (not a separate route — keeps the dashboard single-page). Triggered by a gear icon in the topbar. Two sections:
+
+- **Project settings** — read/write `.openkan/config.json`:
+  - Port, host (display only; restart to apply)
+  - Default agent, default model
+  - Default column for new tasks
+  - Import include/exclude globs
+  - Sandbox `tsxMaxBytes`
+  - Auto-archive done tasks after N days
+- **Personal** — read from `git config`:
+  - Display name, email (display only)
+  - Theme: dark (default), light, system
+
+Settings changes write to `.openkan/config.json` (via the existing `config` CLI / API) and record a `settings.changed` event in the changelog.
+
+### Archive
+
+- `Task.archived: boolean` (default `false`).
+- `POST /api/tasks/:id/archive` → sets `archived = true`, records event. Archived tasks do NOT appear on the board. They appear in a separate "Archived" section accessible via a "Show archived" toggle on the Tasks tab, or via a filter chip.
+- `POST /api/tasks/:id/restore` → sets `archived = false`, records event.
+- `GET /api/tasks-index?includeArchived=true` → includes archived tasks; default is `false`.
+- The MDX artifact of an archived task is unchanged; only the `archived` flag differs. The Kanban view hides it; the task detail view remains accessible via direct URL or by clicking from the changelog.
+
+### Drag-and-drop previews and indicators
+
+Existing drag-and-drop is functional but visually thin. v1.1:
+
+- **Ghost card** — when dragging, a semi-transparent clone follows the cursor (native `dataTransfer.setDragImage` doesn't allow this; we use a custom absolutely-positioned div instead).
+- **Drop indicators** — when hovering a column, a horizontal insertion line shows where the card will land. Implemented with a CSS pseudo-element on the candidate insertion point.
+- **Column highlight** — the target column gets an accent border + tinted background. Existing implementation already does this; expand the visual treatment (animated pulse, accent stripe at the top of the column).
+- **Multi-card drag** — Ctrl/Meta-click to select multiple cards; one drag moves them all to the same column (reordering within the destination is "after the dropped position").
+- **Invalid drop** — if the user drops on a column they can't move to (e.g. on a non-editable view), show a red border + shake animation.
+
+## Files touched
+
+- `kanban/changelog.ts` (new) — `recordEvent`, `readEvents`, `readSummary`
+- `kanban/git.ts` (new) — `listContributors`, `listCommits`, `attributeCommitsToTasks`, `currentUser`
+- `kanban/archive.ts` (new) — `archiveTask`, `restoreTask` (or inline in board.ts/server.ts)
+- `kanban/board.ts` — `archived: boolean`, default false; back-compat default
+- `kanban/server.ts` — record events from all mutating handlers; new endpoints
+- `kanban/mdx.ts` — include `archived` in frontmatter
+- `plugins/tools.ts` — `kanban_organize` (M11), `kanban_archive` / `kanban_restore`
+- `web/index.html` — topbar tabs, settings gear, archive toggle
+- `web/style.css` — tabs, ghost card, drop indicators, archive styling
+- `web/app.js` — drag-and-drop improvements, tabs router, sort/filter, archive toggle
+- `web/settings.js` (new) — settings dialog
+- `web/changelog-view.js` (new) — changelog timeline
+- `web/contributors-view.js` (new) — contributors list
+- `web/task-view.js` — assignees, archive/restore buttons
+- `docs/README.mdx` — update roadmap table
+
+## Acceptance criteria
+
+- [ ] Dashboard has three tabs: Tasks, Changelog, Contributors; URL hash selects tab
+- [ ] Every mutating API records a `changelog.jsonl` event; the file is append-only JSONL
+- [ ] `GET /api/changelog?since=…` works; filter by kind/taskId/author
+- [ ] `GET /api/contributors` returns git-derived contributors with commit counts
+- [ ] Tasks show `contributors` derived from `git log` (commits whose files overlap the task's `source.path` or `scope`)
+- [ ] Archived tasks are hidden from the board by default; `Show archived` reveals them
+- [ ] Archive/restore is reversible and recorded in the changelog
+- [ ] Settings modal updates `.openkan/config.json` and records a `settings.changed` event
+- [ ] Drag-and-drop shows a ghost card and a drop indicator line; multi-select works
+- [ ] No new auth, no remote sync, no external services

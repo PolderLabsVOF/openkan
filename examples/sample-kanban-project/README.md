@@ -3,6 +3,16 @@
 A tiny project you can boot OpenCode against to verify the M1 `kanban_import`
 tool end-to-end.
 
+## CLI
+
+From this directory:
+
+```sh
+node --experimental-strip-types ../../bin/openkan.ts init
+node --experimental-strip-types ../../bin/openkan.ts start
+open http://127.0.0.1:7777/
+```
+
 ## What's in here
 
 ```

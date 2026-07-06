@@ -53,6 +53,7 @@ cp -R "${SRC_ROOT}/kanban/." "${GLOBAL_PLUGIN_ROOT}/kanban/"
 cp "${SRC_ROOT}/plugins/kanban.ts" "${GLOBAL_PLUGIN_ROOT}/plugins/kanban.ts"
 cp "${SRC_ROOT}/plugins/tools.ts" "${GLOBAL_PLUGIN_ROOT}/plugins/tools.ts"
 cp -R "${SRC_ROOT}/web/." "${GLOBAL_PLUGIN_ROOT}/web/"
+cp -R "${SRC_ROOT}/bin/." "${GLOBAL_PLUGIN_ROOT}/bin/"
 
 if [[ ! -f "${GLOBAL_PLUGIN_ROOT}/package.json" ]]; then
   cp "${SRC_ROOT}/package.json" "${GLOBAL_PLUGIN_ROOT}/package.json"
@@ -94,5 +95,57 @@ else
   '
 fi
 
+# --- Install the agent skill to ~/.config/opencode/skills/openkan/ ------------
+SKILL_SRC="${SRC_ROOT}/skills/openkan"
+SKILL_DST="${TARGET_ROOT}/skills/openkan"
+if [[ -d "${SKILL_SRC}" ]]; then
+  mkdir -p "${TARGET_ROOT}/skills"
+  rm -rf "${SKILL_DST}"
+  cp -R "${SKILL_SRC}" "${SKILL_DST}"
+  echo "[openkan] Installed agent skill to ${SKILL_DST}"
+fi
+
+# --- Install the /organize slash command ----------------------------------------
+COMMAND_SRC="${SRC_ROOT}/.opencode/command"
+COMMAND_DST="${TARGET_ROOT}/command"
+if [[ -d "${COMMAND_SRC}" ]]; then
+  mkdir -p "${COMMAND_DST}"
+  cp -R "${COMMAND_SRC}/." "${COMMAND_DST}/"
+  echo "[openkan] Installed slash commands to ${COMMAND_DST}"
+fi
+
+# --- Symlink the CLI onto PATH ------------------------------------------------
+BIN_PATH=""
+for candidate in "${HOME}/.local/bin" "${HOME}/bin" "/usr/local/bin"; do
+  if [[ -d "${candidate}" && -w "${candidate}" ]]; then
+    BIN_PATH="${candidate}"
+    break
+  fi
+done
+
+SYMLINKED=false
+if [[ -n "${BIN_PATH}" ]]; then
+  ln -sf "${GLOBAL_PLUGIN_ROOT}/bin/openkan.mjs" "${BIN_PATH}/openkan"
+  SYMLINKED=true
+  echo "[openkan] Symlinked \`openkan\` → ${BIN_PATH}/openkan"
+fi
+
+echo ""
 echo "Installed OpenKan globally into ${GLOBAL_PLUGIN_ROOT}"
-echo "Restart OpenCode, then open http://127.0.0.1:7777/"
+
+if [[ -d "${SKILL_DST}" ]]; then
+  echo "Installed openkan agent skill to ${SKILL_DST}"
+  echo "  Agents can now learn openkan at skills/openkan/SKILL.md"
+fi
+
+if [[ -d "${TARGET_ROOT}/command" ]]; then
+  echo "Installed slash commands to ${TARGET_ROOT}/command/"
+  echo "  Use \`/organize\` in OpenCode to re-categorize and clean up the board."
+fi
+
+if [[ "${SYMLINKED}" == true ]]; then
+  echo "Run \`openkan start\` to start the server (or open http://127.0.0.1:7777/)."
+  echo "The dashboard has four tabs: Tasks, Changelog, Contributors, Docs."
+else
+  echo "Add ${GLOBAL_PLUGIN_ROOT}/bin to your PATH to use the \`openkan\` command."
+fi

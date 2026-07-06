@@ -1,0 +1,34 @@
+---
+id: tsk-example-simple
+title: Fix the login redirect on SSO failure
+description: Users who fail SSO authentication get a 404 page. They should be redirected back to the login page with an error message.
+tags:
+  - bug
+  - frontend
+category: frontend
+priority: high
+effort: s
+state: idle
+created: 2026-07-06
+---
+
+## Background
+
+When SSO authentication fails (e.g. token expired, user not found in the IdP), the callback handler throws an unhandled error and renders a 404 page. The user has no way to retry and no error message explaining what went wrong.
+
+## Acceptance criteria
+
+- SSO callback catches `AuthenticationError` and `TokenExpiredError`
+- Redirects to `/login?error=sso_failed` instead of 404
+- Login page shows a banner: "SSO login failed. Please try again or use email/password."
+- Log the failure to `sso.log` for debugging
+
+## Implementation notes
+
+The callback is in `src/auth/sso.ts`, the `handleCallback` function around line 142. The login page template is at `src/pages/login.tsx`. Add a query-parameter check for `error=sso_failed` and display a warning alert above the login form.
+
+## Files touched
+
+- `src/auth/sso.ts` — catch + redirect
+- `src/pages/login.tsx` — error banner
+- `src/lib/sso-logger.ts` — structured logging (new file, optional)

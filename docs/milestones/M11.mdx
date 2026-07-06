@@ -1,0 +1,126 @@
+---
+title: "M11: /organize slash command, agent auto-progress, sort/filter polish"
+status: pending
+milestone: 11
+---
+
+## Goal
+
+Add a first-class `/organize` slash command to OpenCode that delegates to the agent to **categorize, clean up, and reorganize** the openkan board. The agent should be able to add a "progress note" to a task's MDX automatically when the OpenCode session reports progress, so the kanban stays in sync with what the agent is doing in real time.
+
+## Why now
+
+The board is a cockpit, but two of the highest-value activities — keeping the board organized, and keeping the artifact current with what the agent is doing — are still manual. `/organize` and the auto-progress hook are the two highest-leverage things a long-running session can do for the user.
+
+## Scope
+
+### `/organize` slash command (`.opencode/command/organize.md`)
+
+A slash command that, when invoked by the user, asks the agent to look at the board and propose / apply a reorganization. The command body is a short instruction the agent follows.
+
+```yaml
+---
+description: Organize the openkan board — re-categorize, clean up, and group related tasks
+---
+You are organizing the openkan kanban board at `.openkan/`. The dashboard is
+running at http://127.0.0.1:7777/.
+
+Use the `kanban_view` tool to see all tasks. For each task, re-derive
+`category`, `priority`, and `effort` from the title and description. Use
+the `kanban_organize` tool to apply changes (it accepts a list of moves
+and edits in one batch and records a single `kanban.organized` changelog
+event).
+
+Goals:
+1. Re-tag miscategorized tasks. Tasks whose content clearly belongs to a
+   different category should be moved to the right column.
+2. Group related tasks. If three tasks in the Backlog are all about the
+   auth flow, suggest an `area:auth` tag on each.
+3. Surface stale or vague tasks. Tasks with empty descriptions and no
+   recent activity should get a `needs-detail` tag and stay in Backlog.
+4. Archive tasks that are clearly abandoned (no activity, no description,
+   `status: cancelled` or `status: failed` more than 30 days ago).
+5. Don't move tasks that are currently in Review or In Progress unless
+   the user has explicitly marked them stale.
+
+Report a short summary of what you changed and what you didn't change
+(and why) at the end. Don't ask the user for confirmation for moves
+within reason — the user can always undo.
+```
+
+### `kanban_organize` tool
+
+A new tool in `plugins/tools.ts` that accepts a batch of operations:
+
+```ts
+kanban_organize(operations: Array<
+  | { kind: "rederive"; taskId: string }                          // re-run extractMetadata
+  | { kind: "set-tags"; taskId: string; tags: string[] }
+  | { kind: "set-priority"; taskId: string; priority: Priority }
+  | { kind: "set-effort"; taskId: string; effort: Effort | null }
+  | { kind: "move"; taskId: string; column: ColumnId }
+  | { kind: "archive"; taskId: string }
+  | { kind: "restore"; taskId: string }
+  | { kind: "add-tag-area"; taskId: string; area: string }       // adds area:<name>
+  | { kind: "needs-detail"; taskId: string }                      // adds the "needs-detail" tag
+>)
+```
+
+The tool applies all operations atomically (one `kanban.organized` changelog event), then returns a structured diff:
+
+```ts
+{
+  applied: Array<{ taskId, kind, before, after }>,
+  skipped: Array<{ taskId, kind, reason }>,
+  summary: { moved: 3, retagged: 5, archived: 1, errors: 0 }
+}
+```
+
+### Auto-progress notes
+
+The plugin entrypoint already subscribes to OpenCode session events. Add a hook: when a session reports a `message.part.updated` or `session.tool.call` event, write a brief progress line to the task's MDX artifact under a new `## Agent progress` section. The line is timestamped; the section is created on first update and updated in place.
+
+This is intentionally lightweight — it's a breadcrumb, not a transcript. The full transcript lives in `sessions/<sid>.mdx` (existing). The progress note is a one-liner: `> [12:34:56] tool: edit_file on src/auth.ts — added login rate-limit`.
+
+The section is rendered in the task detail view as a timeline.
+
+### Sort and filter UI
+
+Improve the existing filter bar (M7.1):
+
+- **Sort dropdown** — newest first, oldest first, by column, by priority (urgent → low), by effort (xl → xs), by last activity. Persisted to the URL hash (`#sort=priority`).
+- **Saved filters** — user can save a filter combination as a named chip ("My urgent backend work"); stored in `localStorage`. Up to 5 saved filters per user.
+- **Filter by contributor** — third filter row: `Contributors: all | @me | <contributor>`. `@me` is the current git user.
+- **Filter by archive state** — `Active | Archived | Both` segmented control on the Tasks tab.
+
+### Polished task detail view
+
+- Show assignees (git authors) on the metadata strip with avatars (initials, no images).
+- "Agent progress" section if the task has any progress notes.
+- Last activity timestamp.
+- "Move to next column" button (uses `kanban_move`) and "Archive" / "Restore" buttons in the action menu.
+
+## Files touched
+
+- `.opencode/command/organize.md` (new) — the slash command definition
+- `plugins/tools.ts` — `kanban_organize` tool; auto-progress write on session events
+- `plugins/kanban.ts` — subscribe to more session event types; emit progress notes
+- `kanban/board.ts` — accept `archived: boolean` (M10)
+- `kanban/mdx.ts` — render the `## Agent progress` section
+- `kanban/server.ts` — endpoint for organize batch (or call `kanban_organize` directly from the tool)
+- `web/index.html` — sort dropdown, saved-filters chips, archive segmented control
+- `web/app.js` — sort/filter logic, saved filters (localStorage), @me filter
+- `web/task-view.js` — assignees avatars, progress timeline, archive/restore buttons
+- `web/style.css` — sort dropdown, saved-filter chips, assignee avatars, progress timeline
+
+## Acceptance criteria
+
+- [ ] `/organize` is a registered OpenCode slash command; invoking it delegates to the agent with the right instructions
+- [ ] `kanban_organize` accepts a batch of operations and applies them atomically with a single changelog event
+- [ ] When the OpenCode session reports tool calls, a progress line is written to the task's MDX
+- [ ] Tasks can be sorted by 5 criteria; sort is persisted in the URL hash
+- [ ] Saved filters work via `localStorage`; up to 5 saved
+- [ ] The filter bar has a third row for contributors; `@me` resolves to the git user
+- [ ] Archive segmented control filters active vs archived tasks
+- [ ] The task detail view shows assignees, agent progress timeline, and archive/restore buttons
+- [ ] No breaking changes to existing endpoints or tools

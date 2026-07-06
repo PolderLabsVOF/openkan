@@ -1,0 +1,73 @@
+---
+title: "M7: Tasks index, MDX-centric model, waiting-for-input state"
+status: next
+milestone: 7
+---
+
+## Goal
+
+Make `.openkan/` an MDX-first workspace: every task has a rich, agent-writable MDX artifact, a tasks index, and a first-class **waiting-for-input** state so the agent can ask the user a structured question and block until the user answers.
+
+## Why now
+
+Today the board is the source of truth (`board.json`) and the task MDX is a flat dump of the same fields. The user wants the MDX to be the rich, visually-rendered artifact and the index/board to be a thin pointer. They also want the agent to be able to ask the user a question during a task (e.g. "which of these three approaches should I use?") and pause for the answer — not just dump text into a log.
+
+## Scope
+
+- **`.openkan/tasks.json`** — new canonical index. Each entry is `{ id, title, column, order, state, mdxPath, createdAt, updatedAt, source?, agent? }`. The legacy `board.json` is kept for backwards compatibility and derived from `tasks.json` on read.
+- **Per-task directory** `tasks/<id>/` containing:
+  - `task.mdx` — the rich MDX artifact (was `tasks/<id>.mdx`; both layouts supported)
+  - `comments.json` — list of `{ id, blockId, text, author, createdAt, resolved? }` anchored to MDX blocks
+  - `inputs.json` — list of pending and answered input requests
+  - `state.json` — current state + lastError
+- **Task state** gains a new value: `waiting-for-input`. When set, the kanban view shows the task in a "Needs you" state and the task detail view shows the input form.
+- **`<Ask>`, `<Choice>`, `<Input>`, `<Confirm>`** — inline MDX components the agent writes into the task MDX to request input. On render they become interactive widgets; on submit they post a response to the agent and the task resumes.
+- **`kanban_ask` tool** — agent creates a pending input. Idempotent: if a previous ask for the same `inputId` exists, it's updated, not duplicated.
+- **`kanban_respond` tool** — internal helper used by the web UI to record the user's response; the agent sees the response on its next turn (and via the MDX file).
+- **Server endpoints**:
+  - `GET /api/tasks-index` — full tasks index
+  - `GET /api/tasks/:id` — task + MDX + comments + inputs
+  - `POST /api/tasks` — create task (also writes initial MDX)
+  - `PATCH /api/tasks/:id` — update task fields, including `state`
+  - `DELETE /api/tasks/:id` — delete task and its directory
+  - `POST /api/tasks/:id/ask` — agent creates an input request
+  - `POST /api/tasks/:id/respond` — user responds; auto-resumes task
+  - `GET /api/tasks/:id/comments`, `POST /api/tasks/:id/comments`, `DELETE /api/tasks/:id/comments/:cid`
+
+- **Standalone CLI** (`bin/openkan.ts`, runnable as `bunx openkan …` or `node bin/openkan.mjs`):
+  - `openkan init` — create `.openkan/` in the current project (idempotent)
+  - `openkan start [--port N] [--host H] [--no-open]` — start the kanban server; writes a PID file to `.openkan/server.pid`; prints the URL
+  - `openkan stop` — graceful shutdown of the server referenced by the PID file
+  - `openkan status` — show whether the server is running, port, PID, uptime
+  - `openkan open` — open the kanban UI in the default browser
+  - `openkan config [get|set|list] [key] [value]` — view and edit `.openkan/config.json` (port, host, defaultAgent, defaultModel, import.include, import.exclude, sandbox.tsxMaxBytes, sandbox.compileTimeoutMs, etc.)
+  - `openkan logs [--tail N] [--follow]` — tail `.openkan/server.log` (the running server writes to it)
+  - `openkan reset [--hard]` — stop the server and delete `.openkan/`. `--hard` also wipes `tasks/` and `sessions/`
+  - All commands work whether or not OpenCode is running; the CLI is the entry point for headless use
+
+## Files touched
+
+- `kanban/board.ts` — new `state` field, `pendingInputs` field, write to per-task dirs
+- `kanban/mdx.ts` — richer `taskToMarkdown` rendering
+- `kanban/mdx-render.ts` (new) — server-side MDX → HTML with block markers
+- `kanban/comments.ts` (new) — comments CRUD
+- `kanban/inputs.ts` (new) — input request CRUD
+- `kanban/server.ts` — new endpoints
+- `bin/openkan.ts` (new) — standalone CLI (init/start/stop/status/open/config/logs/reset)
+- `plugins/tools.ts` — `kanban_ask`, `kanban_respond`
+- `web/*` — new task detail view
+- `docs/README.mdx` — update roadmap table
+- `README.md` — update feature list
+
+## Acceptance criteria
+
+- [ ] `.openkan/tasks.json` is created on first run and contains one entry per task
+- [ ] Each task has a directory `tasks/<id>/` with `task.mdx` and (when used) `comments.json` and `inputs.json`
+- [ ] Task `state` includes `waiting-for-input`; setting it shows the task in a "Needs you" lane in the UI
+- [ ] Agent calling `kanban_ask` writes an inline `<Ask>` block into `task.mdx` and creates an entry in `inputs.json`
+- [ ] Web UI shows the input form when the task is in `waiting-for-input`
+- [ ] User response is written to `inputs.json` and the task state returns to `running` (or its prior state)
+- [ ] All new endpoints are accessible; SSE events fire for `task.updated` and `task.input.responded`
+- [ ] Existing board operations (drag, start, abort, delete) still work
+- [ ] `bin/openkan.ts` runs as a standalone CLI: `start` writes a PID file, `stop` reads it and shuts down, `status` reports state, `config get/set/list` round-trips through `.openkan/config.json`, `reset [--hard]` cleans up
+- [ ] The CLI works without OpenCode running; OpenCode's plugin entrypoint and the CLI share the same `kanban/server.ts` start/stop code

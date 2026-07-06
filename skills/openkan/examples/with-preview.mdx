@@ -1,0 +1,54 @@
+---
+id: tsk-example-preview
+title: Design the new button component variants
+description: Playing with three button variants for the new component library. Preview them in the sandbox below.
+tags:
+  - feature
+  - ux
+  - frontend
+category: frontend
+priority: normal
+effort: s
+state: idle
+created: 2026-07-06
+---
+
+## Button variants
+
+Here's a live preview of the three button styles I'm proposing. Click one to send feedback — each button calls `respond()` with its variant name.
+
+<Preview
+  tsx={`function ButtonPreview() {
+  return (
+    <Column gap={16}>
+      <Text size={18} weight={700}>Button Variants</Text>
+      <Row gap={12} wrap>
+        <Button
+          label="Primary"
+          onClick={() => respond("primary-clicked")}
+        />
+        <Button
+          label="Secondary"
+          variant="secondary"
+          onClick={() => respond("secondary-clicked")}
+        />
+        <Button
+          label="Danger"
+          variant="danger"
+          onClick={() => respond("danger-clicked")}
+        />
+      </Row>
+      <Text size={14} color="#94a3b8">
+        Click a button to register your preference.
+      </Text>
+    </Column>
+  );
+}`}
+  props={{}}
+/>
+
+## What do you think?
+
+Once you've clicked a button, let me know your feedback on the styles. I can adjust colors, sizes, corner radii, or add loading states.
+
+<Ask question="Which button variant do you prefer and what adjustments would you like?" />

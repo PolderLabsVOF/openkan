@@ -15,7 +15,7 @@ Record exactly what the openkan base plugin already ships today.
 
 **Board**
 - `kanban/board.ts` — five-column kanban state (Backlog, To Do, In Progress, Review, Done), JSON state stored in `.openkan/state.json`
-- `kanban/mdx.ts` — task-to-MDX artifact conversion, writes `.openkan/tasks/tsk_<id>.mdx`
+- `kanban/mdx.ts` — task-to-MDX artifact conversion, writes `.openkan/tasks/tsk-<id>.mdx` and later `tasks/<id>/task.mdx`
 
 **Custom OpenCode tools**
 - `plugins/tools.ts` — four tools registered with OpenCode: `kanban_add`, `kanban_move`, `kanban_start`, `kanban_view`
@@ -25,7 +25,7 @@ Record exactly what the openkan base plugin already ships today.
 - `web/index.html` + `web/app.js` — localhost board UI with column rendering and SSE live updates
 
 **Artifact storage**
-- `.openkan/tasks/tsk_<id>.mdx` — one MDX file per task
+- `.openkan/tasks/tsk-<id>.mdx` (flat) / `tasks/<id>/task.mdx` (M7+ per-task directory) — MDX artifact per task
 - `.openkan/sessions/` — session artifacts
 
 ## Acceptance criteria

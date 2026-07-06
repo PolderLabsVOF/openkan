@@ -1,0 +1,74 @@
+export const M11_MDX = `---
+title: "M11: /organize slash command, auto-progress, sort/filter polish"
+status: shipped
+milestone: 11
+---
+
+## Goal
+
+Add a first-class \`/organize\` slash command to OpenCode that delegates to the agent to **categorize, clean up, and reorganize** the openkan board. The agent should be able to add a "progress note" to a task's MDX automatically when the OpenCode session reports progress, so the kanban stays in sync with what the agent is doing in real time.
+
+## What was delivered
+
+### \`/organize\` slash command (\`.opencode/command/organize.md\`)
+
+User invokes \`/organize\` in OpenCode. The agent reads the board, identifies miscategorized / related / stale / vague tasks, builds a batch of \`kanban_organize\` operations, and applies them atomically with a single \`kanban.organized\` changelog event.
+
+### \`kanban_organize\` tool
+
+\`\`\`ts
+type OrganizeOperation =
+  | { kind: "rederive"; taskId: string }
+  | { kind: "set-tags"; taskId: string; tags: string[] }
+  | { kind: "add-tags"; taskId: string; tags: string[] }
+  | { kind: "remove-tag"; taskId: string; tag: string }
+  | { kind: "set-priority"; taskId: string; priority: Priority }
+  | { kind: "set-effort"; taskId: string; effort: Effort | null }
+  | { kind: "set-category"; taskId: string; category: Category }
+  | { kind: "move"; taskId: string; column: ColumnId }
+  | { kind: "archive"; taskId: string }
+  | { kind: "restore"; taskId: string }
+  | { kind: "add-area"; taskId: string; area: string };
+\`\`\`
+
+Returns a structured diff: \`{applied, skipped, summary}\`.
+
+### Auto-progress notes
+
+When the OpenCode session reports a tool call or message part, a one-liner is appended to the task's MDX under \`## Agent progress\`:
+
+\`\`\`mdx
+## Agent progress
+- [12:34:56] edit_file on src/auth.ts — added login rate-limit
+- [12:35:01] bash — npm test (exit 0)
+\`\`\`
+
+Throttled to 1 line/sec/session. Rendered as a timeline in the task detail view.
+
+### Sort/filter polish
+
+- Sort dropdown: newest, oldest, priority, effort, last activity
+- Saved filters via \`localStorage\` (up to 5)
+- Contributors filter row (\`all | @me | <name>\`)
+- Archive segmented control (\`Active | Archived | Both\`)
+- All persisted to URL hash
+
+## Files touched
+
+- \`.opencode/command/organize.md\` (new) — slash command
+- \`plugins/tools.ts\` — \`kanban_organize\`
+- \`plugins/kanban.ts\` — auto-progress write on session events
+- \`kanban/server.ts\` — \`POST /api/organize\`
+- \`web/index.html\` — sort dropdown, saved-filter chips, archive toggle
+- \`web/app.js\` — sort/filter logic, saved filters, @me filter
+- \`web/task-view.js\` — assignees avatars, progress timeline, archive/restore
+
+## Verification
+
+\`\`\`sh
+node --test --experimental-strip-types tests/*.test.mts
+# → 114 pass, 0 fail
+\`\`\`
+
+See \`docs/milestones/M11.mdx\` for acceptance criteria.
+`;

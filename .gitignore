@@ -1,14 +1,28 @@
 # Dependencies
 node_modules/
 
-# Generated plugin runtime state
+# Generated plugin runtime state — track tasks, board, and config but ignore transient files
 .openkan/
+!.openkan/
+!.openkan/board.json
+!.openkan/board.mdx
+!.openkan/tasks.json
+!.openkan/config.json
+!.openkan/tasks/
+!.openkan/tasks/**
+!.openkan/tasks/**/task.mdx
+.openkan/sessions/
+.openkan/server.pid
+.openkan/server.log
+.openkan/server.lock
+.openkan/esbuild-cache/
 
 # Local agent / harness noise
 .agents/
 agent/
 .bizar/
 .omx/
+.serena/
 skills-lock.json
 
 # Logs

@@ -1,0 +1,41 @@
+---
+title: "M9: TSX/JSX preview components in MDX"
+status: pending
+milestone: 9
+---
+
+## Goal
+
+The agent can embed live, interactive TSX/JSX components inside a task's MDX to show previews and gather structured user input. The component runs in a sandboxed iframe; the user can interact with it (click buttons, pick options, fill fields) and the response is written back to the task and surfaced to the agent.
+
+## Why now
+
+Text descriptions and bulleted choice lists are limited. A UI element that the user can actually click and try is the most direct way to let the user evaluate a design, a color palette, a config, or any of a thousand things the agent might propose. The MDX artifact becomes a true interactive surface, not just a static page.
+
+## Scope
+
+- **`<Preview tsx="…" props="…" />`** — inline MDX component. The `tsx` attribute is a string of TSX/JSX source. The `props` attribute is a JSON object passed to the component as its props.
+- **`<Choice>`, `<Ask>`, `<Input>`, `<Confirm>`** — first-class interactive components (M7) implemented as real TSX components in the sandbox.
+- **Sandbox** — components run in a sandboxed iframe with `sandbox="allow-scripts"` (no `allow-same-origin`). The parent posts props in; the iframe posts events (`openkan:respond`) out. No DOM access to the parent; no network calls; no localStorage in the iframe.
+- **TSX compile** — the server uses `esbuild` (already a dev dep of many bundlers, no runtime cost) to transpile the TSX to JS, then `new Function()`-evaluates it inside the sandbox with a small React-like runtime. If the TSX fails to compile or throws, the iframe shows an error boundary and the parent shows a "preview failed" placeholder — the task is never broken.
+- **Library** — a small built-in component library (`Button`, `Card`, `Row`, `Column`, `Text`, `Heading`, `Image`, `ColorSwatch`, `Code`) is always available in the sandbox; agents can compose them without imports.
+- **Safety limits** — TSX source max 32KB, compile timeout 2s, render output max 50KB. Anything over is rejected with a clear error written to the input.
+
+## Files touched
+
+- `kanban/mdx-render.ts` — detect `<Preview>` and friends, emit `<iframe sandbox="allow-scripts" srcdoc="…">` with the compiled JS
+- `kanban/tsx-sandbox.ts` (new) — server-side TSX compile, iframe HTML builder
+- `kanban/server.ts` — endpoint for compiling TSX outside the artifact render (`POST /api/preview`) so the UI can preview before saving
+- `plugins/tools.ts` — `kanban_preview` helper for the agent to validate a TSX snippet
+- `web/preview-frame.html` (new) — sandbox runtime page
+- `web/mdx-viewer.js` — handle iframe events, fall back to a static placeholder if the iframe errors
+
+## Acceptance criteria
+
+- [ ] An MDX file containing `<Preview tsx="<Button label='Yes' onClick={respond('yes')} />" />` renders an interactive button in the iframe
+- [ ] Clicking the button writes a response to `inputs.json` via `postMessage`
+- [ ] The sandbox cannot read the parent DOM, fetch the network, or persist state
+- [ ] TSX that fails to compile shows a clear error in the iframe and does not break the rest of the page
+- [ ] A library of basic components is available without imports
+- [ ] TSX source larger than 32KB or taking longer than 2s to compile is rejected
+- [ ] Agent can call `kanban_preview` to dry-run a snippet and see the result before writing it to the MDX
