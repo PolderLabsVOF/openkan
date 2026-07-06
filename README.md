@@ -226,6 +226,8 @@ See [.github/SECURITY.md](./.github/SECURITY.md) for how to report vulnerabiliti
 
 <!-- Add your name or maintainer info here -->
 PolderLabs — [GitHub](https://github.com/PolderLabsVOF)
+Berk de Rooij - [GitHub](https://github.com/drB0rk)
+Nizar Amine - [GitHub](https://github.com/Nizar-max)
 
 ---
 
