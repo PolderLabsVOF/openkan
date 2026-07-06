@@ -1,6 +1,5 @@
 // OpenKan — custom OpenCode tools.
-// Loaded by OpenCode as a second plugin file (sibling of plugins/kanban.ts)
-// because it lives under .opencode/plugins/.
+// Loaded by OpenCode as a second plugin file (sibling of plugins/kanban.ts).
 //
 // Exposes four tools to the agent:
 //   - kanban_add

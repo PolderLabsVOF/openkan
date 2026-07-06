@@ -1,5 +1,14 @@
 import { nanoid } from "nanoid";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from "fs";
+import {
+  closeSync,
+  existsSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "fs";
 import { join } from "path";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -135,7 +144,10 @@ export async function persist(board: Board): Promise<void> {
   const tmp = join(KANBAN_DIR, `${BOARD_FILE}.tmp`);
   const dest = join(KANBAN_DIR, BOARD_FILE);
   writeFileSync(tmp, JSON.stringify(board, null, 2), "utf-8");
-  // Bun / Node 22+: try sync() for durability
-  try { (require("fs") as any).sync?.(tmp); } catch (_) {}
+  try {
+    const fd = openSync(tmp, "r");
+    fsyncSync(fd);
+    closeSync(fd);
+  } catch (_) {}
   renameSync(tmp, dest);
 }

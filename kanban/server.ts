@@ -1,4 +1,6 @@
 import { readFileSync, existsSync } from "fs";
+import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
+import { Readable } from "node:stream";
 import { join, extname } from "path";
 import type { BoardContext } from "./board.ts";
 import {
@@ -112,6 +114,52 @@ export interface RunningServer {
 }
 
 let runningServer: RunningServer | null = null;
+
+async function toRequest(req: IncomingMessage): Promise<Request> {
+  const url = `http://${req.headers.host ?? "127.0.0.1"}${req.url ?? "/"}`
+  const method = req.method ?? "GET"
+  const headers = new Headers()
+
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (Array.isArray(value)) {
+      for (const item of value) headers.append(key, item)
+    } else if (value !== undefined) {
+      headers.set(key, value)
+    }
+  }
+
+  if (method === "GET" || method === "HEAD") {
+    return new Request(url, { method, headers })
+  }
+
+  return new Request(url, {
+    method,
+    headers,
+    body: Readable.toWeb(req) as BodyInit,
+    duplex: "half",
+  })
+}
+
+async function writeResponse(res: ServerResponse, response: Response): Promise<void> {
+  res.statusCode = response.status
+
+  response.headers.forEach((value, key) => {
+    res.setHeader(key, value)
+  })
+
+  if (!response.body) {
+    res.end()
+    return
+  }
+
+  const body = Readable.fromWeb(response.body as globalThis.ReadableStream)
+  await new Promise<void>((resolve, reject) => {
+    body.on("error", reject)
+    res.on("error", reject)
+    res.on("finish", resolve)
+    body.pipe(res)
+  })
+}
 
 // ─── Static helpers ──────────────────────────────────────────────────────────
 
@@ -426,117 +474,140 @@ export async function startServer(
   const webRoot   = opts.webRoot ?? join(ctx.directory, "..", "..", "web");
 
   let port = basePort;
-  let server: any = null;
+  let server: HttpServer | null = null;
   let lastErr: Error | null = null;
+
+  const handleRequest = async (req: Request): Promise<Response> => {
+    const url = new URL(req.url);
+    const path = url.pathname;
+    const rawFlag = url.searchParams.get("raw") === "1";
+
+    // ── SSE ──────────────────────────────────────────────────────────────
+    if (path === "/api/events") {
+      const stream = new ReadableStream({
+        start(ctrl) {
+          sseControllers.add(ctrl);
+          ctrl.enqueue(new TextEncoder().encode("event: server.connected\ndata: {}\n\n"));
+        },
+        cancel(ctrl) { sseControllers.delete(ctrl); },
+      });
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+        },
+      });
+    }
+
+    // ── Static ───────────────────────────────────────────────────────────
+    if (path === "/" || path === "/index.html" || path === "/style.css" || path === "/app.js") {
+      const sf = serveStatic(webRoot, path);
+      if (sf) return new Response(sf.body, { headers: { "Content-Type": sf.contentType } });
+      return errorResponse(`${path} not found`, 404);
+    }
+
+    // ── API: board ───────────────────────────────────────────────────────
+    if (path === "/api/board" && req.method === "GET") return apiGetBoard();
+
+    // ── API: create task ─────────────────────────────────────────────────
+    if (path === "/api/tasks" && req.method === "POST") return apiCreateTask(ctx, req);
+
+    // ── API: update / delete task ────────────────────────────────────────
+    const taskMatch = path.match(/^\/api\/tasks\/([^/]+)$/);
+    if (taskMatch) {
+      const [_, id] = taskMatch;
+      if (req.method === "PATCH") return apiUpdateTask(ctx, id, req);
+      if (req.method === "DELETE") return apiDeleteTask(ctx, id);
+    }
+
+    // ── API: start / abort task ──────────────────────────────────────────
+    const actionMatch = path.match(/^\/api\/tasks\/([^/]+)\/(start|abort)$/);
+    if (actionMatch) {
+      const [_, id, action] = actionMatch;
+      if (action === "start") return apiStartTask(ctx, id, req);
+      if (action === "abort") return apiAbortTask(ctx, id);
+    }
+
+    // ── API: session status ─────────────────────────────────────────────
+    const sessMatch = path.match(/^\/api\/sessions\/([^/]+)\/status$/);
+    if (sessMatch) {
+      const [_, sid] = sessMatch;
+      if (req.method === "GET") return apiSessionStatus(sid);
+    }
+
+    // ── Artifacts ────────────────────────────────────────────────────────
+    const cspHeaders = {
+      "Content-Security-Policy":
+        "default-src 'self'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'",
+    };
+
+    if (path === "/artifacts/board") {
+      try {
+        const { body, contentType } = await renderArtifact(join(KANBAN_DIR, "board.mdx"), rawFlag);
+        return new Response(body, { headers: { "Content-Type": contentType, ...cspHeaders } });
+      } catch (e: any) {
+        return errorResponse(e?.message ?? "Render error", 500);
+      }
+    }
+
+    const taskArtMatch = path.match(/^\/artifacts\/tasks\/([^/]+)$/);
+    if (taskArtMatch) {
+      const [_, id] = taskArtMatch;
+      try {
+        const { body, contentType } = await renderArtifact(join(KANBAN_DIR, "tasks", `${id}.mdx`), rawFlag);
+        return new Response(body, { headers: { "Content-Type": contentType, ...cspHeaders } });
+      } catch (e: any) {
+        return errorResponse(e?.message ?? "Render error", 500);
+      }
+    }
+
+    const sessArtMatch = path.match(/^\/artifacts\/sessions\/([^/]+)$/);
+    if (sessArtMatch) {
+      const [_, sid] = sessArtMatch;
+      try {
+        const { body, contentType } = await renderArtifact(join(KANBAN_DIR, "sessions", `${sid}.mdx`), rawFlag);
+        return new Response(body, { headers: { "Content-Type": contentType, ...cspHeaders } });
+      } catch (e: any) {
+        return errorResponse(e?.message ?? "Render error", 500);
+      }
+    }
+
+    return errorResponse("Not found", 404);
+  };
 
   for (let attempt = 0; attempt < maxTries; attempt++) {
     try {
-      server = Bun.serve({
-        hostname: host,
-        port,
-        async fetch(req, _server) {
-          const url = new URL(req.url);
-          const path = url.pathname;
-          const rawFlag = url.searchParams.get("raw") === "1";
+      server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+        try {
+          const request = await toRequest(req)
+          const response = await handleRequest(request)
+          await writeResponse(res, response)
+        } catch (e: any) {
+          const response = errorResponse(e?.message ?? "Internal server error", 500)
+          await writeResponse(res, response)
+        }
+      })
 
-          // ── SSE ──────────────────────────────────────────────────────────────
-          if (path === "/api/events") {
-            const stream = new ReadableStream({
-              start(ctrl) {
-                sseControllers.add(ctrl);
-                ctrl.enqueue(new TextEncoder().encode("event: server.connected\ndata: {}\n\n"));
-              },
-              cancel(ctrl) { sseControllers.delete(ctrl); },
-            });
-            return new Response(stream, {
-              headers: {
-                "Content-Type": "text/event-stream",
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-              },
-            });
-          }
+      await new Promise<void>((resolve, reject) => {
+        const onError = (err: Error & { code?: string }) => {
+          server?.off("listening", onListening)
+          reject(err)
+        }
+        const onListening = () => {
+          server?.off("error", onError)
+          resolve()
+        }
 
-          // ── Static ───────────────────────────────────────────────────────────
-          if (path === "/" || path === "/index.html" || path === "/style.css" || path === "/app.js") {
-            const sf = serveStatic(webRoot, path);
-            if (sf) return new Response(sf.body, { headers: { "Content-Type": sf.contentType } });
-            return errorResponse(`${path} not found`, 404);
-          }
-
-          // ── API: board ───────────────────────────────────────────────────────
-          if (path === "/api/board" && req.method === "GET") return apiGetBoard();
-
-          // ── API: create task ─────────────────────────────────────────────────
-          if (path === "/api/tasks" && req.method === "POST") return apiCreateTask(ctx, req);
-
-          // ── API: update / delete task ────────────────────────────────────────
-          const taskMatch = path.match(/^\/api\/tasks\/([^/]+)$/);
-          if (taskMatch) {
-            const [_, id] = taskMatch;
-            if (req.method === "PATCH") return apiUpdateTask(ctx, id, req);
-            if (req.method === "DELETE") return apiDeleteTask(ctx, id);
-          }
-
-          // ── API: start / abort task ──────────────────────────────────────────
-          const actionMatch = path.match(/^\/api\/tasks\/([^/]+)\/(start|abort)$/);
-          if (actionMatch) {
-            const [_, id, action] = actionMatch;
-            if (action === "start") return apiStartTask(ctx, id, req);
-            if (action === "abort") return apiAbortTask(ctx, id);
-          }
-
-          // ── API: session status ─────────────────────────────────────────────
-          const sessMatch = path.match(/^\/api\/sessions\/([^/]+)\/status$/);
-          if (sessMatch) {
-            const [_, sid] = sessMatch;
-            if (req.method === "GET") return apiSessionStatus(sid);
-          }
-
-          // ── Artifacts ────────────────────────────────────────────────────────
-          const cspHeaders = {
-            "Content-Security-Policy":
-              "default-src 'self'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'",
-          };
-
-          if (path === "/artifacts/board") {
-            try {
-              const { body, contentType } = await renderArtifact(join(KANBAN_DIR, "board.mdx"), rawFlag);
-              return new Response(body, { headers: { "Content-Type": contentType, ...cspHeaders } });
-            } catch (e: any) {
-              return errorResponse(e?.message ?? "Render error", 500);
-            }
-          }
-
-          const taskArtMatch = path.match(/^\/artifacts\/tasks\/([^/]+)$/);
-          if (taskArtMatch) {
-            const [_, id] = taskArtMatch;
-            try {
-              const { body, contentType } = await renderArtifact(join(KANBAN_DIR, "tasks", `${id}.mdx`), rawFlag);
-              return new Response(body, { headers: { "Content-Type": contentType, ...cspHeaders } });
-            } catch (e: any) {
-              return errorResponse(e?.message ?? "Render error", 500);
-            }
-          }
-
-          const sessArtMatch = path.match(/^\/artifacts\/sessions\/([^/]+)$/);
-          if (sessArtMatch) {
-            const [_, sid] = sessArtMatch;
-            try {
-              const { body, contentType } = await renderArtifact(join(KANBAN_DIR, "sessions", `${sid}.mdx`), rawFlag);
-              return new Response(body, { headers: { "Content-Type": contentType, ...cspHeaders } });
-            } catch (e: any) {
-              return errorResponse(e?.message ?? "Render error", 500);
-            }
-          }
-
-          return errorResponse("Not found", 404);
-        },
-      });
+        server?.once("error", onError)
+        server?.once("listening", onListening)
+        server?.listen(port, host)
+      })
       break; // success
     } catch (e: any) {
       if (e?.code === "EADDRINUSE" || String(e?.message).includes("EADDRINUSE")) {
         lastErr = e;
+        server?.close()
         port++;
         continue;
       }
@@ -552,7 +623,9 @@ export async function startServer(
     url: `http://${host}:${port}`,
     broadcast,
     async stop() {
-      server.stop();
+      await new Promise<void>((resolve, reject) => {
+        server?.close((err) => (err ? reject(err) : resolve()))
+      })
       runningServer = null;
     },
   };

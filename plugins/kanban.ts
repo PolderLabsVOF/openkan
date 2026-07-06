@@ -29,7 +29,7 @@ export const KanbanPlugin: Plugin = async ({ project, client, $, directory }) =>
   await initBoard(ctx);
 
   // Start HTTP server (idempotent — returns existing if already started)
-  const webRoot = join(import.meta.dir, "..", "..", "web");
+  const webRoot = join(import.meta.dir, "..", "web");
   await startServer(ctx, { webRoot });
 
   // Subscribe to opencode events — idempotent via module-level guard in startServer

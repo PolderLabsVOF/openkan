@@ -5,14 +5,13 @@
   "type": "module",
   "private": true,
   "dependencies": {
-    "@opencode-ai/plugin": "latest",
-    "@opencode-ai/sdk": "latest",
+    "@opencode-ai/plugin": "1.17.13",
     "marked": "^14.0.0",
-    "sanitize-html": "^2.13.0",
-    "nanoid": "^5.0.0"
+    "nanoid": "^5.0.0",
+    "sanitize-html": "^2.13.0"
   },
   "devDependencies": {
-    "@types/sanitize-html": "^2.13.0",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "@types/sanitize-html": "^2.13.0"
   }
 }
