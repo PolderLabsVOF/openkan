@@ -1,0 +1,18 @@
+{
+  "name": "openkan",
+  "version": "0.1.0",
+  "description": "MDX-kanban task board plugin for OpenCode",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@opencode-ai/plugin": "latest",
+    "@opencode-ai/sdk": "latest",
+    "marked": "^14.0.0",
+    "sanitize-html": "^2.13.0",
+    "nanoid": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/sanitize-html": "^2.13.0",
+    "@types/node": "^22.0.0"
+  }
+}

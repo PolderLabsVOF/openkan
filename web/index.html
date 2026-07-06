@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>OpenKan</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo" aria-hidden="true"></span>
+        <h1>OpenKan</h1>
+      </div>
+      <div class="topbar-right">
+        <span id="status-pill" class="pill pill-disconnected" role="status" aria-live="polite">
+          <span class="pill-dot" aria-hidden="true"></span>
+          <span id="status-text">Disconnected</span>
+        </span>
+        <button id="new-task-btn" class="btn btn-primary" type="button">+ New Task</button>
+      </div>
+    </header>
+
+    <main id="board" class="board" aria-label="Kanban board">
+      <!-- Columns are rendered by app.js -->
+    </main>
+
+    <!-- New Task Modal -->
+    <div id="modal-backdrop" class="modal-backdrop" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <header class="modal-header">
+          <h2 id="modal-title">New Task</h2>
+          <button class="btn-icon" type="button" data-close-modal aria-label="Close">&times;</button>
+        </header>
+        <form id="new-task-form" class="modal-body">
+          <label class="field">
+            <span>Title</span>
+            <input name="title" type="text" required maxlength="200" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>Description</span>
+            <textarea name="description" rows="5" placeholder="Prompt for the agent. Markdown is fine."></textarea>
+          </label>
+          <div class="field-row">
+            <label class="field">
+              <span>Column</span>
+              <select name="column">
+                <option value="backlog">Backlog</option>
+                <option value="todo" selected>To Do</option>
+                <option value="doing">In Progress</option>
+                <option value="review">Review</option>
+                <option value="done">Done</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Agent</span>
+              <input name="agent" type="text" placeholder="e.g. build" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>Model</span>
+              <input name="model" type="text" placeholder="provider/model" autocomplete="off" />
+            </label>
+          </div>
+          <footer class="modal-footer">
+            <button type="button" class="btn" data-close-modal>Cancel</button>
+            <button type="submit" class="btn btn-primary">Create Task</button>
+          </footer>
+        </form>
+      </div>
+    </div>
+
+    <!-- Per-task action menu (positioned dynamically) -->
+    <div id="action-menu" class="action-menu" hidden role="menu"></div>
+
+    <footer class="footer">
+      <span>openkan v0.1</span>
+    </footer>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>
