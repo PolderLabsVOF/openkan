@@ -136,7 +136,12 @@
           </main>
         </div>
 
-        <!-- New Task Modal -->
+        <!-- New Task Modal — Title + Project path (with Browse) + Description
+             + Column / Agent / Model. Opened from the + New Task button in
+             the topbar. Lives inside <main class="dashboard"> which is fine:
+             the New Task button isn't reachable while the task view is open
+             (the topbar is overlaid by the task view), so the modal-collapse
+             bug doesn't apply here. -->
         <div id="modal-backdrop" class="modal-backdrop" hidden>
           <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
             <header class="modal-header">
@@ -149,8 +154,17 @@
                 <input name="title" type="text" required maxlength="200" autocomplete="off" />
               </label>
               <label class="field">
+                <span>Project path</span>
+                <div class="field-row-with-button">
+                  <input name="root" type="text" autocomplete="off"
+                         placeholder="/abs/path/to/repo (defaults to active project)" />
+                  <button type="button" id="new-task-browse-btn" class="btn btn-sm"
+                          aria-label="Browse for a project folder">📁 Browse…</button>
+                </div>
+              </label>
+              <label class="field">
                 <span>Description</span>
-                <textarea name="description" rows="5" placeholder="Prompt for the agent. Markdown is fine."></textarea>
+                <textarea name="description" rows="3" placeholder="Prompt for the agent. Markdown is fine."></textarea>
               </label>
               <div class="field-row">
                 <label class="field">
@@ -265,53 +279,66 @@
         </div>
       </section>
 
-      <!-- ─── Add Project modal (used by the project switcher) ─────────── -->
-      <div id="project-backdrop" class="modal-backdrop" hidden>
-        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="project-title">
-          <header class="modal-header">
-            <h2 id="project-title">Add project</h2>
-            <button class="btn-icon" type="button" data-close-project aria-label="Close">&times;</button>
-          </header>
-          <form id="project-form" class="modal-body">
-            <label class="field">
-              <span>Name</span>
-              <input name="name" type="text" required maxlength="80" autocomplete="off" />
-            </label>
-            <label class="field">
-              <span>Path</span>
+      <!-- ─── Add Project + Settings modals are top-level (below) ─────────
+           They used to live inside <main class="dashboard">. When a task
+           view opens, the dashboard gets display:none and the modals
+           collapsed to 0×0. They're now direct children of <body> so
+           they stay reachable regardless of which view is on top. -->
+    </main>
+
+    <!-- ─── Add Project modal — top-level so it's reachable while the ────
+           task view is open (when .dashboard collapses to display:none).
+           Originally nested inside <main class="dashboard">. -->
+    <div id="project-backdrop" class="modal-backdrop" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="project-title">
+        <header class="modal-header">
+          <h2 id="project-title">Add project</h2>
+          <button class="btn-icon" type="button" data-close-project aria-label="Close">&times;</button>
+        </header>
+        <form id="project-form" class="modal-body">
+          <label class="field">
+            <span>Name</span>
+            <input name="name" type="text" required maxlength="80" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>Path</span>
+            <div class="field-row-with-button">
               <input name="root" type="text" required autocomplete="off"
                      placeholder="/absolute/path/to/project" />
-            </label>
-            <footer class="modal-footer">
-              <button type="button" class="btn" data-close-project>Cancel</button>
-              <button type="submit" class="btn btn-primary">Add project</button>
-            </footer>
-          </form>
-        </div>
-      </div>
-
-      <!-- ─── Settings dialog (single instance, reused across opens) ──── -->
-      <div id="settings-backdrop" class="modal-backdrop" hidden>
-        <div class="modal settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-          <header class="modal-header">
-            <h2 id="settings-title">Settings</h2>
-            <button class="btn-icon" type="button" data-close-settings aria-label="Close">&times;</button>
-          </header>
-          <div class="settings-layout">
-            <nav id="settings-nav" class="settings-nav" aria-label="Settings sections"></nav>
-            <div class="settings-pane">
-              <div class="modal-body" id="settings-body">
-                <!-- Populated by settings.js on open. -->
-              </div>
-              <footer class="modal-footer" id="settings-footer">
-                <button type="button" class="btn" data-close-settings>Cancel</button>
-                <button type="button" id="settings-save" class="btn btn-primary">Save</button>
-              </footer>
+              <button type="button" id="project-browse-btn" class="btn btn-sm"
+                      aria-label="Browse for a project folder">📁 Browse…</button>
             </div>
+          </label>
+          <footer class="modal-footer">
+            <button type="button" class="btn" data-close-project>Cancel</button>
+            <button type="submit" class="btn btn-primary">Add project</button>
+          </footer>
+        </form>
+      </div>
+    </div>
+
+    <!-- ─── Settings dialog — top-level for the same reason as the Add ──
+           Project modal above. Owned by web/settings.js. -->
+    <div id="settings-backdrop" class="modal-backdrop" hidden>
+      <div class="modal settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <header class="modal-header">
+          <h2 id="settings-title">Settings</h2>
+          <button class="btn-icon" type="button" data-close-settings aria-label="Close">&times;</button>
+        </header>
+        <div class="settings-layout">
+          <nav id="settings-nav" class="settings-nav" aria-label="Settings sections"></nav>
+          <div class="settings-pane">
+            <div class="modal-body" id="settings-body">
+              <!-- Populated by settings.js on open. -->
+            </div>
+            <footer class="modal-footer" id="settings-footer">
+              <button type="button" class="btn" data-close-settings>Cancel</button>
+              <button type="button" id="settings-save" class="btn btn-primary">Save</button>
+            </footer>
           </div>
         </div>
       </div>
-    </main>
+    </div>
 
     <!-- ─── Template help modal (single instance, reused) ──────────────── -->
     <div id="template-backdrop" class="modal-backdrop" hidden>
@@ -359,6 +386,11 @@
          subscribe to "palette.open" / "palette.close" / "palette.isOpen". -->
     <script src="keyboard.js" defer></script>
     <script src="command-palette.js" defer></script>
+    <!-- path-picker.js exposes window.OpenKanPathPicker. It registers a
+         command-palette action and a Cmd/Ctrl+Shift+O shortcut on boot, so it
+         must load after command-palette.js but before app.js (which wires the
+         Browse button in the Add Project modal). -->
+    <script src="path-picker.js" defer></script>
     <script src="app.js" defer></script>
   </body>
 </html>

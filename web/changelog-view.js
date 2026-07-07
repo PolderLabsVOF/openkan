@@ -196,10 +196,30 @@
     return row;
   }
 
+  // Module-scope helper: detach and forget the current "Loading…" placeholder
+  // so the next render starts clean. Both `loadMore()` and `resetAndReload()`
+  // call this before appending a new one, and `loadMore()` also calls it on
+  // success so the spinner disappears once we have events to show.
+  function removeLoading() {
+    if (state.loadingMsg && state.loadingMsg.parentNode) {
+      state.loadingMsg.parentNode.removeChild(state.loadingMsg);
+    }
+    state.loadingMsg = null;
+  }
+
   function resetAndReload() {
     state.events = [];
     state.offset = 0;
     state.hasMore = true;
+    // CRITICAL: reset the timeline's count so the next render starts at 0.
+    // Without this, `state.timeline.dataset.count` still holds the previous
+    // render's count (e.g. 50) and the render loop at the bottom of
+    // `loadMore()` does `state.events.slice(rendered)` with a `rendered` of
+    // 50 against a freshly-empty `state.events` — yielding zero entries.
+    if (state.timeline) state.timeline.dataset.count = "0";
+    // Drop any in-flight "Loading…" element (on either rootEl or timeline)
+    // before we add a fresh one, otherwise we accumulate stale placeholders.
+    removeLoading();
     state.timeline.innerHTML = "";
     state.loadingMsg = el("div", "changelog-empty", { text: "Loading…" });
     state.timeline.append(state.loadingMsg);
@@ -229,10 +249,13 @@
 
       if (reset) {
         state.events = filteredEvents;
-        if (state.loadingMsg?.parentNode) state.loadingMsg.remove();
+        removeLoading();
         state.timeline.innerHTML = "";
       } else {
         state.events.push(...filteredEvents);
+        // Drop the bottom-of-timeline "Loading more…" placeholder once we
+        // actually have new entries to show.
+        removeLoading();
       }
       state.offset += events.length;
       state.hasMore = state.offset < total && events.length > 0;
@@ -382,7 +405,14 @@
     state.rootEl.append(buildFilterRow());
     state.timeline = el("div", "changelog-timeline");
     state.rootEl.append(state.timeline);
-    state.rootEl.append(state.loadingMsg || el("div", "changelog-empty", { text: "Loading…" }));
+    // Track the loading message in module-scope state so a successful
+    // `loadMore()` (or the next `resetAndReload()`) can find and remove it.
+    // Previously this element was orphaned at the bottom of rootEl because
+    // `loadMore()` only cleaned up the timeline-scoped loadingMsg.
+    if (!state.loadingMsg || !state.loadingMsg.parentNode) {
+      state.loadingMsg = el("div", "changelog-empty", { text: "Loading…" });
+    }
+    state.rootEl.append(state.loadingMsg);
   }
 
   function mount(rootEl) {

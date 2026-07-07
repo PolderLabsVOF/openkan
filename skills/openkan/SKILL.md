@@ -384,6 +384,53 @@ Examples of auto-derivation:
 
 The filter bar at the top of the board lets you filter by category and tag chips.
 
+## Source link on imported tasks
+
+When a task is created via `kanban_import` (the checkbox scanner), the
+task records its origin:
+
+```ts
+{
+  source: { path: "docs/roadmap.mdx", line: 42, slug: "auto-kanban-parser" },
+  sourceHash: "abc123...",        // sha256 of the source file at import time
+  stale: false,                  // becomes true when source file changes
+  lastSourceCheck: "2026-07-06T..."
+}
+```
+
+The task MDX renders a "📄 Source:" line at the top; the web UI shows a
+clickable chip. The chip links to the source file with the line number
+(when the line number is supported by the file format — most viewers
+support it via `file:line` in the URL).
+
+## Drift detection
+
+`fs.watch` on the project's `.openkan/` re-checks each task's
+`sourceHash` whenever a file under that path changes. If the hash
+diverges, the task is marked `stale: true` and a `task.updated` event
+broadcasts to the live UI. A periodic 60-second sweep re-checks
+all tasks to catch missed events.
+
+The web UI shows a "Stale" badge on stale cards and a "Re-derive tags"
+button in the task view. Re-deriving re-runs `extractMetadata` on the
+new content and clears the flag if the hash matches.
+
+## Sanity check
+
+`npm run check` validates the active project's `.openkan/` state.
+Use it in CI or as a pre-commit hook to catch:
+
+- **Duplicate task IDs** — two board entries with the same `id`.
+- **Missing source paths** — a task with `source.path` whose file
+  no longer exists on disk.
+- **Stale tasks in Done** — a `done` task with `stale: true` means
+  it shipped from a source file that has since changed. Re-derive or
+  re-import.
+- **Orphaned per-task directories** — a `tasks/<id>/` on disk with no
+  matching board entry (data wasn't cleaned up after a delete).
+
+Exit code 0 on clean; non-zero on any error. Warnings don't fail the run.
+
 ## The dashboard (M10)
 
 The localhost UI at `http://127.0.0.1:7777/` has three tabs:

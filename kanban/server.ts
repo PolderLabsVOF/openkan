@@ -1,6 +1,7 @@
 // OpenKan — HTTP API server.
 
 import { readFileSync, existsSync, statSync, writeFileSync, readdirSync, unlinkSync } from "fs";
+import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import { join, extname } from "path";
@@ -56,7 +57,8 @@ import type { Priority, Effort, Category } from "./tags.ts";
 import { search, type SearchOptions } from "./search.ts";
 import { applyBulk, type BulkOperation } from "./bulk.ts";
 import { TASK_MDX_TEMPLATE, TEMPLATE_PARSE_HINTS } from "./template.ts";
-import { watch, type WatchEvent } from "./watcher.ts";
+import { watch, type WatchEvent, sourcePathOfTask } from "./watcher.ts";
+import { listFs, readHome, parents, isDenyListed, realPathIfAllowed } from "./fs.ts";
 
 // ─── Module-level server state ────────────────────────────────────────────────
 
@@ -251,6 +253,57 @@ function broadcast(event: string, data: unknown): void {
   }
 }
 
+// ─── Drift detection ───────────────────────────────────────────────────────────
+
+/**
+ * Returns true if the source file for `task` has changed since import.
+ * A missing file is considered stale.
+ */
+async function checkSourceDrift(task: Task, kanbanDir: string): Promise<boolean> {
+  if (!task.source) return false;
+  const absPath = join(kanbanDir, "..", task.source.path);
+  if (!existsSync(absPath)) return true; // file gone = stale
+  let content: string;
+  try { content = readFileSync(absPath, "utf-8"); } catch { return false; }
+  const newHash = createHash("sha256").update(content).digest("hex").slice(0, 16);
+  return newHash !== task.sourceHash;
+}
+
+/**
+ * Re-check stale status for all tasks that have a source file.
+ * Updates the board and broadcasts task.updated events for any changed tasks.
+ * Debounced via the `sweepLock` promise chain.
+ */
+let _sweepLock = Promise.resolve();
+async function sweepSourceDrift(kanbanDir: string): Promise<void> {
+  _sweepLock = _sweepLock.then(async () => {
+    const board = await getBoard();
+    const updates: Task[] = [];
+    for (const task of board.tasks) {
+      if (!task.source) continue;
+      const isStale = await checkSourceDrift(task, kanbanDir);
+      if (isStale !== task.stale) {
+        task.stale = isStale;
+        task.lastSourceCheck = nowIso();
+        updates.push(task);
+      }
+    }
+    if (updates.length > 0) {
+      await withWrite(async (b) => {
+        for (const updated of updates) {
+          const t = b.tasks.find(t => t.id === updated.id);
+          if (t) { t.stale = updated.stale; t.lastSourceCheck = updated.lastSourceCheck; }
+        }
+      });
+      for (const updated of updates) {
+        broadcast("task.updated", updated);
+        await writeTaskMdx(updated, kanbanDir, await getBoard());
+      }
+    }
+  });
+  await _sweepLock;
+}
+
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
 async function toRequest(req: IncomingMessage): Promise<Request> {
@@ -292,8 +345,9 @@ function serveStatic(root: string, urlPath: string): { body: Buffer; contentType
   return { body: readFileSync(filePath), contentType: ctMap[ext] ?? "application/octet-stream" };
 }
 
-function jsonResponse(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
+function jsonResponse(data: unknown, status = 200, extraHeaders?: Record<string, string>): Response {
+  const headers = { "Content-Type": "application/json", ...extraHeaders };
+  return new Response(JSON.stringify(data), { status, headers });
 }
 
 function errorResponse(message: string, status = 400): Response {
@@ -470,6 +524,7 @@ export async function apiUpdateTask(_ctx: BoardContext, taskId: string, req: Req
     agent?: string; model?: string; state?: TaskState; order?: number;
     tags?: string[]; category?: Category;
     archived?: boolean;
+    stale?: boolean;        // set or clear the stale flag
     assignees?: string[]; // add-only merge: union of existing + new
     parentId?: string | null; // null to un-parent; string to re-parent
   }
@@ -531,6 +586,7 @@ export async function apiUpdateTask(_ctx: BoardContext, taskId: string, req: Req
     if (patch.state !== undefined) task.state = patch.state;
     if (patch.order !== undefined) task.order = patch.order;
     if (patch.archived !== undefined) task.archived = patch.archived;
+    if (patch.stale !== undefined) task.stale = patch.stale;
     // Merge assignees (add-only, not destructive)
     if (patch.assignees !== undefined) {
       task.assignees = [...new Set([...task.assignees, ...patch.assignees])];
@@ -587,6 +643,59 @@ export async function apiUpdateTask(_ctx: BoardContext, taskId: string, req: Req
     });
   }
   return jsonResponse(updated);
+}
+
+// ─── Stale recheck endpoint ─────────────────────────────────────────────────
+
+/**
+ * POST /api/tasks/recheck-stale
+ * Body: { taskId: string }
+ * Returns: { stale: boolean, sourceHash: string }
+ *
+ * Checks whether the source file for a task has changed since import.
+ */
+export async function apiRecheckStale(_ctx: BoardContext, req: Request): Promise<Response> {
+  interface RecheckBody { taskId: string; }
+  let body: RecheckBody;
+  try { body = await req.json(); } catch { return errorResponse("Invalid JSON"); }
+  if (!body.taskId) return errorResponse("taskId is required", 422);
+
+  const board = await getBoard();
+  const task = board.tasks.find(t => t.id === body.taskId);
+  if (!task) return errorResponse("Task not found", 404);
+
+  // No source → never stale
+  if (!task.source) {
+    return jsonResponse({ stale: false, sourceHash: "" });
+  }
+
+  const absPath = join(KANBAN_DIR, "..", task.source.path);
+  let content: string;
+  try { content = readFileSync(absPath, "utf-8"); } catch { return errorResponse("Source file not readable", 422); }
+
+  const newHash = createHash("sha256").update(content).digest("hex");
+  const isStale = newHash !== task.sourceHash;
+
+  if (isStale !== task.stale || task.lastSourceCheck === undefined) {
+    task.stale = isStale;
+    task.lastSourceCheck = nowIso();
+    if (isStale) task.sourceHash = newHash; // update hash so subsequent recheck is consistent
+    selfWriteUntil = Date.now() + 250;
+    await withWrite(async (b) => {
+      const t = b.tasks.find(t => t.id === body.taskId);
+      if (t) {
+        t.stale = isStale;
+        t.lastSourceCheck = task.lastSourceCheck;
+        if (isStale) t.sourceHash = newHash;
+      }
+    });
+    const updated = (await getBoard()).tasks.find(t => t.id === body.taskId)!;
+    await writeTaskMdx(updated, KANBAN_DIR, await getBoard());
+    broadcast("task.updated", updated);
+    return jsonResponse({ stale: isStale, sourceHash: newHash });
+  }
+
+  return jsonResponse({ stale: isStale, sourceHash: task.sourceHash ?? newHash });
 }
 
 export async function apiDeleteTask(_ctx: BoardContext, taskId: string): Promise<Response> {
@@ -1074,8 +1183,9 @@ export async function apiGetChangelog(req: Request): Promise<Response> {
   const limit = parseInt(url.searchParams.get("limit") ?? "200", 10);
   const offset = parseInt(url.searchParams.get("offset") ?? "0", 10);
   const completedOnly = url.searchParams.get("completedOnly") === "true" || url.searchParams.get("completedOnly") === "1";
-  const result = readEvents(KANBAN_DIR, { since, until, kind, taskId, author, limit, offset, completedOnly, kanbanDirForCompletedOnly: KANBAN_DIR });
-  return jsonResponse(result);
+  const reset = url.searchParams.get("reset") === "true";
+  const result = readEvents(KANBAN_DIR, { since, until, kind, taskId, author, limit, offset, completedOnly, reset, kanbanDirForCompletedOnly: KANBAN_DIR });
+  return jsonResponse(result, 200, { "Cache-Control": "no-cache, no-transform" });
 }
 
 async function apiGetChangelogSummary(req: Request): Promise<Response> {
@@ -1733,6 +1843,67 @@ async function apiGetDoc(req: Request, path: string): Promise<Response> {
   }
 }
 
+// ─── File-system browser endpoints ─────────────────────────────────────────────
+
+/**
+ * GET /api/fs?path=/abs/path&depth=2&includeHidden=0
+ * Returns FsEntry for that path with children up to depth.
+ * 400 if path is outside allowed roots.
+ */
+async function apiFs(req: Request): Promise<Response> {
+  const url = new URL(req.url);
+  const rawPath = url.searchParams.get("path");
+  if (!rawPath) return errorResponse("path is required", 400);
+
+  // Must be absolute
+  if (!rawPath.startsWith("/")) return errorResponse("path must be absolute", 400);
+
+  // Deny-list check
+  if (isDenyListed(rawPath)) return errorResponse("Access denied: deny-listed path", 403);
+
+  // Symlink check: canonicalize and verify allowed
+  const { realPath, allowed } = realPathIfAllowed(rawPath);
+  if (!allowed) return errorResponse("Access denied: symlink resolves outside allowed tree", 403);
+
+  // Cap depth at 5, maxEntries at 1000
+  const depth = Math.min(parseInt(url.searchParams.get("depth") ?? "1", 10), 5);
+  const includeHidden = url.searchParams.get("includeHidden") === "1" || url.searchParams.get("includeHidden") === "true";
+  const maxEntries = Math.min(parseInt(url.searchParams.get("maxEntries") ?? "500", 10), 1000);
+
+  const result = await listFs({ root: realPath, depth, includeHidden, followSymlinks: false, maxEntries });
+  return jsonResponse(result);
+}
+
+/**
+ * GET /api/home
+ * Returns { home, entries } for the user's home directory.
+ */
+async function apiHome(): Promise<Response> {
+  const result = await readHome();
+  return jsonResponse(result);
+}
+
+/**
+ * GET /api/parents?path=/abs/path&maxDepth=8
+ * Returns array of FsEntry for ancestor directories (each depth 0, no children).
+ * Used for breadcrumbs.
+ */
+async function apiParents(req: Request): Promise<Response> {
+  const url = new URL(req.url);
+  const rawPath = url.searchParams.get("path");
+  if (!rawPath) return errorResponse("path is required", 400);
+
+  if (!rawPath.startsWith("/")) return errorResponse("path must be absolute", 400);
+  if (isDenyListed(rawPath)) return errorResponse("Access denied: deny-listed path", 403);
+
+  const { allowed } = realPathIfAllowed(rawPath);
+  if (!allowed) return errorResponse("Access denied: symlink resolves outside allowed tree", 403);
+
+  const maxDepth = Math.min(parseInt(url.searchParams.get("maxDepth") ?? "8", 10), 8);
+  const result = parents(rawPath, maxDepth);
+  return jsonResponse(result);
+}
+
 // ─── Event handler ───────────────────────────────────────────────────────────
 
 export async function handleEvent(ctx: BoardContext, event: any): Promise<void> {
@@ -2023,40 +2194,64 @@ export async function startOrAttach(
     }
   });
 
-  runningServer = {
-    port,
-    hostname,
-    url: `http://${hostname}:${port}`,
-    pid,
-    isPrimary: true,
-    broadcast,
-    async stop() {
-      await new Promise<void>((resolve, reject) => {
-        server.close((err) => (err ? reject(err) : resolve()));
-      });
-      deletePidFile(dir);
-      if (lockFd !== null) {
-        try { closeSync(lockFd); } catch { /* ignore */ }
-        try { unlinkSync(lockPath); } catch { /* ignore */ }
-      }
-      watcherHandle?.close();
-      watcherHandle = null;
-      runningServer = null;
-    },
-  };
+    runningServer = {
+      port,
+      hostname,
+      url: `http://${hostname}:${port}`,
+      pid,
+      isPrimary: true,
+      broadcast,
+      async stop() {
+        clearInterval(driftSweepInterval);
+        await new Promise<void>((resolve, reject) => {
+          server.close((err) => (err ? reject(err) : resolve()));
+        });
+        deletePidFile(dir);
+        if (lockFd !== null) {
+          try { closeSync(lockFd); } catch { /* ignore */ }
+          try { unlinkSync(lockPath); } catch { /* ignore */ }
+        }
+        watcherHandle?.close();
+        watcherHandle = null;
+        runningServer = null;
+      },
+    };
 
   // ─── File watcher (SSE broadcaster) ───────────────────────────────────────
+  // Watch the project root so we also catch changes to source files (e.g. docs/*.mdx)
+  // that are tracked as task sources. Events from .openkan subdirs are filtered out
+  // to avoid the existing board.json / task.mdX event spam.
+  const projectRoot = join(dir, "..");
   watcherHandle = watch({
-    root: dir,
-    ignore: (p) => /server\.(lock|log|pid)$/.test(p) || p.endsWith(".tmp"),
+    root: projectRoot,
+    ignore: (p) =>
+      /server\.(lock|log|pid)$/.test(p) ||
+      p.endsWith(".tmp") ||
+      p.replace(/\\/g, "/").includes("/.openkan/"),
   });
+
+  // Periodic drift sweep — every 60 s, re-check all source hashes.
+  const driftSweepInterval = setInterval(() => {
+    sweepSourceDrift(dir).catch(() => {/* ignore */});
+  }, 60_000);
 
   (async () => {
     for await (const ev of watcherHandle.events) {
       // Skip events caused by server's own writes.
       if (Date.now() < selfWriteUntil) continue;
 
-      if (ev.path.endsWith("board.json")) {
+      // Check if this event matches any task's source.path → drift detection
+      let driftedTaskId: string | null = null;
+      {
+        const board = await getBoard();
+        for (const task of board.tasks) {
+          if (!task.source) continue;
+          const srcAbs = sourcePathOfTask(task, dir);
+          if (srcAbs === ev.absPath) { driftedTaskId = task.id; break; }
+        }
+      }
+
+      if (ev.path.endsWith("board.json") || ev.path.replace(/\\/g, "/").endsWith(".openkan/board.json")) {
         broadcast("board.changed", { path: ev.path });
       } else if (ev.path.endsWith("changelog.jsonl")) {
         broadcast("changelog.appended", { path: ev.path });
@@ -2075,6 +2270,23 @@ export async function startOrAttach(
       } else if (ev.path.match(/\/tasks\/([^/]+)\/images\//)) {
         const taskId = ev.path.match(/\/tasks\/([^/]+)\/images\//)?.[1];
         if (taskId) broadcast("task.image.changed", { taskId });
+      } else if (driftedTaskId) {
+        // A tracked source file changed — run drift check for the affected task
+        const task = (await getBoard()).tasks.find(t => t.id === driftedTaskId);
+        if (task) {
+          const isStale = await checkSourceDrift(task, dir);
+          if (isStale !== task.stale) {
+            task.stale = isStale;
+            task.lastSourceCheck = nowIso();
+            await withWrite(async (b) => {
+              const t2 = b.tasks.find(t => t.id === driftedTaskId);
+              if (t2) { t2.stale = isStale; t2.lastSourceCheck = nowIso(); }
+            });
+            broadcast("task.updated", task);
+            await writeTaskMdx(task, dir, await getBoard());
+          }
+        }
+        broadcast("task.source-changed", { taskId: driftedTaskId, path: ev.path });
       } else {
         // Generic file-change event for any other watched files.
         broadcast("file.changed", { path: ev.path });
@@ -2236,6 +2448,11 @@ async function handleRequest(req: Request): Promise<Response> {
     return apiAskInput({ directory: KANBAN_DIR, client: null as any, log: async () => {} }, id, req);
   }
 
+  // POST /api/tasks/recheck-stale
+  if (path === "/api/tasks/recheck-stale" && req.method === "POST") {
+    return apiRecheckStale({ directory: KANBAN_DIR, client: null as any, log: async () => {} }, req);
+  }
+
   // /api/tasks/:id/respond
   const respondMatch = path.match(/^\/api\/tasks\/([^/]+)\/respond$/);
   if (respondMatch && req.method === "POST") {
@@ -2323,6 +2540,15 @@ async function handleRequest(req: Request): Promise<Response> {
   if (docFileMatch && req.method === "GET") {
     return apiGetDoc(req, docFileMatch[1]);
   }
+
+  // GET /api/fs — browse filesystem
+  if (path === "/api/fs" && req.method === "GET") return apiFs(req);
+
+  // GET /api/home — user's home directory
+  if (path === "/api/home" && req.method === "GET") return apiHome();
+
+  // GET /api/parents — ancestor directories for breadcrumbs
+  if (path === "/api/parents" && req.method === "GET") return apiParents(req);
 
   // /api/tasks/:id/mdx-rendered
   const mdxRenderedMatch = path.match(/^\/api\/tasks\/([^/]+)\/mdx-rendered$/);

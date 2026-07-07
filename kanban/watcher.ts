@@ -297,3 +297,14 @@ export function watch(options: WatchOptions): WatcherHandle {
     stats,
   };
 }
+
+/**
+ * Return the absolute path of a task's source file, or null if the task has no source.
+ * The returned path is suitable for comparison against WatchEvent.absPath.
+ */
+export function sourcePathOfTask(
+  t: { source?: { path: string; line: number; slug: string } },
+  kanbanDir: string,
+): string | null {
+  return t.source?.path ? join(kanbanDir, "..", t.source.path) : null;
+}

@@ -614,8 +614,10 @@
     }
     attachSortPopover();
     if (saveBtn) {
-      saveBtn.addEventListener("click", () => {
-        const name = prompt("Name for this saved filter:", "");
+      saveBtn.addEventListener("click", async () => {
+        // `window.prompt` is blocked in headless Chrome and some embedded
+        // contexts, so route through the custom inline modal in app.js.
+        const name = await promptForName("Save filter as:", "");
         if (!name) return;
         if (saveCurrentFilter(name)) {
           window.OpenKanSettings?.showToast?.(`Saved filter "${name}"`);
@@ -861,6 +863,64 @@
     card.append(el("div", "card-desc", { text: t.description || "" }));
     const tagsRow = makeCardTags(t);
     if (tagsRow) card.append(tagsRow);
+    // Source link chip (M2 — frontend). When the task was imported from a
+    // markdown file we surface the path:line so the user can click straight
+    // through to the source. If the file no longer exists on disk we show
+    // a "deleted" state instead of a dead link.
+    if (t.source && t.source.path) {
+      const path = String(t.source.path);
+      const line = t.source.line ?? "?";
+      const chip = el("a", "card-source", {
+        href: `/${path}`,
+        target: "_blank",
+        rel: "noopener",
+        title: `Imported from ${path}:${line}`,
+      });
+      chip.append(
+        el("span", "card-source-icon", { text: "📄", "aria-hidden": "true" }),
+        el("span", "card-source-text", { text: `${path}:${line}` }),
+      );
+      // Stop the click from bubbling up to the card body — we don't want
+      // the chip to also open the task view.
+      chip.addEventListener("click", (e) => e.stopPropagation());
+      // Lazy "deleted" detection: HEAD-style check on hover. If the fetch
+      // resolves 404 we flip the chip into the deleted state so the user
+      // sees the source is gone without us having to scan the filesystem on
+      // every render.
+      chip.addEventListener("mouseenter", () => {
+        if (chip.dataset.checked || chip.dataset.deleted) return;
+        chip.dataset.checked = "1";
+        fetch(chip.href, { method: "HEAD", cache: "no-store" })
+          .then((res) => {
+            if (!res.ok) {
+              chip.dataset.deleted = "1";
+              chip.removeAttribute("href");
+              chip.classList.add("card-source-deleted");
+              chip.title = `Source file no longer exists: ${path}`;
+              const txt = chip.querySelector(".card-source-text");
+              if (txt) txt.textContent = `${path} (deleted)`;
+            }
+          })
+          .catch(() => { /* network error — leave the link intact */ });
+      }, { once: true });
+      card.append(chip);
+    }
+    // Stale badge (M3 — frontend). Surfaced in the top-right when the
+    // server detected the source file has changed since import. Clicking
+    // it opens the task view so the user can re-derive tags.
+    if (t.stale === true) {
+      const stale = el("button", "card-stale-badge", {
+        type: "button",
+        text: "stale",
+        title: "Source has changed since this task was imported. Click to open.",
+        "aria-label": "Source is stale — click to open task",
+      });
+      stale.addEventListener("click", (e) => {
+        e.stopPropagation();
+        window.OpenKanTaskView?.open(t.id);
+      });
+      card.append(stale);
+    }
     const meta = el("div", "card-meta");
     const left = el("div");
     left.style.cssText = "display:flex;align-items:center;gap:6px;";
@@ -999,8 +1059,10 @@
       const body = el("div", "column-body", { "data-column": col.id });
 
       if (colTasks.length === 0) {
-        const empty = el("div", "column-empty", {
-          text: filterActive ? "No tasks match the filter" : "No tasks",
+        const empty = el("div", "column-empty is-dropzone", {
+          text: filterActive
+            ? "No tasks match the filter"
+            : "Drop a task here or + Add task",
         });
         body.append(empty);
       } else {
@@ -1019,10 +1081,19 @@
       const countLabel = filterActive && totalInCol !== matched
         ? `${matched} / ${totalInCol}`
         : String(matched);
-      header.append(
-        el("span", null, { text: col.title }),
-        el("span", "column-count", { text: countLabel }),
-      );
+      const titleSpan = el("span", "column-title", { text: col.title });
+      const countSpan = el("span", "column-count", { text: countLabel });
+      const addBtn = el("button", "column-add-btn", {
+        type: "button",
+        title: `Add a task to ${col.title}`,
+        "aria-label": `Add a task to ${col.title}`,
+        text: "+",
+      });
+      addBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openNewTaskModalInColumn(col.id);
+      });
+      header.append(titleSpan, countSpan, addBtn);
       column.append(header, body);
       attachDnD(column);
       board.append(column);
@@ -2862,8 +2933,10 @@
       id: "save-filter",
       label: "Save current filter",
       hint: "Name and store the active filter",
-      run: () => {
-        const name = window.prompt("Name for this saved filter:", "");
+      run: async () => {
+        // Same path as the filter-bar Save button — go through the custom
+        // inline modal so it works in headless / embedded contexts.
+        const name = await promptForName("Save filter as:", "");
         if (name && saveCurrentFilter(name)) {
           showToast(`Saved filter "${name}"`);
         }
@@ -2945,6 +3018,70 @@
 
 
   // ---------- Modal ----------
+
+  // Custom inline name prompt. `window.prompt()` is blocked in headless
+  // Chrome and in some embedded contexts, so the 💾 Save filter button and
+  // its command-palette sibling both go through this instead. Built on top
+  // of the same `.modal-backdrop` / `.modal` shell as the rest of the
+  // dashboard so it inherits theme variables and backdrop-click behaviour.
+  // Resolves with the trimmed value on OK / Enter, or null on Cancel /
+  // Escape / backdrop click / empty input.
+  function promptForName(title, defaultValue = "") {
+    return new Promise((resolve) => {
+      const safeTitle = String(title ?? "Enter a name");
+      const bd = document.createElement("div");
+      bd.className = "modal-backdrop prompt-modal";
+      bd.style.zIndex = "120";
+      const modal = document.createElement("div");
+      modal.className = "modal";
+      modal.style.maxWidth = "420px";
+      modal.innerHTML = `
+        <header class="modal-header">
+          <h2></h2>
+          <button class="btn-icon" type="button" data-cancel aria-label="Close">&times;</button>
+        </header>
+        <div class="modal-body">
+          <label class="field">
+            <span>Name</span>
+            <input type="text" autocomplete="off" />
+          </label>
+        </div>
+        <footer class="modal-footer">
+          <button class="btn" type="button" data-cancel>Cancel</button>
+          <button class="btn btn-primary" type="button" data-ok>OK</button>
+        </footer>
+      `;
+      bd.appendChild(modal);
+      document.body.appendChild(bd);
+      bd.hidden = false;
+      const heading = modal.querySelector("h2");
+      const input = modal.querySelector("input");
+      if (heading) heading.textContent = safeTitle;
+      if (input) input.value = String(defaultValue ?? "");
+      if (input) {
+        input.focus();
+        input.select();
+      }
+      function cleanup(result) {
+        bd.remove();
+        resolve(result);
+      }
+      modal.querySelector("[data-ok]").addEventListener("click", () => {
+        cleanup(input?.value?.trim() || null);
+      });
+      modal.querySelectorAll("[data-cancel]").forEach((b) =>
+        b.addEventListener("click", () => cleanup(null)),
+      );
+      bd.addEventListener("mousedown", (ev) => {
+        if (ev.target === bd) cleanup(null);
+      });
+      input?.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") cleanup(input.value.trim() || null);
+        else if (ev.key === "Escape") cleanup(null);
+      });
+    });
+  }
+
   function openModal() {
     if (!modal) return;
     modal.hidden = false;
@@ -2987,6 +3124,35 @@
     }
   });
   if (form) {
+    // Browse button: lets the user pick a project path for the new task.
+    // Reuses the same path picker as the Add Project modal. The server's
+    // POST /api/tasks may or may not honour `root` — if not, the task is
+    // created against the active project (the previous behaviour).
+    const browseBtn = document.getElementById("new-task-browse-btn");
+    const rootInput = form.querySelector('input[name="root"]');
+    if (browseBtn && rootInput) {
+      browseBtn.addEventListener("click", () => {
+        const picker = window.OpenKanPathPicker;
+        if (!picker || typeof picker.open !== "function") {
+          console.warn(
+            "[new-task-modal] Browse clicked but OpenKanPathPicker is not loaded",
+          );
+          return;
+        }
+        picker.open({
+          title: "Choose a project folder",
+          mode: "folder",
+          initialPath: rootInput.value?.trim() || undefined,
+          onPick: (path) => {
+            rootInput.value = path;
+          },
+          onCancel: () => {
+            /* user dismissed — nothing to do */
+          },
+        });
+      });
+    }
+
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const fd = new FormData(form);
@@ -2999,6 +3165,10 @@
         agent: String(fd.get("agent") || ""),
         model: String(fd.get("model") || ""),
       };
+      // Optional project path. If the server doesn't accept `root` the task
+      // is created against the active project (existing behaviour).
+      const root = String(fd.get("root") || "").trim();
+      if (root) body.root = root;
       // parentId is hidden in the form. Optional — only sent when populated
       // by the "+ Add subtask" flow so the cascade knows the new task is a
       // child of an existing task.
@@ -3184,11 +3354,24 @@
     if (bdot) bdot.classList.toggle("is-empty", !projectSwitcher.active);
   }
 
+  // IDs of every button that can OPEN the popover. The dismiss listener
+  // ignores mousedowns on these so the trigger's own click handler can
+  // decide whether to toggle. Without this, clicking the brand chip while
+  // the popover is open would: (1) mousedown capture phase → close the
+  // popover because the brand chip isn't the recorded anchor; (2) click
+  // on the chip → handler sees pop.hidden=true → reopens it. The net
+  // result is the toggle looks broken from the user's perspective.
+  const PROJECT_TRIGGER_IDS = ["project-switcher-btn", "brand-project-chip"];
+
   function closeProjectPopover() {
     const pop = document.getElementById("project-switcher-popover");
+    // Clear aria-expanded on BOTH trigger buttons — either one could have
+    // opened the popover, and either one should now report "collapsed".
     const btn = document.getElementById("project-switcher-btn");
+    const chip = document.getElementById("brand-project-chip");
     if (pop) pop.hidden = true;
     if (btn) btn.setAttribute("aria-expanded", "false");
+    if (chip) chip.setAttribute("aria-expanded", "false");
     detachProjectPopoverDismiss();
   }
 
@@ -3197,12 +3380,17 @@
   // immediately dismisses it (the user expects the popover to open first).
   let projectPopoverDismiss = null;
 
-  function attachProjectPopoverDismiss(anchorBtn, popover) {
+  function attachProjectPopoverDismiss(popover) {
     detachProjectPopoverDismiss();
+    const triggerEls = PROJECT_TRIGGER_IDS
+      .map((id) => document.getElementById(id))
+      .filter(Boolean);
     const onDocDown = (ev) => {
       if (!popover || popover.hidden) return;
       if (popover.contains(ev.target)) return;
-      if (anchorBtn && anchorBtn.contains(ev.target)) return;
+      for (const el of triggerEls) {
+        if (el.contains(ev.target)) return;
+      }
       closeProjectPopover();
     };
     const onKey = (ev) => {
@@ -3226,23 +3414,78 @@
     }
   }
 
-  function openProjectPopover() {
+  // Position the popover directly below the anchor that opened it. The
+  // popover element must already be in the DOM (renderProjectPopover()
+  // populates it) so getBoundingClientRect() returns real dimensions.
+  function positionPopover(anchorBtn) {
+    const pop = document.getElementById("project-switcher-popover");
+    if (!pop || !anchorBtn) return;
+    const rect = anchorBtn.getBoundingClientRect();
+    const popRect = pop.getBoundingClientRect();
+    // Default: align the popover's right edge to the anchor's right edge.
+    // That's the right look for the topbar-right chip.
+    let top = rect.bottom + 6;
+    let left = rect.right - popRect.width;
+    // The brand chip lives on the LEFT side of the topbar — align the
+    // popover's left edge to the anchor's left edge for a more natural
+    // visual flow.
+    if (anchorBtn.id === "brand-project-chip") {
+      left = rect.left;
+    }
+    // Keep the popover on-screen with a small margin.
+    const PAD = 8;
+    const maxLeft = window.innerWidth - popRect.width - PAD;
+    if (left > maxLeft) left = maxLeft;
+    if (left < PAD) left = PAD;
+    // If the popover would fall off the bottom, flip it above the anchor.
+    if (top + popRect.height > window.innerHeight - PAD) {
+      top = rect.top - popRect.height - 6;
+    }
+    if (top < PAD) top = PAD;
+    pop.style.top = `${top}px`;
+    pop.style.left = `${left}px`;
+  }
+
+  function openProjectPopover(anchorBtn) {
     const pop = document.getElementById("project-switcher-popover");
     const btn = document.getElementById("project-switcher-btn");
+    const chip = document.getElementById("brand-project-chip");
     if (!pop) return;
     renderProjectPopover();
     pop.hidden = false;
+    // Mark BOTH trigger buttons as expanded so screen readers and CSS
+    // stay in sync regardless of which one opened the popover.
     if (btn) btn.setAttribute("aria-expanded", "true");
+    if (chip) chip.setAttribute("aria-expanded", "true");
+    // Position the popover below the anchor that opened it.
+    positionPopover(anchorBtn);
     // Defer dismiss-listener attachment so the opening click doesn't
     // immediately close the popover. 50ms is short enough to feel
     // instant but long enough to outlast the opening click event.
-    setTimeout(() => attachProjectPopoverDismiss(btn, pop), 50);
+    setTimeout(() => attachProjectPopoverDismiss(pop), 50);
+  }
+
+  // Single toggle entry point used by both trigger buttons. Decouples
+  // the click handler from the mousedown-capture dismiss listener so the
+  // two can never race (close-then-reopen) on the same click.
+  function toggleProjectPopover(anchorBtn) {
+    const pop = document.getElementById("project-switcher-popover");
+    if (!pop) return;
+    if (!pop.hidden) {
+      closeProjectPopover();
+      return;
+    }
+    openProjectPopover(anchorBtn);
   }
 
   function renderProjectPopover() {
     const pop = document.getElementById("project-switcher-popover");
     if (!pop) return;
     pop.innerHTML = "";
+    // Header row — a small "Projects" label so the popover reads as a
+    // section header and not just a loose list of buttons. Styled in CSS
+    // as a muted, uppercase, letter-spaced label.
+    pop.append(el("div", "project-switcher-header", { text: "Projects" }));
     const list = projectSwitcher.list || [];
     if (projectSwitcher.error) {
       pop.append(el("div", "project-switcher-error", {
@@ -3398,11 +3641,29 @@
     const btn = document.getElementById("project-switcher-btn");
     const pop = document.getElementById("project-switcher-popover");
     const chip = document.getElementById("brand-project-chip");
+    if (pop) {
+      // Move the popover to <body> so `position: fixed` is relative to
+      // the viewport, not the topbar. The topbar uses `backdrop-filter`
+      // which creates a containing block for fixed-positioned descendants
+      // in some browsers; relocating to <body> sidesteps that entirely
+      // and also lets the popover escape any future overflow:hidden on
+      // the topbar or its ancestors.
+      if (pop.parentElement !== document.body) {
+        document.body.appendChild(pop);
+      }
+    }
+    if (chip) {
+      // Brand chip starts collapsed. We add aria-haspopup/aria-expanded
+      // here (rather than in the HTML) so the chip advertises itself as
+      // a menu trigger to assistive tech.
+      chip.setAttribute("aria-haspopup", "menu");
+      chip.setAttribute("aria-expanded", "false");
+    }
     if (btn && pop) {
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
-        if (pop.hidden) openProjectPopover(); else closeProjectPopover();
+        toggleProjectPopover(btn);
       });
       // Dismiss listeners are attached inside openProjectPopover() with a
       // 50ms delay so the opening click doesn't immediately close it. The
@@ -3410,10 +3671,9 @@
     }
     if (chip) {
       chip.addEventListener("click", (e) => {
+        e.preventDefault();
         e.stopPropagation();
-        const pop = document.getElementById("project-switcher-popover");
-        if (!pop) return;
-        if (pop.hidden) openProjectPopover(); else closeProjectPopover();
+        toggleProjectPopover(chip);
       });
     }
     // Add-project modal wiring.
@@ -3448,6 +3708,42 @@
           // Reload so the new project becomes active on the server side and
           // the rest of the UI can re-fetch against it.
           window.location.reload();
+        });
+      }
+
+      // Browse-button wiring — opens the path picker in folder mode and
+      // writes the picked path into the root input. The path picker is
+      // loaded by its own script tag in index.html and exposed via
+      // window.OpenKanPathPicker. We treat its absence as a no-op so the
+      // page still works if the script fails to load.
+      const browseBtn = document.getElementById("project-browse-btn");
+      if (browseBtn) {
+        browseBtn.addEventListener("click", () => {
+          const picker = window.OpenKanPathPicker;
+          if (!picker || typeof picker.open !== "function") {
+            console.warn(
+              "[project-modal] Browse clicked but OpenKanPathPicker is not loaded",
+            );
+            return;
+          }
+          const rootInput =
+            bd.querySelector('input[name="root"]') ||
+            document.querySelector('input[name="root"]');
+          const initial =
+            rootInput && typeof rootInput.value === "string"
+              ? rootInput.value.trim()
+              : "";
+          picker.open({
+            title: "Choose a project folder",
+            mode: "folder",
+            initialPath: initial || undefined,
+            onPick: (path) => {
+              if (rootInput) rootInput.value = path;
+            },
+            onCancel: () => {
+              /* user dismissed — nothing to do */
+            },
+          });
         });
       }
     }

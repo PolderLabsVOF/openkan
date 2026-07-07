@@ -2,8 +2,8 @@
   "port": 7777,
   "host": "127.0.0.1",
   "defaultAgent": "",
-  "defaultModel": null,
-  "defaultColumn": "todo",
+  "defaultModel": "",
+  "defaultColumn": "backlog",
   "autoArchiveAfterDays": 0,
   "import": {
     "include": [],
@@ -18,5 +18,6 @@
     "defaultColumn": "backlog",
     "autoArchiveDays": 2
   },
-  "theme": "dark"
+  "theme": "dark",
+  "autoArchiveDays": 2
 }

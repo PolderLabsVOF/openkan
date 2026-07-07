@@ -122,6 +122,7 @@ export function readEvents(
     offset?: number;
     completedOnly?: boolean;  // filter to completion kinds AND tasks currently in "done" column
     kanbanDirForCompletedOnly?: string; // board dir needed to check column state
+    reset?: boolean;          // when true, ignore offset and return from start
   },
 ): { events: ChangelogEvent[]; total: number } {
   const path = changelogPath(kanbanDir);
@@ -183,7 +184,7 @@ export function readEvents(
   }
 
   const total = finalEvents.length;
-  const offset = opts?.offset ?? 0;
+  const offset = opts?.reset ? 0 : (opts?.offset ?? 0);
   const limit = opts?.limit ?? 200;
   const events = finalEvents.slice(offset, offset + limit);
 

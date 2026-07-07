@@ -3,7 +3,7 @@
 MDX-kanban task board plugin for OpenCode. Runs locally, no sync, no auth.
 
 <!-- badge: version -->
-v0.1.0 &nbsp;|&nbsp; MIT &nbsp;|&nbsp; [PolderLabs](https://github.com/PolderLabsVOF)
+v0.2.0 &nbsp;|&nbsp; MIT &nbsp;|&nbsp; [PolderLabs](https://github.com/PolderLabsVOF)
 
 ---
 
@@ -116,6 +116,23 @@ A screenshot would show a five-column drag-and-drop board with task cards, live 
 
 **UX polish (M17)**
 - **Inline editing** (click title/description to edit in place), settings dialog with sidebar sections (Project / Server / UI / Sandbox / Import / Contributors / Advanced), full design-token consistency pass across buttons/chips/cards, right-click context menus everywhere (board, task view, project), archived items hidden by default
+
+**Source link on imported tasks (M2)**
+- Tasks created via `kanban_import` record their origin (file path + line number) on the task object
+- The task MDX renders a `> 📄 Source:` line at the top, and the web UI shows a clickable source chip on every imported task card and in the task view's metadata panel — clicking opens the source file at the given line in a new tab
+
+**Drift detection (M3)**
+- Imported tasks store a `sourceHash` (sha256 of the source file at import time)
+- `fs.watch` on `.openkan/` re-checks each task's hash on every file change; if the hash diverges, the task's `stale` flag flips on
+- A "Stale" badge appears on stale cards; the task view shows a "Re-derive tags" button that re-runs `extractMetadata` on the new content and clears the flag if the hash matches
+
+**Sanity check script (M6)**
+- `npm run check` (or `node --experimental-strip-types scripts/sanity-check.ts`) validates the active project's `.openkan/` state
+- Catches: duplicate task IDs, missing source paths, stale tasks in `done`, and orphaned per-task directories
+- Exit code 0 on clean; non-zero on errors. Wire it into CI or as a pre-commit hook
+
+**UI overhaul (M18)**
+- Final consistency pass on top of M17: tightened spacing rhythm (4/8/12/16/24/32), unified button/checkbox/pill treatments, redesigned toasts, modal animations, glassy topbar with `backdrop-filter: blur(12px) saturate(140%)`, focus rings, hover/active feedback, ARIA throughout
 
 **Persistence**
 - Board state in `.openkan/board.json`; tasks index in `.openkan/tasks.json` (M7)
@@ -249,6 +266,8 @@ You can also drag-and-drop in the UI at `http://127.0.0.1:7777/`.
 | `kanban_edit` | Edit a task's title and/or description (wraps `PATCH /api/tasks/:id`) | `taskId` (required), `title?`, `description?` |
 | `kanban_projects` | List, add, remove, or switch active project | `action` (`list`/`add`/`remove`/`switch`), `name`, `root` |
 | `kanban_docs` | Browse docs folder, read a doc file | `path` (optional — when omitted returns the tree) |
+| `kanban_drift` | _(planned)_ List or re-derive stale tasks whose source has changed | `taskId?` (when omitted, lists all stale tasks) |
+| `kanban_sanity` | _(planned)_ Run the `.openkan/` sanity checks and return the report | _(no parameters — runs in the active project)_ |
 
 Task IDs are generated as `tsk-` followed by 8 nanoid characters (e.g. `tsk-abc12345`); session IDs are `ses-xxxxxxxx` of the same shape. The mutating tools broadcast SSE events so the UI updates immediately; read-only tools (`kanban_view`, `kanban_comments`) do not. `kanban_start` resolves the agent name against the OpenCode agent list; it falls back to the primary agent or `"build"`.
 
@@ -286,7 +305,14 @@ Project settings live in `.openkan/config.json` and are exposed through both a f
 - `GET /api/config-sections` — returns the same config grouped into sections: `project`, `server`, `ui`, `sandbox`, `import`, `contributors`, `advanced`. The settings dialog in the web UI uses this endpoint and renders a left-side sidebar of section links with the fields for the active section on the right.
 - `PATCH /api/config-sections/:sectionId` — body `Array<{ key, value }>`; persists the section's fields. The legacy `PATCH /api/settings` continues to work.
 
-Per-task settings (agent, model, assignees) live on the task itself. The server binds to `127.0.0.1` on TCP port `7777`; the port is currently hard-coded in `kanban/server.ts` and not configurable at runtime. (An environment-variable override is a planned future addition.)
+Per-task settings (agent, model, assignees) live on the task itself. For imported tasks, the task object also carries source-tracking fields:
+
+- `source` — `{ path, line, slug }` recording where the checkbox came from.
+- `sourceHash` — sha256 of the source file at import time.
+- `stale` — `true` when the source file's content hash has diverged since import.
+- `lastSourceCheck` — ISO timestamp of the most recent drift check.
+
+The server binds to `127.0.0.1` on TCP port `7777`; the port is currently hard-coded in `kanban/server.ts` and not configurable at runtime. (An environment-variable override is a planned future addition.)
 
 ---
 
@@ -375,7 +401,11 @@ The milestone plan lives in `docs/README.mdx`.
 |---|---|
 | M0 | Shipped — base plugin |
 | M1 | Shipped — import checkboxes from project docs |
-| M2–M6 | Pending — source links, drift detection, idempotent reimport, structured handoff packets, sanity-check script |
+| M2 | Shipped — source link on every imported task |
+| M3 | Shipped — drift detection (stale flag + re-derive button) |
+| M4 | Pending — idempotent reimport (no duplicates) |
+| M5 | Pending — structured handoff packet as task MDX |
+| M6 | Shipped — sanity check script (`npm run check`) |
 | M7 | Shipped — tasks index, MDX-centric model, `waiting-for-input` state |
 | M8 | Shipped — inline comments on rendered MDX |
 | M9 | Shipped — TSX/JSX preview components in MDX |
@@ -387,6 +417,7 @@ The milestone plan lives in `docs/README.mdx`.
 | M15 | Shipped — edit + subtasks, artifact viewer polish, changelog filter, right-click refactor |
 | M16 | Shipped — Docs tab + Multi-project + Comment authorship |
 | M17 | Shipped — UX polish: inline editing on tasks, settings dialog with section sidebar, full design-token consistency pass, right-click context menus, archived items hidden by default |
+| M18 | Shipped — final UI overhaul pass: spacing rhythm (4/8/12/16/24/32), unified button/checkbox/pill treatments, redesigned toasts, modal animations, glassy topbar, focus rings, hover/active feedback, ARIA |
 
 ---
 

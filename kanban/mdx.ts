@@ -62,8 +62,12 @@ export function taskToMarkdown(task: Task, board: Board, extra?: { pendingInputs
     lines.push(task.description, "");
   }
 
+  if (task.stale) {
+    lines.push("> ⚠️ Source has changed since this task was imported. Re-run kanban_import to refresh.", "");
+  }
+
   if (task.source) {
-    lines.push(`_[Source: ${task.source.path}:${task.source.line}_](${task.source.slug})`, "");
+    lines.push(`> 📄 Source: \`${task.source.path}:${task.source.line}\` *(imported from line ${task.source.line})*`, "");
   }
 
   lines.push(`_agent: ${task.agent || "(default)"} · _state: ${task.state}_`);

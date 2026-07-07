@@ -46,3 +46,6 @@ Thumbs.db
 *~
 .idea/
 .vscode/
+
+# Bizar harness / agent memory (per-project)
+.bizar/

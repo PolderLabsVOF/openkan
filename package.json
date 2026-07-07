@@ -1,6 +1,6 @@
 {
   "name": "openkan",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "MDX-kanban task board plugin for OpenCode",
   "type": "module",
   "private": true,
@@ -12,6 +12,7 @@
   },
   "scripts": {
     "test": "node --test --experimental-strip-types tests/*.test.mts tests/*.test.mjs",
+    "check": "node --experimental-strip-types scripts/sanity-check.ts",
     "openkan": "node --experimental-strip-types bin/openkan.ts"
   },
   "dependencies": {

@@ -42,6 +42,9 @@ export interface Task {
   artifact: string;       // repo-relative path to task MDX (legacy compat)
   sessionArtifact: string | null;
   source?: { path: string; line: number; slug: string };
+  sourceHash?: string;         // sha256 of source file at last import (first 16 hex chars)
+  stale?: boolean;              // true when source file changed since import
+  lastSourceCheck?: string;     // ISO timestamp of last hash check
   pendingInputs: string[]; // input IDs pending a response
   artifacts: TaskArtifacts;
   tags: string[];

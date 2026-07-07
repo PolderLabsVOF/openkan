@@ -13,6 +13,9 @@ This directory contains the milestone plan. The earlier milestones (M0–M6) are
 
 - **M0** — base plugin: five-column board, four custom tools, MDX artifacts, SSE updates.
 - **M1** — `kanban_import`: scan `.md` / `.mdx` files for `- [ ]` and create one Backlog task per hit. Idempotent on unchanged content.
+- **M2** — `kanban_import` records the source path + line on each task; the task MDX renders a `> 📄 Source:` line and the web UI shows a clickable source chip.
+- **M3** — drift detection: each imported task stores a `sourceHash`; `fs.watch` on `.openkan/` re-checks the hash on every file change and flips a `stale` flag. The UI shows a "Stale" badge and a "Re-derive tags" button.
+- **M6** — sanity-check script (`npm run check`) validates the active project's `.openkan/` state: duplicate task IDs, missing source paths, stale tasks in `done`, and orphaned per-task directories.
 
 ## Roadmap
 
@@ -20,15 +23,15 @@ This directory contains the milestone plan. The earlier milestones (M0–M6) are
 |---|---|---|
 | [M0](./milestones/M0.mdx) | shipped | Base plugin |
 | [M1](./milestones/M1.mdx) | shipped | Import checkboxes from project docs |
-| [M2](./milestones/M2.mdx) | pending | Source link on every task |
-| [M3](./milestones/M3.mdx) | pending | Drift banner when source changes |
+| [M2](./milestones/M2.mdx) | shipped | Source link on every task |
+| [M3](./milestones/M3.mdx) | shipped | Drift banner when source changes |
 | [M4](./milestones/M4.mdx) | pending | Idempotent reimport (no duplicates) |
 | [M5](./milestones/M5.mdx) | pending | Structured handoff packet as task MDX |
-| [M6](./milestones/M6.mdx) | pending | Sanity-check script |
+| [M6](./milestones/M6.mdx) | shipped | Sanity-check script |
 | [M7](./milestones/M7.mdx) | shipped | Tasks index, MDX-centric model, `waiting-for-input` state |
 | [M8](./milestones/M8.mdx) | shipped | Inline comments on rendered MDX |
 | [M9](./milestones/M9.mdx) | shipped | TSX/JSX preview components in MDX |
-| [M10](./milestones/M10.mdx) | next | Dashboard tabs, full changelog, settings, git attribution, archive |
+| [M10](./milestones/M10.mdx) | shipped | Dashboard tabs, full changelog, settings, git attribution, archive |
 | [M11](./milestones/M11.mdx) | shipped | `/organize` slash command, agent auto-progress, sort/filter polish |
 | [M12](./milestones/M12.mdx) | shipped | Search, bulk operations, canonical MDX template, real-time progress, artifact viewer |
 | [M13](./milestones/M13.mdx) | shipped | Keyboard control, command palette, accessibility |
@@ -36,8 +39,9 @@ This directory contains the milestone plan. The earlier milestones (M0–M6) are
 | [M15](./milestones/M15.mdx) | shipped | Edit + subtasks, artifact viewer polish, changelog filter, right-click refactor |
 | [M16](./milestones/M16.mdx) | shipped | Docs tab + Multi-project + Comment authorship |
 | M17 | shipped | UX polish: inline editing on tasks, settings dialog with section sidebar (Project / Server / UI / Sandbox / Import / Contributors / Advanced), full design-token consistency pass across buttons / chips / cards / fields / transitions, right-click context menus in the board / task view / project switcher, archived items hidden by default, comment composer reliability with `console.debug` markers |
+| M18 | shipped | Final UI overhaul pass: tightened spacing rhythm (4/8/12/16/24/32), unified button/checkbox/pill treatments, redesigned toasts, modal animations, glassy topbar with `backdrop-filter: blur(12px) saturate(140%)`, focus rings, hover/active feedback, ARIA throughout |
 
-The M7–M9 arc made the task MDX the primary artifact and the board a thin pointer. The M10–M11 arc turns the localhost page into a small dashboard: tabs for Tasks / Changelog / Contributors, a settings page, archive out-of-board tasks, attribute work to people via `git log`, and give the agent a `/organize` command plus auto-progress notes. The M12 arc adds full-text search, atomic bulk operations, a canonical MDX template, real-time agent progress tracking, and an artifact viewer in a new tab. The M13–M14 arc adds keyboard control, a command palette, live file-watch, and cross-tab sync. M15 adds edit/subtasks, artifact viewer polish, changelog filter, and a right-click menu refactor. M16 layers the Docs tab (project `docs/` file browser + sanitized MDX viewer), multi-project support (`~/.config/openkan/projects.json` registry), and comment authorship (git user / `agent:<name>` with avatar + timestamp in the UI). M17 is the UX consistency pass — click-to-edit inline on titles and descriptions (no more modal round-trip), the settings dialog reorganized into a left-rail of sections (Project / Server / UI / Sandbox / Import / Contributors / Advanced) backed by `GET /api/config-sections` and `PATCH /api/config-sections/:sectionId`, a unified design-token layer across buttons / chips / fields / transitions, right-click context menus everywhere, and archived items hidden by default.
+The M7–M9 arc made the task MDX the primary artifact and the board a thin pointer. The M10–M11 arc turns the localhost page into a small dashboard: tabs for Tasks / Changelog / Contributors, a settings page, archive out-of-board tasks, attribute work to people via `git log`, and give the agent a `/organize` command plus auto-progress notes. The M12 arc adds full-text search, atomic bulk operations, a canonical MDX template, real-time agent progress tracking, and an artifact viewer in a new tab. The M13–M14 arc adds keyboard control, a command palette, live file-watch, and cross-tab sync. M15 adds edit/subtasks, artifact viewer polish, changelog filter, and a right-click menu refactor. M16 layers the Docs tab (project `docs/` file browser + sanitized MDX viewer), multi-project support (`~/.config/openkan/projects.json` registry), and comment authorship (git user / `agent:<name>` with avatar + timestamp in the UI). M17 is the UX consistency pass — click-to-edit inline on titles and descriptions (no more modal round-trip), the settings dialog reorganized into a left-rail of sections (Project / Server / UI / Sandbox / Import / Contributors / Advanced) backed by `GET /api/config-sections` and `PATCH /api/config-sections/:sectionId`, a unified design-token layer across buttons / chips / fields / transitions, right-click context menus everywhere, and archived items hidden by default. M2 closes the original kanban-as-control-surface loop — every imported task carries a clickable source chip back to its origin file and line. M3 keeps that link honest: `fs.watch` on `.openkan/` re-hashes source files on every change and flips a `stale` flag on any task whose content has drifted; the web UI shows a "Stale" badge and a "Re-derive tags" button. M6 ships the `npm run check` sanity script for CI / pre-commit. M18 is the final UI overhaul pass on top of M17 — tightened spacing rhythm, unified button / checkbox / pill treatments, redesigned toasts and modal animations, a glassy topbar with `backdrop-filter: blur(12px) saturate(140%)`, focus rings, hover / active feedback, and ARIA throughout.
 
 ## Cut list
 

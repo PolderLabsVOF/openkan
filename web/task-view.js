@@ -272,12 +272,89 @@
 
   // ─── Render header ──────────────────────────────────────────────────────────
   // Layout (top to bottom):
-  //   • Back button row
-  //   • <h1 contenteditable="true"> title (inline-editable)
-  //   • Right-aligned status / priority pills
+  //   • Quick-actions toolbar (right-aligned icon buttons)
+  //   • Back button row + <h1 contenteditable="true"> title + status pills
+  //   • <div contenteditable="true"> description
   function renderHeader(root, task) {
     root.innerHTML = "";
     const header = el("header", "task-header");
+
+    // Quick-actions toolbar — small icon-only buttons anchored to the top of
+    // the task view. Each button shows a tooltip on hover describing what it
+    // does. The icons are glyphs (unicode + emoji) so we don't need to ship
+    // an icon font.
+    const actions = el("div", "task-actions");
+    const mkIconBtn = (glyph, label, onClick, danger) => {
+      const b = el("button", "task-action-btn" + (danger ? " danger" : ""), {
+        type: "button",
+        text: glyph,
+        title: label,
+        "aria-label": label,
+      });
+      b.addEventListener("click", onClick);
+      return b;
+    };
+    // Copy task ID.
+    actions.append(mkIconBtn("🆔", "Copy ID", async () => {
+      try {
+        await navigator.clipboard.writeText(String(task.id || ""));
+        window.OpenKanSettings?.showToast?.("Task ID copied", "success");
+      } catch (_) {
+        alert(`Task ID: ${task.id}`);
+      }
+    }));
+    // Copy markdown link.
+    actions.append(mkIconBtn("🔗", "Copy markdown link", async () => {
+      const md = `[${task.title || task.id}](.openkan/tasks/${task.id}/task.mdx)`;
+      try {
+        await navigator.clipboard.writeText(md);
+        window.OpenKanSettings?.showToast?.("Markdown link copied", "success");
+      } catch (_) {
+        alert(md);
+      }
+    }));
+    // Open in new tab — same URL but in a fresh tab so the user can keep
+    // their context (e.g. side-by-side comparison).
+    actions.append(mkIconBtn("↗", "Open in new tab", () => {
+      const url = `${location.origin}${location.pathname}#tab=tasks&taskId=${task.id}`;
+      window.open(url, "_blank", "noopener");
+    }));
+    // Edit — focuses the inline-editable title (the footer also has an Edit
+    // button; this one is just closer to the cursor for keyboard users).
+    actions.append(mkIconBtn("✎", "Edit title & description", () => {
+      const titleEl = document.querySelector(".task-title");
+      if (titleEl && titleEl.isContentEditable) {
+        try { titleEl.focus(); } catch {}
+        const range = document.createRange();
+        range.selectNodeContents(titleEl);
+        const sel = window.getSelection();
+        if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+        return;
+      }
+      if (window.OpenKanEditTask?.open) window.OpenKanEditTask.open(task.id);
+    }));
+    // Archive / Restore.
+    if (task.archived) {
+      actions.append(mkIconBtn("↩", "Restore from archive", async () => {
+        try { await api("POST", `/api/tasks/${task.id}/restore`); }
+        catch (err) { alert(`Restore failed: ${err.message}`); }
+      }));
+    } else {
+      actions.append(mkIconBtn("📥", "Archive", () => {
+        if (!confirm(`Archive "${task.title}"?`)) return;
+        api("POST", `/api/tasks/${task.id}/archive`).catch((err) =>
+          alert(`Archive failed: ${err.message}`),
+        );
+      }));
+    }
+    // Delete (always last in the toolbar, danger styling).
+    actions.append(mkIconBtn("🗑", "Delete task", () => {
+      if (!confirm(`Delete task "${task.title}"? This cannot be undone.`)) return;
+      api("DELETE", `/api/tasks/${task.id}`)
+        .then(() => window.OpenKanTaskView.close())
+        .catch((err) => alert(`Delete failed: ${err.message}`));
+    }, true));
+    header.append(actions);
 
     const back = el("button", "btn", { text: "← Back", type: "button" });
     back.addEventListener("click", () => window.OpenKanTaskView.close());
@@ -925,14 +1002,76 @@
       dl.append(lbl, val);
     }
 
-    // Source path (where it was imported from)
+    // Source path (where it was imported from). Render as a clickable link
+    // so the user can jump straight to the file. The path is repo-relative
+    // (e.g. "docs/roadmap.mdx"), so we prefix with "/" for an absolute path
+    // that the dev server will serve.
     if (task.source?.path) {
       const lbl = el("dt", null, { text: "Source" });
-      const val = el("dd", null, {});
-      val.append(el("span", "source-path", {
-        text: `${task.source.path}:${task.source.line ?? "?"}`,
-        title: `imported from ${task.source.path}:${task.source.line ?? "?"}`,
+      const val = el("dd", "source-dd", {});
+      const path = String(task.source.path);
+      const line = task.source.line ?? "?";
+      const link = el("a", "source-link", {
+        href: `/${path}`,
+        target: "_blank",
+        rel: "noopener",
+        title: `Open ${path}:${line} in a new tab`,
+      });
+      link.append(
+        el("span", "source-link-icon", { text: "📄", "aria-hidden": "true" }),
+        el("span", "source-link-text", { text: `${path}:${line}` }),
+      );
+      val.append(link);
+      dl.append(lbl, val);
+    }
+
+    // Stale — surfaces when the server detected the source file has changed
+    // since import. The user can re-derive tags via the organize endpoint
+    // (kind: "rederive"). Falls back to /api/tasks/:id/organize if Thor's
+    // per-task endpoint ships first.
+    if (task.stale === true) {
+      const lbl = el("dt", null, { text: "Stale" });
+      const val = el("dd", "meta-stale", {});
+      val.append(el("span", "stale-warning", {
+        text: "⚠️ Source has changed since this task was imported.",
       }));
+      const rederive = el("button", "btn btn-sm stale-rederive", {
+        type: "button",
+        text: "Re-derive tags",
+        title: "Re-run the tag/category/priority extractor for this task",
+      });
+      rederive.addEventListener("click", async () => {
+        rederive.disabled = true;
+        const restore = rederive.textContent;
+        rederive.textContent = "Re-deriving…";
+        try {
+          // Prefer /api/organize (the canonical endpoint). Fall back to a
+          // per-task /api/tasks/:id/organize if Thor ships that one first.
+          try {
+            await api("POST", "/api/organize", {
+              operations: [{ kind: "rederive", taskId: task.id }],
+            });
+          } catch (_) {
+            await api("POST", `/api/tasks/${task.id}/organize`, { kind: "rederive" });
+          }
+          window.OpenKanSettings?.showToast?.("Tags re-derived", "success");
+          // Re-fetch the task so the cleared `stale` flag + fresh tags show up.
+          try {
+            const fresh = await api("GET", `/api/tasks/${task.id}`);
+            const t = fresh?.task || fresh;
+            if (t && t.id && window.OpenKanBoard?.getFilter) {
+              // No-op: the next SSE `task.updated` event will trigger a
+              // re-render. We don't force-refresh here so we don't race
+              // with the broadcast.
+            }
+          } catch (_) { /* soft-fail; the broadcast will sync */ }
+        } catch (err) {
+          alert(`Re-derive failed: ${err.message}`);
+          rederive.disabled = false;
+          rederive.textContent = restore;
+        }
+      });
+      val.append(rederive);
       dl.append(lbl, val);
     }
 
@@ -1241,8 +1380,18 @@
       );
       panel.append(empty);
     } else {
-      const list = el("div", "subtasks-list");
-      for (const c of children) {
+      // Group pending vs done. Pending first (visual priority), then
+      // completed collapsed under a small section header. The "done" set
+      // includes any non-idle terminal state (done, failed, cancelled) so
+      // the user sees the full picture without burying the work that still
+      // needs attention.
+      const done = children.filter((c) => {
+        const s = effectiveState(c);
+        return s === "done" || s === "failed" || s === "cancelled";
+      });
+      const pending = children.filter((c) => !done.includes(c));
+
+      const buildCard = (c) => {
         const child = el("button", "subtask-card", {
           type: "button",
           "data-id": c.id,
@@ -1278,7 +1427,18 @@
         child.addEventListener("click", () => {
           if (window.OpenKanTaskView?.open) window.OpenKanTaskView.open(c.id);
         });
-        list.append(child);
+        return child;
+      };
+
+      const list = el("div", "subtasks-list");
+      for (const c of pending) list.append(buildCard(c));
+      if (done.length > 0) {
+        const headerRow = el("div", "subtasks-done-header");
+        headerRow.append(el("span", "subtasks-done-label", {
+          text: `Completed (${done.length})`,
+        }));
+        list.append(headerRow);
+        for (const c of done) list.append(buildCard(c));
       }
       panel.append(list);
     }

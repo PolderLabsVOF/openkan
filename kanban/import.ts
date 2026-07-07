@@ -5,6 +5,11 @@ import { readdirSync, readFileSync, statSync } from "fs";
 import { join, relative } from "path";
 import { createHash } from "node:crypto";
 
+/** Compute a short SHA-256 hex digest (first 16 chars) of file content. */
+export function computeSourceHash(content: string): string {
+  return createHash("sha256").update(content).digest("hex").slice(0, 16);
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface CheckboxHit {

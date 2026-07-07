@@ -17,6 +17,13 @@
 // Uses /api/config-sections (Thor is shipping it). Falls back to /api/settings
 // with the legacy single-blob layout when the sections endpoint isn't
 // implemented yet — keeps the dialog usable during the rollout.
+//
+// Wire shape compatibility: as of the M10/M13 server rollout, /api/config-sections
+// returns { sections: [{ id, label, fields: [{ key, label, type, value, ... }] }] }
+// (server uses `label` for the section/field display text and `key` for the
+// stable field identifier). The original client spec used `title`/`name`. We
+// accept BOTH shapes here by normalising in `loadSections()` so older clients
+// and newer servers can talk to each other without one party breaking first.
 
 (() => {
   "use strict";
@@ -101,6 +108,11 @@
   // Each field: { name, label, type, value, options?, placeholder?, hint?,
   //                min?, max?, step?, disabled?, readOnly? }
   // Types: text | number | select | radio | checkbox | readonly
+  //
+  // The server (kanban/server.ts) uses `label` for the section/field display
+  // name and `key` for the stable field id; we normalise both shapes into the
+  // canonical `{ id, title, fields: [{ name, label, type, value, ... }] }`
+  // model below so renderNav/renderField only have to know one shape.
 
   /** @type {Array<{id:string,title:string,hint?:string,fields:any[]}>|null} */
   let sections = null;
@@ -108,6 +120,50 @@
   let activeSectionId = null;
   /** @type {Object<string,any>} */
   let workingValues = {}; // collected from inputs as the user types
+
+  /**
+   * Normalise a single section into our canonical shape.
+   * Accepts both server (`label`/`key`) and legacy client spec (`title`/`name`).
+   * @param {any} raw
+   * @returns {{id:string,title:string,hint?:string,fields:any[]}}
+   */
+  function normalizeSection(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const id = String(raw.id || "").trim();
+    if (!id) return null;
+    const title = String(
+      raw.title ?? raw.label ?? raw.name ?? id,
+    ).trim() || id;
+    const hint = raw.hint ? String(raw.hint) : undefined;
+    const fieldsIn = Array.isArray(raw.fields) ? raw.fields : [];
+    const fields = fieldsIn
+      .filter((f) => f && typeof f === "object")
+      .map((f) => {
+        const name = String(f.name ?? f.key ?? "").trim();
+        // Some sections have no fields (e.g. contributors) — keep them so the
+        // sidebar still lists the section but renderSection() will simply
+        // render no inputs.
+        if (!name) return { ...f, name: String(f.label || f.id || "") };
+        return {
+          name,
+          label: String(f.label ?? f.name ?? f.key ?? name),
+          type: String(f.type || "text"),
+          value: f.value ?? "",
+          options: Array.isArray(f.options) ? f.options : undefined,
+          placeholder: f.placeholder ? String(f.placeholder) : undefined,
+          hint: f.hint ? String(f.hint) : undefined,
+          min: f.min,
+          max: f.max,
+          step: f.step,
+          readOnly: !!f.readOnly,
+        };
+      })
+      // Drop any field we couldn't give a stable `name` to — those can't be
+      // round-tripped to the server safely. We log so the user/dev can spot
+      // bad data, but we don't crash the dialog.
+      .filter((f) => f.name);
+    return { id, title, hint, fields };
+  }
 
   // Legacy fallback sections — used when /api/config-sections 404s.
   function legacySectionsFromSettings(s) {
@@ -160,24 +216,64 @@
 
   async function loadSections() {
     // Try the new endpoint first. Fall back to legacy /api/settings shape
-    // when the endpoint isn't implemented yet.
+    // when the endpoint isn't implemented yet. Each branch leaves a
+    // console.debug breadcrumb so an empty dialog in the wild is debuggable
+    // without a code dive.
+    console.debug("[settings] loadSections: trying /api/config-sections");
+    let data = null;
+    let primaryErr = null;
     try {
-      const data = await api("GET", "/api/config-sections");
-      const list = Array.isArray(data) ? data : Array.isArray(data?.sections) ? data.sections : null;
-      if (list && list.length > 0) return list;
-      // Endpoint returned but empty — fall back to legacy too.
-      const s = await api("GET", "/api/settings").catch(() => null);
-      return legacySectionsFromSettings(s || {});
+      data = await api("GET", "/api/config-sections");
+      console.debug("[settings] /api/config-sections returned:", data);
     } catch (err) {
-      // /api/config-sections not implemented yet — fall back.
-      try {
-        const s = await api("GET", "/api/settings");
-        return legacySectionsFromSettings(s || {});
-      } catch {
-        // No backend at all — show defaults.
-        return legacySectionsFromSettings({});
+      primaryErr = err;
+      console.debug("[settings] /api/config-sections failed:", err?.message || err);
+    }
+    if (data != null) {
+      const list = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.sections)
+          ? data.sections
+          : null;
+      if (list && list.length > 0) {
+        const normalised = list.map(normalizeSection).filter(Boolean);
+        if (normalised.length > 0) {
+          console.debug("[settings] using /api/config-sections (normalised)", {
+            count: normalised.length,
+            ids: normalised.map((s) => s.id),
+          });
+          return normalised;
+        }
+        console.debug(
+          "[settings] /api/config-sections returned data but every section failed to normalise; falling back",
+        );
+      } else {
+        console.debug(
+          "[settings] /api/config-sections returned an empty/invalid list; falling back",
+        );
       }
     }
+    // Fallback 1: /api/settings (legacy single-blob).
+    console.debug("[settings] loadSections: trying legacy /api/settings");
+    try {
+      const s = await api("GET", "/api/settings");
+      console.debug("[settings] /api/settings returned:", s);
+      const out = legacySectionsFromSettings(s || {});
+      console.debug("[settings] using legacy /api/settings shape", {
+        count: out.length,
+        ids: out.map((sec) => sec.id),
+      });
+      return out;
+    } catch (err) {
+      console.debug(
+        "[settings] /api/settings also failed:",
+        err?.message || err,
+        primaryErr ? `(primary was: ${primaryErr.message || primaryErr})` : "",
+      );
+    }
+    // Fallback 2: no backend at all — defaults so the dialog is still usable.
+    console.debug("[settings] loadSections: using hard-coded defaults");
+    return legacySectionsFromSettings({});
   }
 
   // ─── Rendering ──────────────────────────────────────────────────────────
@@ -202,7 +298,20 @@
   }
 
   function renderSection() {
-    if (!body || !sections) return;
+    if (!body) return;
+    if (!sections || sections.length === 0) {
+      // Defensive: if the loader returned nothing usable, show a clear
+      // message instead of leaving the pane blank (which was the original
+      // symptom of the config-sections bug).
+      body.innerHTML = "";
+      body.append(
+        el("p", "settings-section-hint", {
+          text: "No settings available. The /api/config-sections and /api/settings endpoints both failed to return any sections. Check the server logs and reload.",
+        }),
+      );
+      if (titleEl) titleEl.textContent = "Settings";
+      return;
+    }
     const sec = sections.find((s) => s.id === activeSectionId) || sections[0];
     if (!sec) return;
     if (titleEl) titleEl.textContent = sec.title;
@@ -213,8 +322,16 @@
       body.append(el("p", "settings-section-hint", { text: sec.hint }));
     }
 
-    for (const field of sec.fields) {
-      body.append(renderField(sec, field));
+    if (!sec.fields || sec.fields.length === 0) {
+      body.append(
+        el("p", "settings-section-hint", {
+          text: "This section has no configurable fields.",
+        }),
+      );
+    } else {
+      for (const field of sec.fields) {
+        body.append(renderField(sec, field));
+      }
     }
 
     // If this is the "ui" section (legacy), expose a "Saved locally" note
@@ -340,9 +457,35 @@
     if (!backdrop) return;
     if (body) body.innerHTML = '<div class="settings-readonly">Loading…</div>';
     backdrop.hidden = false;
+    console.debug("[settings] open: dialog shown, fetching sections");
 
-    sections = await loadSections();
-    activeSectionId = sections[0]?.id || null;
+    try {
+      sections = await loadSections();
+    } catch (err) {
+      // loadSections() catches its own errors; this catch is for unexpected
+      // synchronous throws only. Show a clear in-dialog message instead of
+      // an indefinitely-spinning "Loading…".
+      console.error("[settings] open: loadSections threw unexpectedly:", err);
+      sections = [];
+      if (body) {
+        body.innerHTML = "";
+        body.append(
+          el("p", "settings-section-hint", {
+            text: `Failed to load settings: ${err?.message || err}`,
+          }),
+        );
+      }
+      if (titleEl) titleEl.textContent = "Settings";
+      return;
+    }
+
+    console.debug("[settings] open: loaded sections", {
+      count: sections?.length || 0,
+      ids: (sections || []).map((s) => s.id),
+      active: activeSectionId,
+    });
+
+    activeSectionId = sections?.[0]?.id || null;
 
     renderNav();
     renderSection();

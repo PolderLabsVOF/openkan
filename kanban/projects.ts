@@ -18,7 +18,14 @@ export interface ProjectEntry {
 
 // ─── Registry path ─────────────────────────────────────────────────────────────
 
+let _testingRegistryPath: string | null = null;
+
+export function setRegistryPathForTesting(p: string | null): void {
+  _testingRegistryPath = p;
+}
+
 export function registryPath(): string {
+  if (_testingRegistryPath) return _testingRegistryPath;
   const configDir = join(homedir(), ".config", "openkan");
   return join(configDir, "projects.json");
 }
@@ -319,12 +326,22 @@ export async function autoDetectProjects(opts?: AutoDetectOptions): Promise<Auto
     }
   }
 
-  // Deduplicate scanned
-  const uniqueScanned = [...new Set(result.scanned)];
+  // Deduplicate scanned by resolved path BEFORE the loop that adds to registry.
+  // This prevents the same repo (found via cwd + suffix-walk overlap, or via
+  // multiple suffix iterations pointing to the same physical directory) from
+  // being registered multiple times in a single run.
+  const seenRoots = new Set<string>();
+  const uniqueScanned: string[] = [];
+  for (const raw of result.scanned) {
+    const resolved = resolve(raw);
+    if (seenRoots.has(resolved)) continue;
+    seenRoots.add(resolved);
+    uniqueScanned.push(resolved); // store resolved form for consistency
+  }
 
   // Filter against registry
   for (const repoRoot of uniqueScanned) {
-    if (knownRoots.has(resolve(repoRoot))) {
+    if (knownRoots.has(repoRoot)) {
       result.alreadyKnown.push(repoRoot);
       continue;
     }
@@ -360,4 +377,120 @@ export function getActiveProjectRoot(): string {
   if (!active) return process.cwd();
   if (!existsSync(active.root)) return process.cwd();
   return active.root;
+}
+
+// ─── Registry cleanup ─────────────────────────────────────────────────────────
+
+export interface CleanupResult {
+  before: ProjectEntry[];
+  after: ProjectEntry[];
+  removed: number;
+  deduped: number;
+  pruned: number;
+}
+
+/**
+ * Clean the registry:
+ * - Dedup by resolved root (keep first occurrence, or one with active:true if tie)
+ * - Dedup by id (same tiebreaker)
+ * - Optionally prune entries whose root no longer exists on disk
+ * - Optionally persist the cleaned registry
+ */
+export function cleanupRegistry(opts?: {
+  pruneMissing?: boolean;
+  verbose?: boolean;
+  persist?: boolean;
+}): CleanupResult {
+  const verbose = opts?.verbose ?? false;
+  const pruneMissing = opts?.pruneMissing ?? false;
+  const persist = opts?.persist ?? false;
+
+  const reg = loadRegistry();
+  const before = reg.projects;
+
+  if (verbose) console.error(`[cleanupRegistry] before: ${before.length} entries`);
+
+  // Phase 1: dedup by resolved root — keep first (or active:true) occurrence
+  const rootSeen = new Map<string, ProjectEntry>();
+  const rootDeduped: number[] = []; // indices of duplicates
+  for (let i = 0; i < before.length; i++) {
+    const resolved = resolve(before[i].root);
+    const existing = rootSeen.get(resolved);
+    if (!existing) {
+      rootSeen.set(resolved, before[i]);
+    } else {
+      // Keep the one with active:true if there's a tie
+      if (existing.active && !before[i].active) {
+        // existing wins — mark current as dup
+        rootDeduped.push(i);
+        if (verbose) console.error(`[cleanupRegistry] root dedup: ${resolved} (kept existing active)`);
+      } else if (!existing.active && before[i].active) {
+        // current wins — replace
+        rootSeen.set(resolved, before[i]);
+        rootDeduped.push(i);
+        if (verbose) console.error(`[cleanupRegistry] root dedup: ${resolved} (replaced with active)`);
+      } else {
+        // Neither active or both active — keep first, mark current as dup
+        rootDeduped.push(i);
+        if (verbose) console.error(`[cleanupRegistry] root dedup: ${resolved} (kept first)`);
+      }
+    }
+  }
+  let after = before.filter((_, i) => !rootDeduped.includes(i));
+
+  // Phase 2: dedup by id — keep first (or active:true)
+  const idSeen = new Map<string, ProjectEntry>();
+  const idDeduped: number[] = [];
+  for (let i = 0; i < after.length; i++) {
+    const entry = after[i];
+    const existing = idSeen.get(entry.id);
+    if (!existing) {
+      idSeen.set(entry.id, entry);
+    } else {
+      // Same id but different root — tiebreak by active
+      if (existing.active && !entry.active) {
+        idDeduped.push(i);
+        if (verbose) console.error(`[cleanupRegistry] id dedup: ${entry.id} (kept existing active)`);
+      } else if (!existing.active && entry.active) {
+        idSeen.set(entry.id, entry);
+        idDeduped.push(i);
+        if (verbose) console.error(`[cleanupRegistry] id dedup: ${entry.id} (replaced with active)`);
+      } else {
+        idDeduped.push(i);
+        if (verbose) console.error(`[cleanupRegistry] id dedup: ${entry.id} (kept first)`);
+      }
+    }
+  }
+  after = after.filter((_, i) => !idDeduped.includes(i));
+
+  // Phase 3: optional prune of missing roots
+  let pruned = 0;
+  if (pruneMissing) {
+    const beforeCount = after.length;
+    after = after.filter(p => {
+      const exists = existsSync(p.root);
+      if (!exists && verbose) console.error(`[cleanupRegistry] prune: ${p.root} does not exist`);
+      return exists;
+    });
+    pruned = beforeCount - after.length;
+  }
+
+  if (verbose) {
+    console.error(`[cleanupRegistry] after: ${after.length} entries`);
+    console.error(`[cleanupRegistry] deduped: ${rootDeduped.length + idDeduped.length}`);
+    console.error(`[cleanupRegistry] pruned: ${pruned}`);
+  }
+
+  if (persist) {
+    saveRegistry({ projects: after });
+    if (verbose) console.error(`[cleanupRegistry] persisted cleaned registry to ${registryPath()}`);
+  }
+
+  return {
+    before,
+    after,
+    removed: before.length - after.length,
+    deduped: rootDeduped.length + idDeduped.length,
+    pruned,
+  };
 }
