@@ -26,7 +26,16 @@ and does not require a hosted service.
 
 ## Install or update
 
-Run the installer from a source checkout or extracted release:
+Install directly from the hosted script:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/PolderLabsVOF/openkan/main/install.sh | bash
+```
+
+The script downloads the complete source archive and then performs the normal
+atomic installation. Running the same command again updates OpenKan.
+
+To install from a source checkout or extracted release instead:
 
 ```sh
 ./install.sh
@@ -60,6 +69,13 @@ because it remains inside each project's `.openkan/` directory.
 OPENKAN_HOME=/opt/openkan ./install.sh
 OPENKAN_BIN_DIR="$HOME/bin" ./install.sh
 ./install.sh /opt/openkan
+```
+
+The same overrides work with the remote installer:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/PolderLabsVOF/openkan/main/install.sh \
+  | OPENKAN_HOME=/opt/openkan OPENKAN_BIN_DIR="$HOME/bin" bash
 ```
 
 If `~/.local/bin` is not already on `PATH`, add it to your shell profile:

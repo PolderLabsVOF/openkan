@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_SOURCE="${BASH_SOURCE[0]:-}"
+SOURCE_ROOT=""
+if [[ -n "${SCRIPT_SOURCE}" && -f "${SCRIPT_SOURCE}" ]]; then
+  SOURCE_ROOT="$(cd "$(dirname "${SCRIPT_SOURCE}")" && pwd -P)"
+fi
 
 if [[ "${OSTYPE:-}" == darwin* ]]; then
   DEFAULT_INSTALL_ROOT="${HOME}/Library/Application Support/OpenKan"
@@ -14,13 +18,17 @@ BIN_DIR="${OPENKAN_BIN_DIR:-${HOME}/.local/bin}"
 
 if [[ "${INSTALL_ROOT}" == "--help" || "${INSTALL_ROOT}" == "-h" ]]; then
   cat <<USAGE
-Usage: $0 [install-directory]
+Usage: install.sh [install-directory]
 
 Installs or updates OpenKan in its own application directory.
 
 Environment:
   OPENKAN_HOME              Override the application directory.
   OPENKAN_BIN_DIR           Override the command-link directory.
+  OPENKAN_INSTALL_REF       Source branch or tag name (default: main).
+  OPENKAN_INSTALL_REF_KIND  Source ref kind: heads or tags (default: heads).
+  OPENKAN_INSTALL_ARCHIVE_URL
+                            Override the source archive URL.
   OPENKAN_SKIP_DEPENDENCIES Skip dependency installation (tests/packaging only).
 
 Defaults:
@@ -28,6 +36,74 @@ Defaults:
   command:     ${BIN_DIR}/openkan
 USAGE
   exit 0
+fi
+
+has_complete_source() {
+  [[ -n "${SOURCE_ROOT}" ]] &&
+    [[ -d "${SOURCE_ROOT}/bin" ]] &&
+    [[ -d "${SOURCE_ROOT}/commands" ]] &&
+    [[ -d "${SOURCE_ROOT}/kanban" ]] &&
+    [[ -d "${SOURCE_ROOT}/skills" ]] &&
+    [[ -d "${SOURCE_ROOT}/web" ]] &&
+    [[ -f "${SOURCE_ROOT}/package.json" ]] &&
+    [[ -f "${SOURCE_ROOT}/package-lock.json" ]]
+}
+
+if ! has_complete_source; then
+  if [[ "${OPENKAN_BOOTSTRAPPED:-0}" == "1" ]]; then
+    echo "[openkan] downloaded source archive is incomplete" >&2
+    exit 1
+  fi
+  if ! command -v tar >/dev/null 2>&1; then
+    echo "[openkan] tar is required for remote installation" >&2
+    exit 1
+  fi
+
+  INSTALL_REF="${OPENKAN_INSTALL_REF:-main}"
+  INSTALL_REF_KIND="${OPENKAN_INSTALL_REF_KIND:-heads}"
+  case "${INSTALL_REF_KIND}" in
+    heads|tags) ;;
+    *)
+      echo "[openkan] OPENKAN_INSTALL_REF_KIND must be heads or tags" >&2
+      exit 2
+      ;;
+  esac
+  ARCHIVE_URL="${OPENKAN_INSTALL_ARCHIVE_URL:-https://github.com/PolderLabsVOF/openkan/archive/refs/${INSTALL_REF_KIND}/${INSTALL_REF}.tar.gz}"
+  BOOTSTRAP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/openkan-bootstrap.XXXXXX")"
+  BOOTSTRAP_ARCHIVE="${BOOTSTRAP_ROOT}/openkan.tar.gz"
+  BOOTSTRAP_SOURCE="${BOOTSTRAP_ROOT}/source"
+
+  cleanup_bootstrap() {
+    if [[ -n "${BOOTSTRAP_ROOT:-}" && -e "${BOOTSTRAP_ROOT}" ]]; then
+      rm -rf "${BOOTSTRAP_ROOT}"
+    fi
+  }
+  trap cleanup_bootstrap EXIT
+
+  echo "[openkan] Downloading OpenKan ${INSTALL_REF}..."
+  if command -v curl >/dev/null 2>&1; then
+    case "${ARCHIVE_URL}" in
+      https://*)
+        curl --proto '=https' --tlsv1.2 -fsSL "${ARCHIVE_URL}" -o "${BOOTSTRAP_ARCHIVE}"
+        ;;
+      *)
+        curl -fsSL "${ARCHIVE_URL}" -o "${BOOTSTRAP_ARCHIVE}"
+        ;;
+    esac
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "${BOOTSTRAP_ARCHIVE}" "${ARCHIVE_URL}"
+  else
+    echo "[openkan] curl or wget is required for remote installation" >&2
+    exit 1
+  fi
+
+  mkdir -p "${BOOTSTRAP_SOURCE}"
+  tar -xzf "${BOOTSTRAP_ARCHIVE}" -C "${BOOTSTRAP_SOURCE}" --strip-components=1
+  if [[ ! -x "${BOOTSTRAP_SOURCE}/install.sh" ]]; then
+    chmod +x "${BOOTSTRAP_SOURCE}/install.sh" 2>/dev/null || true
+  fi
+  OPENKAN_BOOTSTRAPPED=1 bash "${BOOTSTRAP_SOURCE}/install.sh" "$@"
+  exit $?
 fi
 
 if [[ -z "${INSTALL_ROOT}" || "${INSTALL_ROOT}" == "/" ]]; then
@@ -50,7 +126,9 @@ STAGING_ROOT="$(mktemp -d "${INSTALL_PARENT}/.openkan-install.XXXXXX")"
 BACKUP_ROOT=""
 
 cleanup() {
-  rm -rf "${STAGING_ROOT}"
+  if [[ -n "${STAGING_ROOT:-}" && -e "${STAGING_ROOT}" ]]; then
+    rm -rf "${STAGING_ROOT}"
+  fi
   if [[ -n "${BACKUP_ROOT}" && -e "${BACKUP_ROOT}" ]]; then
     rm -rf "${BACKUP_ROOT}"
   fi
