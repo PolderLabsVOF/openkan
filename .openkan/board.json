@@ -583,6 +583,45 @@
       "images": [],
       "parentId": null,
       "subtaskIds": []
+    },
+    {
+      "id": "tsk-3-3LyQ0u",
+      "title": "Fix UserPromptSubmit hook ESM module resolution failure",
+      "description": "UserPromptSubmit hooks fail non-blockingly with node:internal/modules/esm/resolve:271. Reproduce the hook invocation, identify the missing or incorrectly resolved ESM module, repair the hook import/runtime path, and add regression coverage that exercises the real UserPromptSubmit entrypoint.",
+      "column": "todo",
+      "order": 2,
+      "sessionId": null,
+      "agent": "",
+      "model": null,
+      "status": "idle",
+      "state": "idle",
+      "lastError": null,
+      "createdAt": "2026-07-30T17:15:07.776Z",
+      "updatedAt": "2026-07-30T17:15:07.776Z",
+      "artifact": "tasks/tsk-3-3LyQ0u/task.mdx",
+      "sessionArtifact": null,
+      "pendingInputs": [],
+      "artifacts": {
+        "mdxPath": "tasks/tsk-3-3LyQ0u/task.mdx",
+        "commentsPath": "tasks/tsk-3-3LyQ0u/comments.json",
+        "inputsPath": "tasks/tsk-3-3LyQ0u/inputs.json",
+        "statePath": "tasks/tsk-3-3LyQ0u/state.json"
+      },
+      "tags": [
+        "bug",
+        "test",
+        "infra"
+      ],
+      "category": "infra",
+      "priority": "normal",
+      "effort": null,
+      "archived": false,
+      "assignees": [
+        "agent:codex"
+      ],
+      "images": [],
+      "parentId": null,
+      "subtaskIds": []
     }
   ],
   "sessions": {}

@@ -1,0 +1,26 @@
+---
+title: Fix UserPromptSubmit hook ESM module resolution failure
+id: tsk-3-3LyQ0u
+column: todo
+order: 2
+state: idle
+status: idle
+agent: (default)
+model: (default)
+createdAt: 2026-07-30T17:15:07.776Z
+updatedAt: 2026-07-30T17:15:07.776Z
+tags: ["bug", "test", "infra"]
+category: infra
+priority: normal
+effort: —
+archived: false
+---
+
+# Fix UserPromptSubmit hook ESM module resolution failure
+
+> **Category:** `infra` · **Priority:** ➡️ normal · **Effort:** —
+> **Tags:** `bug` `test` `infra`
+
+UserPromptSubmit hooks fail non-blockingly with node:internal/modules/esm/resolve:271. Reproduce the hook invocation, identify the missing or incorrectly resolved ESM module, repair the hook import/runtime path, and add regression coverage that exercises the real UserPromptSubmit entrypoint.
+
+_agent: (default) · _state: idle_
