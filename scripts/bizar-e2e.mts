@@ -77,11 +77,11 @@ try {
   assert.match(script, /send-session/);
   pass("Bizar workspace assets are served");
 
-  assert.ok(snapshot.features.some((feature: any) => feature.state === "active"));
-  pass("active Bizar feature is visible");
+  const integrationFeature = snapshot.features.find((feature: any) => feature.id === "F-120");
+  assert.equal(integrationFeature?.state, "passing");
+  pass("completed Bizar feature is visible");
 } finally {
   await server.stop();
 }
 
 process.stdout.write(`\n  ${checks.length}/${checks.length} checks passed\n\n`);
-
