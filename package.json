@@ -1,6 +1,6 @@
 {
   "name": "openkan",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "MDX-kanban task board plugin for OpenCode",
   "type": "module",
   "private": true,

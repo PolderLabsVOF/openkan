@@ -5,7 +5,22 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.0] — Unreleased
+## [0.3.0] — 2026-07-30
+
+### Added (Bizar control plane)
+
+- **Bizar workspace:** OpenKan now surfaces Bizar agents, durable tasks,
+  background sessions, feature status, progress, and message history in one
+  dedicated management view.
+- **Agent and session controls:** start named Bizar agents, send messages to
+  running sessions, stop sessions, and receive live state updates.
+- **Durable task controls:** create, claim, heartbeat, complete, and cancel
+  Bizar tasks without bypassing Bizar's CLI and storage contracts.
+- **REST and WebSocket bridge:** the OpenKan server delegates mutations to
+  `bizar control` through a JSON CLI boundary and streams snapshots to the UI
+  over a loopback-only WebSocket endpoint.
+- **Cross-project verification:** `npm run e2e` starts the real OpenKan server
+  and verifies Bizar state through REST, WebSocket, and browser assets.
 
 ### Added (Docs tab + Multi-project + Comment authorship)
 
@@ -144,6 +159,8 @@ Released as **v0.2.0**.
 - Install script (`install.sh`) that copies the plugin into the global OpenCode
   config directory.
 
-[Unreleased]: https://github.com/PolderLabsVOF/openkan/compare/v0.1.0...HEAD
-[0.2.0]: https://github.com/PolderLabsVOF/openkan/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/PolderLabsVOF/openkan/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/PolderLabsVOF/openkan/compare/v0.2.1...v0.3.0
+[0.2.1]: https://github.com/PolderLabsVOF/openkan/releases/tag/v0.2.1
+[0.2.0]: https://github.com/PolderLabsVOF/openkan/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/PolderLabsVOF/openkan/releases/tag/v0.1.0
