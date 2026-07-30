@@ -6327,3 +6327,145 @@ kbd {
 :root[data-theme="light"] .path-picker-crumb:hover {
   background: rgba(9, 105, 218, 0.08);
 }
+
+/* ─── Bizar control plane ───────────────────────────────────────────────── */
+#tab-bizar {
+  padding: 18px;
+}
+.bizar-hero,
+.bizar-panel {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 12px;
+}
+.bizar-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px;
+  margin-bottom: 14px;
+  background:
+    radial-gradient(circle at top right, rgba(124, 92, 255, .22), transparent 38%),
+    var(--surface);
+}
+.bizar-hero h2 { margin: 4px 0; font-size: 22px; }
+.bizar-hero p { margin: 0; color: var(--text-mute); font-family: ui-monospace, monospace; }
+.bizar-metrics { display: flex; gap: 16px; margin-top: 14px; color: var(--text-mute); font-size: 12px; }
+.bizar-metrics strong { color: var(--text); }
+.bizar-eyebrow {
+  color: var(--accent);
+  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .12em;
+}
+.bizar-hero-actions { display: flex; align-items: center; gap: 10px; }
+.bizar-status,
+.bizar-state {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.bizar-status.connected,
+.bizar-state-active,
+.bizar-state-running,
+.bizar-state-delivered { color: #3ddc97; border-color: rgba(61, 220, 151, .35); }
+.bizar-state-pending,
+.bizar-state-queued { color: #f3c969; border-color: rgba(243, 201, 105, .35); }
+.bizar-state-failed,
+.bizar-state-cancelled,
+.bizar-status.error { color: #ff7b86; border-color: rgba(255, 123, 134, .35); }
+.bizar-panel {
+  padding: 16px;
+  margin-bottom: 14px;
+}
+.bizar-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.bizar-panel > header > div { display: flex; align-items: center; gap: 9px; }
+.bizar-panel h3 { margin: 0; font-size: 16px; }
+.bizar-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  color: var(--accent);
+  background: rgba(124, 92, 255, .12);
+  font-weight: 700;
+}
+.bizar-form {
+  display: grid;
+  grid-template-columns: minmax(130px, .7fr) minmax(180px, 1fr) minmax(260px, 2fr) auto;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.bizar-form textarea,
+.bizar-form input,
+.bizar-form select {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  padding: 8px 10px;
+  min-height: 36px;
+  resize: vertical;
+}
+.bizar-list { display: grid; gap: 8px; }
+.bizar-agent,
+.bizar-session,
+.bizar-message,
+.bizar-feature {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface) 88%, var(--bg));
+}
+.bizar-agent p,
+.bizar-message p { margin: 4px 0 0; color: var(--text-mute); }
+.bizar-feature {
+  display: grid;
+  grid-template-columns: 80px minmax(220px, 1fr) auto;
+  align-items: center;
+}
+.bizar-progress-title { color: var(--text-mute); font-size: 12px; }
+.bizar-session > div:first-child { display: grid; gap: 5px; }
+.bizar-session code { color: var(--text-mute); font-size: 11px; }
+.bizar-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.bizar-table-wrap { overflow-x: auto; }
+.bizar-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.bizar-table th,
+.bizar-table td { padding: 9px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.bizar-table td:first-child { display: grid; gap: 3px; }
+.bizar-table td:first-child span { color: var(--text-mute); }
+.bizar-message { display: block; }
+.bizar-message header { display: flex; gap: 8px; align-items: center; }
+.bizar-message time { display: block; color: var(--text-mute); font-size: 10px; margin-top: 7px; }
+.bizar-error {
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(255, 123, 134, .35);
+  border-radius: 8px;
+  color: #ff7b86;
+  background: rgba(255, 123, 134, .08);
+}
+.bizar-empty,
+.bizar-loading { color: var(--text-mute); padding: 18px 4px; }
+@media (max-width: 900px) {
+  .bizar-form { grid-template-columns: 1fr; }
+  .bizar-hero { flex-direction: column; }
+  .bizar-agent,
+  .bizar-session { align-items: flex-start; flex-direction: column; }
+}

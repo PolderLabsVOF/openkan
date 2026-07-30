@@ -59,6 +59,7 @@ import { applyBulk, type BulkOperation } from "./bulk.ts";
 import { TASK_MDX_TEMPLATE, TEMPLATE_PARSE_HINTS } from "./template.ts";
 import { watch, type WatchEvent, sourcePathOfTask } from "./watcher.ts";
 import { listFs, readHome, parents, isDenyListed, realPathIfAllowed } from "./fs.ts";
+import { attachBizarWebSocket, handleBizarRequest } from "./bizar.ts";
 
 // ─── Module-level server state ────────────────────────────────────────────────
 
@@ -91,6 +92,7 @@ export interface RunningServer {
 
 let runningServer: RunningServer | null = null;
 let webRoot: string | null = null;
+let bizarSocketBridge: { close(): void; broadcastSnapshot(): void } | null = null;
 
 /**
  * Read the current git user from local config (same logic as git.ts currentUser
@@ -1450,6 +1452,33 @@ async function apiGetConfigSections(): Promise<Response> {
       ],
     },
     {
+      id: "bizar",
+      label: "Bizar",
+      fields: [
+        {
+          key: "enabled",
+          label: "Enabled",
+          type: "boolean",
+          value: (config["bizar"] as Record<string, unknown>)?.["enabled"] ?? true,
+          description: "Expose this project's configured Bizar control plane.",
+        },
+        {
+          key: "projectRoot",
+          label: "Bizar project root",
+          type: "text",
+          value: (config["bizar"] as Record<string, unknown>)?.["projectRoot"] ?? ".",
+          description: "Absolute path or path relative to the OpenKan project.",
+        },
+        {
+          key: "command",
+          label: "Bizar command",
+          type: "text",
+          value: (config["bizar"] as Record<string, unknown>)?.["command"] ?? "bizar",
+          description: "Executable or local cli/bin.mjs path. Never evaluated through a shell.",
+        },
+      ],
+    },
+    {
       id: "import",
       label: "Import",
       fields: [
@@ -1498,6 +1527,10 @@ async function apiPatchConfigSection(_ctx: BoardContext, sectionId: string, req:
       case "sandbox":
         if (!config["sandbox"]) (config as Record<string, unknown>)["sandbox"] = {};
         (config["sandbox"] as Record<string, unknown>)[key] = value;
+        break;
+      case "bizar":
+        if (!config["bizar"]) (config as Record<string, unknown>)["bizar"] = {};
+        (config["bizar"] as Record<string, unknown>)[key] = value;
         break;
       case "import":
         if (!config["import"]) (config as Record<string, unknown>)["import"] = {};
@@ -2193,6 +2226,8 @@ export async function startOrAttach(
       await writeResponse(res, response);
     }
   });
+  bizarSocketBridge?.close();
+  bizarSocketBridge = attachBizarWebSocket(server, getActiveProjectRoot);
 
     runningServer = {
       port,
@@ -2203,6 +2238,8 @@ export async function startOrAttach(
       broadcast,
       async stop() {
         clearInterval(driftSweepInterval);
+        bizarSocketBridge?.close();
+        bizarSocketBridge = null;
         await new Promise<void>((resolve, reject) => {
           server.close((err) => (err ? reject(err) : resolve()));
         });
@@ -2361,6 +2398,10 @@ async function handleRequest(req: Request): Promise<Response> {
 
   // GET /api/board
   if (path === "/api/board" && req.method === "GET") return apiGetBoard();
+
+  if (path.startsWith("/api/bizar/")) {
+    return handleBizarRequest(projectRoot, req, path);
+  }
 
   // GET /api/tasks-index
   if (path === "/api/tasks-index" && req.method === "GET") return apiGetTasksIndex(req);

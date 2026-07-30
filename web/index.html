@@ -30,6 +30,7 @@
         <button type="button" class="tab" role="tab" data-tab="changelog" aria-selected="false">Changelog</button>
         <button type="button" class="tab" role="tab" data-tab="contributors" aria-selected="false">Contributors</button>
         <button type="button" class="tab" role="tab" data-tab="docs" aria-selected="false">Docs</button>
+        <button type="button" class="tab" role="tab" data-tab="bizar" aria-selected="false">Bizar</button>
       </nav>
       <div class="topbar-right">
         <span id="status-pill" class="pill pill-disconnected" role="status" aria-live="polite">
@@ -279,6 +280,11 @@
         </div>
       </section>
 
+      <!-- ─── TAB: Bizar ──────────────────────────────────────────────── -->
+      <section id="tab-bizar" class="tab-pane" role="tabpanel" data-tab="bizar" hidden>
+        <div id="bizar-root" class="view-root"></div>
+      </section>
+
       <!-- ─── Add Project + Settings modals are top-level (below) ─────────
            They used to live inside <main class="dashboard">. When a task
            view opens, the dashboard gets display:none and the modals
@@ -368,7 +374,7 @@
     </div>
 
     <footer class="footer">
-      <span>openkan v0.1</span>
+      <span>openkan v0.2.1</span>
     </footer>
 
     <!-- api.js MUST load first; it exposes window.OpenKanAPI used by the others. -->
@@ -382,6 +388,7 @@
     <script src="changelog-view.js" defer></script>
     <script src="contributors-view.js" defer></script>
     <script src="docs-view.js" defer></script>
+    <script src="bizar.js" defer></script>
     <!-- M13: keyboard module loads before the palette so the palette can
          subscribe to "palette.open" / "palette.close" / "palette.isOpen". -->
     <script src="keyboard.js" defer></script>

@@ -7,9 +7,11 @@ import { mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
+const REPO_ROOT = join(import.meta.dirname, "..");
+
 function runSanityCheck(kanbanDir: string): { exitCode: number; stdout: string; stderr: string } {
   const result = spawnSync("node", ["--experimental-strip-types", "scripts/sanity-check.ts"], {
-    cwd: "/home/drb0rk/Projects/openkan",
+    cwd: REPO_ROOT,
     env: { ...process.env, OPENKAN_DIR: kanbanDir },
     encoding: "utf-8",
   });

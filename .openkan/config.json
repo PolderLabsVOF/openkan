@@ -19,5 +19,10 @@
     "autoArchiveDays": 2
   },
   "theme": "dark",
-  "autoArchiveDays": 2
+  "autoArchiveDays": 2,
+  "bizar": {
+    "enabled": true,
+    "projectRoot": "../BizarHarness",
+    "command": "../BizarHarness/cli/bin.mjs"
+  }
 }

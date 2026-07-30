@@ -13,6 +13,7 @@
   "scripts": {
     "test": "node --test --experimental-strip-types tests/*.test.mts tests/*.test.mjs",
     "check": "node --experimental-strip-types scripts/sanity-check.ts",
+    "e2e": "node --experimental-strip-types scripts/bizar-e2e.mts",
     "openkan": "node --experimental-strip-types bin/openkan.ts"
   },
   "dependencies": {
@@ -20,10 +21,12 @@
     "marked": "^14.0.0",
     "nanoid": "^5.0.0",
     "sanitize-html": "^2.13.0",
-    "sucrase": "^3.34.0"
+    "sucrase": "^3.34.0",
+    "ws": "^8.21.1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "@types/sanitize-html": "^2.13.0"
+    "@types/sanitize-html": "^2.13.0",
+    "@types/ws": "^8.18.1"
   }
 }
