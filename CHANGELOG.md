@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The dashboard now uses a cohesive responsive workspace design with a compact
+  navigation shell, board health summary, progressive filters, denser task
+  cards, mobile column snapping, and a redesigned task workspace.
+- Changelog and contributor views now include clear page-level context, and
+  switching tabs from task detail closes the detail view instead of leaving it
+  over the newly selected section.
+- `DESIGN.md` is now the durable product and accessibility contract for
+  frontend work.
 - The installer now keeps the OpenKan workflow skill synchronized for Codex,
   Claude Code, and shared agent skill discovery.
 - The OpenKan skill now requires agents to claim durable tasks, keep task

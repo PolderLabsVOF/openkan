@@ -6,6 +6,7 @@
     <meta name="color-scheme" content="dark light" />
     <title>OpenKan</title>
     <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="workspace.css?v=20260730" />
   </head>
   <body>
     <!-- M13: skip-link for keyboard / screen-reader users. Hidden until
@@ -37,7 +38,10 @@
           <span class="pill-dot" aria-hidden="true"></span>
           <span id="status-text">Disconnected</span>
         </span>
-        <button id="new-task-btn" class="btn btn-primary" type="button">+ New Task</button>
+        <button id="new-task-btn" class="btn btn-primary topbar-create" type="button">
+          <span class="btn-symbol" aria-hidden="true">+</span>
+          <span class="btn-label">New task</span>
+        </button>
         <!-- Project switcher: button shows the active project's name; clicking
              opens a small popover listing every registered project. Owned by
              web/app.js (OpenKanProjectSwitcher). -->
@@ -64,6 +68,32 @@
     <main class="dashboard">
       <!-- ─── TAB: Tasks ───────────────────────────────────────────────── -->
       <section id="tab-tasks" class="tab-pane" role="tabpanel" data-tab="tasks">
+        <div class="workspace-intro">
+          <div>
+            <span class="workspace-eyebrow">Project workspace</span>
+            <h2>Move work forward</h2>
+            <p>Plan, coordinate, and review every task in one durable board.</p>
+          </div>
+          <div id="board-overview" class="board-overview" aria-label="Board summary">
+            <div class="overview-stat">
+              <span id="overview-total" class="overview-value">0</span>
+              <span class="overview-label">Visible</span>
+            </div>
+            <div class="overview-stat is-doing">
+              <span id="overview-doing" class="overview-value">0</span>
+              <span class="overview-label">In progress</span>
+            </div>
+            <div class="overview-stat is-review">
+              <span id="overview-review" class="overview-value">0</span>
+              <span class="overview-label">In review</span>
+            </div>
+            <div class="overview-stat is-done">
+              <span id="overview-done" class="overview-value">0</span>
+              <span class="overview-label">Done</span>
+            </div>
+          </div>
+        </div>
+
         <!-- Saved filter chips row (populated by app.js). Hidden when empty. -->
         <div id="saved-filters-bar" class="saved-filters-bar" hidden>
           <span class="filter-bar-label">Saved</span>
@@ -72,14 +102,39 @@
 
         <!-- Category / tag / sort filter bar. Populated + wired up by app.js. -->
         <div class="filter-bar" id="filter-bar" role="region" aria-label="Filter tasks">
-          <div class="filter-bar-row search" id="filter-search">
-            <span class="filter-bar-label">Search</span>
+          <div class="filter-primary">
+            <div class="filter-bar-row search" id="filter-search">
+            <span class="search-icon" aria-hidden="true"></span>
             <input type="search" id="search-input" autocomplete="off" spellcheck="false"
                    placeholder="Search titles, descriptions, tags, MDX content…"
                    aria-label="Search tasks" />
             <span class="search-meta" id="search-meta" aria-live="polite"></span>
+            </div>
+            <div class="filter-bar-row controls" id="filter-controls">
+              <label class="select-wrap" id="sort-select-wrap">
+                <span class="sr-only">Sort tasks</span>
+                <select id="sort-select" aria-label="Sort tasks">
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="priority">Priority (urgent→low)</option>
+                  <option value="effort">Effort (xl→xs)</option>
+                  <option value="activity">Last activity</option>
+                </select>
+              </label>
+              <button type="button" id="filter-toggle-btn" class="filter-toggle-btn"
+                      aria-expanded="false" aria-controls="filter-advanced">
+                Filters <span id="filter-count" class="filter-count" hidden>0</span>
+              </button>
+              <div class="archive-toggle" role="group" aria-label="Archive filter">
+                <button type="button" data-archive="active" class="active">Active</button>
+                <button type="button" data-archive="archived">Archived</button>
+                <button type="button" data-archive="both">Both</button>
+              </div>
+            </div>
           </div>
-          <div class="filter-bar-row categories" id="filter-categories">
+
+          <div id="filter-advanced" class="filter-advanced" hidden>
+            <div class="filter-bar-row categories" id="filter-categories">
             <span class="filter-bar-label">Category</span>
             <button type="button" data-category="all" class="all active">All</button>
             <button type="button" data-category="frontend" class="c-frontend">frontend</button>
@@ -91,8 +146,8 @@
             <button type="button" data-category="data" class="c-data">data</button>
             <button type="button" data-category="security" class="c-security">security</button>
             <button type="button" data-category="task" class="c-task">task</button>
-          </div>
-          <div class="filter-bar-row tags" id="filter-tags">
+            </div>
+            <div class="filter-bar-row tags" id="filter-tags">
             <span class="filter-bar-label">Tags</span>
             <button type="button" data-tag="bug" class="t-bug">bug</button>
             <button type="button" data-tag="feature" class="t-feature">feature</button>
@@ -102,32 +157,17 @@
             <button type="button" data-tag="perf" class="t-perf">perf</button>
             <button type="button" data-tag="security" class="t-security">security</button>
             <button type="button" data-tag="a11y" class="t-a11y">a11y</button>
-          </div>
-          <div class="filter-bar-row contributors" id="filter-contributors">
+            </div>
+            <div class="filter-bar-row contributors" id="filter-contributors">
             <span class="filter-bar-label">Contributors</span>
             <button type="button" data-contributor="all" class="active">all</button>
             <button type="button" data-contributor="@me" class="contributor-me">@me</button>
             <!-- Other contributors are populated by app.js from /api/contributors -->
-          </div>
-          <div class="filter-bar-row controls" id="filter-controls">
-            <span class="filter-bar-label">Sort</span>
-            <label class="select-wrap" id="sort-select-wrap">
-              <select id="sort-select" aria-label="Sort tasks">
-                <option value="newest">Newest first</option>
-                <option value="oldest">Oldest first</option>
-                <option value="priority">Priority (urgent→low)</option>
-                <option value="effort">Effort (xl→xs)</option>
-                <option value="activity">Last activity</option>
-              </select>
-            </label>
-            <button type="button" id="save-filter-btn" class="filter-bar-save" title="Save current filter">💾 Save</button>
-            <span class="filter-bar-spacer"></span>
-            <div class="archive-toggle" role="group" aria-label="Archive filter">
-              <button type="button" data-archive="active" class="active">Active</button>
-              <button type="button" data-archive="archived">Archived</button>
-              <button type="button" data-archive="both">Both</button>
             </div>
-            <button type="button" class="filter-bar-clear" id="filter-clear" aria-label="Clear filters">✕ Clear</button>
+            <div class="filter-advanced-actions">
+              <button type="button" id="save-filter-btn" class="filter-bar-save" title="Save current filter">Save view</button>
+              <button type="button" class="filter-bar-clear" id="filter-clear" aria-label="Clear filters">Clear filters</button>
+            </div>
           </div>
         </div>
 
@@ -374,7 +414,7 @@
     </div>
 
     <footer class="footer">
-      <span>openkan v0.2.1</span>
+      <span>OpenKan v0.3.0 · local-first workspace</span>
     </footer>
 
     <!-- api.js MUST load first; it exposes window.OpenKanAPI used by the others. -->

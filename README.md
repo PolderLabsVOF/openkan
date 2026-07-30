@@ -10,6 +10,8 @@ and does not require a hosted service.
 ## Highlights
 
 - Five-column board: Backlog, To Do, In Progress, Review, Done
+- Responsive workspace with board health, progressive filters, and mobile
+  column snapping
 - Drag-and-drop ordering, bulk actions, search, filters, subtasks, and archives
 - MDX task workspaces with comments, structured questions, and TSX previews
 - Multi-project switching and a project documentation browser

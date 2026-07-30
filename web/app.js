@@ -190,6 +190,15 @@
     if (searchInput && document.activeElement !== searchInput && searchInput.value !== filter.search) {
       searchInput.value = filter.search;
     }
+    const activeFilterCount =
+      (filter.category !== "all" ? 1 : 0) +
+      filter.tags.length +
+      (filter.contributor !== "all" ? 1 : 0);
+    const count = document.getElementById("filter-count");
+    if (count) {
+      count.textContent = String(activeFilterCount);
+      count.hidden = activeFilterCount === 0;
+    }
   }
 
   function taskMatchesFilter(t) {
@@ -1053,6 +1062,16 @@
       const filtered = filterActive ? list.filter(taskMatchesFilter) : list;
       byColumn.set(colId, sortTasks(filtered));
     }
+
+    const visibleTasks = [...byColumn.values()].flat();
+    const setOverview = (id, value) => {
+      const target = document.getElementById(id);
+      if (target) target.textContent = String(value);
+    };
+    setOverview("overview-total", visibleTasks.length);
+    setOverview("overview-doing", visibleTasks.filter((task) => task.column === "doing").length);
+    setOverview("overview-review", visibleTasks.filter((task) => task.column === "review").length);
+    setOverview("overview-done", visibleTasks.filter((task) => task.column === "done").length);
 
     for (const col of COLUMNS) {
       const colTasks = byColumn.get(col.id) || [];
@@ -3084,6 +3103,10 @@
 
   function openModal() {
     if (!modal) return;
+    if (window.OpenKanTaskView?.getCurrentTaskId?.()) {
+      window.OpenKanTaskView.close();
+    }
+    activateTab("tasks");
     modal.hidden = false;
     if (form) {
       form.reset();
@@ -3251,8 +3274,29 @@
 
   function attachTabRouter() {
     document.querySelectorAll(".tab").forEach((btn) => {
-      btn.addEventListener("click", () => activateTab(btn.dataset.tab || "tasks"));
+      btn.addEventListener("click", () => {
+        if (window.OpenKanTaskView?.getCurrentTaskId?.()) {
+          window.OpenKanTaskView.close();
+        }
+        activateTab(btn.dataset.tab || "tasks");
+      });
     });
+  }
+
+  function attachFilterDisclosure() {
+    const toggle = document.getElementById("filter-toggle-btn");
+    const advanced = document.getElementById("filter-advanced");
+    if (!toggle || !advanced) return;
+    const setOpen = (open) => {
+      advanced.hidden = !open;
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      toggle.classList.toggle("active", open);
+      try { localStorage.setItem("openkan:filters-open", open ? "1" : "0"); } catch {}
+    };
+    let initial = false;
+    try { initial = localStorage.getItem("openkan:filters-open") === "1"; } catch {}
+    setOpen(initial);
+    toggle.addEventListener("click", () => setOpen(advanced.hidden));
   }
 
   // ---------- Contributors sidebar (filter row + helpers) ----------
@@ -3773,6 +3817,7 @@
     applyFilterToButtons();
     renderSavedFilters();
     attachTabRouter();
+    attachFilterDisclosure();
     attachProjectSwitcher();
     // Page-wide right-click context menu (capture-phase delegation). The
     // handler decides which menu to show based on `e.target.closest()`:

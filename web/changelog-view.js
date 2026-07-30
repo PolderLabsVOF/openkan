@@ -126,6 +126,18 @@
     return wrap;
   }
 
+  function buildViewHero() {
+    const hero = el("header", "view-hero");
+    const copy = el("div");
+    copy.append(
+      el("span", "view-eyebrow", { text: "Project activity" }),
+      el("h2", null, { text: "Changelog" }),
+      el("p", null, { text: "Trace task, agent, settings, and source-control events over time." }),
+    );
+    hero.append(copy);
+    return hero;
+  }
+
   function buildFilterRow() {
     const row = el("div", "changelog-filter-row");
 
@@ -400,6 +412,7 @@
 
   function rebuildTimeline() {
     state.rootEl.innerHTML = "";
+    state.rootEl.append(buildViewHero());
     state.summaryEl = el("div", "changelog-summary");
     state.rootEl.append(state.summaryEl);
     state.rootEl.append(buildFilterRow());

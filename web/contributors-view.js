@@ -86,6 +86,18 @@
     return header;
   }
 
+  function buildViewHero() {
+    const hero = el("header", "view-hero");
+    const copy = el("div");
+    copy.append(
+      el("span", "view-eyebrow", { text: "Project collaboration" }),
+      el("h2", null, { text: "Contributors" }),
+      el("p", null, { text: "See ownership, recent activity, and the tasks each contributor touches." }),
+    );
+    hero.append(copy);
+    return hero;
+  }
+
   function sortContributors(list) {
     const sorted = list.slice();
     if (state.sort === "commits") {
@@ -290,6 +302,7 @@
 
     state.contributors = contributors;
     rootEl.innerHTML = "";
+    rootEl.append(buildViewHero());
     rootEl.append(buildHeader());
     state.listEl = el("div", "contributors-list");
     rootEl.append(state.listEl);
