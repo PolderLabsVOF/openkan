@@ -17,8 +17,8 @@ column: todo
 order: 0
 state: idle
 status: idle
-agent: {/* opencode agent name, e.g. "build" */}
-model: {/* provider/model, e.g. "opencode/default" */}
+agent: {/* Bizar agent ID, e.g. "mike" */}
+model: {/* optional provider/model override */}
 createdAt: {/* ISO timestamp */}
 updatedAt: {/* ISO timestamp */}
 tags: []

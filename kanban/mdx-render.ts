@@ -400,9 +400,6 @@ export async function renderMdx(
     allowedTags: Array.from(SANITIZE_ALLOWED_TAGS),
     allowedAttributes: SANITIZE_ALLOWED_ATTRS,
     allowedSchemes: SANITIZE_ALLOWED_SCHEMES,
-    filter(url: string) {
-      return urlFilter(url);
-    },
   });
 
   return {

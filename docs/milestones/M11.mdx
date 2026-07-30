@@ -6,7 +6,7 @@ milestone: 11
 
 ## Goal
 
-Add a first-class `/organize` slash command to OpenCode that delegates to the agent to **categorize, clean up, and reorganize** the openkan board. The agent should be able to add a "progress note" to a task's MDX automatically when the OpenCode session reports progress, so the kanban stays in sync with what the agent is doing in real time.
+Add a first-class `/organize` slash command to Bizar that delegates to the agent to **categorize, clean up, and reorganize** the openkan board. The agent should be able to add a "progress note" to a task's MDX automatically when the Bizar session reports progress, so the kanban stays in sync with what the agent is doing in real time.
 
 ## Why now
 
@@ -14,7 +14,7 @@ The board is a cockpit, but two of the highest-value activities — keeping the 
 
 ## Scope
 
-### `/organize` slash command (`.opencode/command/organize.md`)
+### `/organize` slash command (`commands/organize.md`)
 
 A slash command that, when invoked by the user, asks the agent to look at the board and propose / apply a reorganization. The command body is a short instruction the agent follows.
 
@@ -50,7 +50,7 @@ within reason — the user can always undo.
 
 ### `kanban_organize` tool
 
-A new tool in `plugins/tools.ts` that accepts a batch of operations:
+A new tool in `kanban/server.ts` that accepts a batch of operations:
 
 ```ts
 kanban_organize(operations: Array<
@@ -78,7 +78,7 @@ The tool applies all operations atomically (one `kanban.organized` changelog eve
 
 ### Auto-progress notes
 
-The plugin entrypoint already subscribes to OpenCode session events. Add a hook: when a session reports a `message.part.updated` or `session.tool.call` event, write a brief progress line to the task's MDX artifact under a new `## Agent progress` section. The line is timestamped; the section is created on first update and updated in place.
+The original event adapter subscribed to session events. Add a hook: when a session reports a `message.part.updated` or `session.tool.call` event, write a brief progress line to the task's MDX artifact under a new `## Agent progress` section. The line is timestamped; the section is created on first update and updated in place.
 
 This is intentionally lightweight — it's a breadcrumb, not a transcript. The full transcript lives in `sessions/<sid>.mdx` (existing). The progress note is a one-liner: `> [12:34:56] tool: edit_file on src/auth.ts — added login rate-limit`.
 
@@ -102,9 +102,9 @@ Improve the existing filter bar (M7.1):
 
 ## Files touched
 
-- `.opencode/command/organize.md` (new) — the slash command definition
-- `plugins/tools.ts` — `kanban_organize` tool; auto-progress write on session events
-- `plugins/kanban.ts` — subscribe to more session event types; emit progress notes
+- `commands/organize.md` (new) — the slash command definition
+- `kanban/server.ts` — `kanban_organize` tool; auto-progress write on session events
+- `kanban/server.ts` — subscribe to session lifecycle events; emit progress notes
 - `kanban/board.ts` — accept `archived: boolean` (M10)
 - `kanban/mdx.ts` — render the `## Agent progress` section
 - `kanban/server.ts` — endpoint for organize batch (or call `kanban_organize` directly from the tool)
@@ -115,9 +115,9 @@ Improve the existing filter bar (M7.1):
 
 ## Acceptance criteria
 
-- [ ] `/organize` is a registered OpenCode slash command; invoking it delegates to the agent with the right instructions
+- [ ] The portable `/organize` prompt delegates to the agent with the right instructions
 - [ ] `kanban_organize` accepts a batch of operations and applies them atomically with a single changelog event
-- [ ] When the OpenCode session reports tool calls, a progress line is written to the task's MDX
+- [ ] When the Bizar session reports tool calls, a progress line is written to the task's MDX
 - [ ] Tasks can be sorted by 5 criteria; sort is persisted in the URL hash
 - [ ] Saved filters work via `localStorage`; up to 5 saved
 - [ ] The filter bar has a third row for contributors; `@me` resolves to the git user

@@ -6,7 +6,7 @@ milestone: 0
 
 ## Goal
 
-Record exactly what the openkan base plugin already ships today.
+Record exactly what the openkan base application already ships today.
 
 ## What's already built
 
@@ -17,9 +17,9 @@ Record exactly what the openkan base plugin already ships today.
 - `kanban/board.ts` — five-column kanban state (Backlog, To Do, In Progress, Review, Done), JSON state stored in `.openkan/state.json`
 - `kanban/mdx.ts` — task-to-MDX artifact conversion, writes `.openkan/tasks/tsk-<id>.mdx` and later `tasks/<id>/task.mdx`
 
-**Custom OpenCode tools**
-- `plugins/tools.ts` — four tools registered with OpenCode: `kanban_add`, `kanban_move`, `kanban_start`, `kanban_view`
-- `plugins/kanban.ts` — tool implementation, reads/writes board state via `kanban/board.ts`
+**Initial agent operations**
+- `kanban/server.ts` — four agent operations implemented by the local API: `kanban_add`, `kanban_move`, `kanban_start`, `kanban_view`
+- `kanban/server.ts` — local HTTP operations backed by `kanban/board.ts`
 
 **Web UI**
 - `web/index.html` + `web/app.js` — localhost board UI with column rendering and SSE live updates
@@ -36,6 +36,6 @@ All of the following are green today:
 - [ ] Board has five columns: Backlog, To Do, In Progress, Review, Done
 - [ ] `kanban_add` tool creates a task and writes its MDX artifact
 - [ ] `kanban_move` and `kanban_start` update task column in state
-- [ ] `kanban_view` returns board snapshot to OpenCode
+- [ ] `kanban_view` returns the board snapshot
 - [ ] SSE endpoint pushes board updates to the web UI
 - [ ] Task MDX artifacts live under `.openkan/tasks/`

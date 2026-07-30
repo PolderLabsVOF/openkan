@@ -6,13 +6,13 @@ milestone: 11
 
 ## Goal
 
-Add a first-class `/organize` slash command to OpenCode that delegates to the agent to **categorize, clean up, and reorganize** the openkan board. The agent should be able to add a "progress note" to a task's MDX automatically when the OpenCode session reports progress, so the kanban stays in sync with what the agent is doing in real time.
+Add a first-class `/organize` slash command to Bizar that delegates to the agent to **categorize, clean up, and reorganize** the openkan board. The agent should be able to add a "progress note" to a task's MDX automatically when the Bizar session reports progress, so the kanban stays in sync with what the agent is doing in real time.
 
 ## What was delivered
 
-### `/organize` slash command (`.opencode/command/organize.md`)
+### `/organize` slash command (`commands/organize.md`)
 
-User invokes `/organize` in OpenCode. The agent reads the board, identifies miscategorized / related / stale / vague tasks, builds a batch of `kanban_organize` operations, and applies them atomically with a single `kanban.organized` changelog event.
+User invokes `/organize` in Bizar. The agent reads the board, identifies miscategorized / related / stale / vague tasks, builds a batch of `kanban_organize` operations, and applies them atomically with a single `kanban.organized` changelog event.
 
 ### `kanban_organize` tool
 
@@ -35,7 +35,7 @@ Returns a structured diff: `{applied, skipped, summary}`.
 
 ### Auto-progress notes
 
-When the OpenCode session reports a tool call or message part, a one-liner is appended to the task's MDX under `## Agent progress`:
+When the Bizar session reports a tool call or message part, a one-liner is appended to the task's MDX under `## Agent progress`:
 
 ```mdx
 ## Agent progress
@@ -55,9 +55,9 @@ Throttled to 1 line/sec/session. Rendered as a timeline in the task detail view.
 
 ## Files touched
 
-- `.opencode/command/organize.md` (new) — slash command
-- `plugins/tools.ts` — `kanban_organize`
-- `plugins/kanban.ts` — auto-progress write on session events
+- `commands/organize.md` (new) — slash command
+- `kanban/server.ts` — `kanban_organize`
+- `kanban/server.ts` — auto-progress write on session events
 - `kanban/server.ts` — `POST /api/organize`
 - `web/index.html` — sort dropdown, saved-filter chips, archive toggle
 - `web/app.js` — sort/filter logic, saved filters, @me filter

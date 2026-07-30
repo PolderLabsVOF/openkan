@@ -5,6 +5,22 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- The installer now owns a dedicated application directory at
+  `${XDG_DATA_HOME:-$HOME/.local/share}/openkan` and updates it atomically.
+- Production dependencies are installed inside the OpenKan application
+  directory instead of being merged into another application's package.
+- The `openkan` command is linked from a configurable `OPENKAN_BIN_DIR`,
+  defaulting to `~/.local/bin`.
+
+### Removed
+
+- The retired host-specific plugin adapter and its SDK dependency.
+- Legacy host branding from source, documentation, examples, and templates.
+
 ## [0.3.0] — 2026-07-30
 
 ### Added (Bizar control plane)
@@ -152,12 +168,11 @@ Released as **v0.2.0**.
   at `http://127.0.0.1:7777/`.
 - Live UI updates over Server-Sent Events with polling fallback.
 - Drag-and-drop between columns with optimistic UI and revert on error.
-- Four custom OpenCode tools: `kanban_add`, `kanban_move`, `kanban_start`,
+- Four initial agent tools: `kanban_add`, `kanban_move`, `kanban_start`,
   `kanban_view`.
 - Per-task actions: Start (dispatches the agent), Abort, Delete, View Artifact.
 - MDX artifact mirror under `.openkan/tasks/` and `.openkan/sessions/`.
-- Install script (`install.sh`) that copies the plugin into the global OpenCode
-  config directory.
+- Initial host-integrated installer.
 
 [Unreleased]: https://github.com/PolderLabsVOF/openkan/compare/v0.3.0...HEAD
 [0.3.0]: https://github.com/PolderLabsVOF/openkan/compare/v0.2.1...v0.3.0

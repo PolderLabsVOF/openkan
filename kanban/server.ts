@@ -6,11 +6,11 @@ import { createServer, type IncomingMessage, type Server as HttpServer, type Ser
 import { Readable } from "node:stream";
 import { join, extname } from "path";
 import { constants as fs_constants, openSync, closeSync } from "node:fs";
-import type { FLock } from "node:fs";
 import { spawnSync } from "node:child_process";
 import type { BoardContext } from "./board.ts";
 import {
   type Task,
+  type ColumnId,
   type TaskStatus,
   type TaskState,
   type TaskArtifacts,
@@ -23,7 +23,7 @@ import {
   taskArtifacts,
   setKanbanDir,
 } from "./board.ts";
-import { extractMetadata, type Category } from "./tags.ts";
+import { extractMetadata } from "./tags.ts";
 import {
   boardToMarkdown,
   writeTaskMdx,
@@ -59,11 +59,16 @@ import { applyBulk, type BulkOperation } from "./bulk.ts";
 import { TASK_MDX_TEMPLATE, TEMPLATE_PARSE_HINTS } from "./template.ts";
 import { watch, type WatchEvent, sourcePathOfTask } from "./watcher.ts";
 import { listFs, readHome, parents, isDenyListed, realPathIfAllowed } from "./fs.ts";
-import { attachBizarWebSocket, handleBizarRequest } from "./bizar.ts";
+import {
+  attachBizarWebSocket,
+  executeBizarCommand,
+  getBizarSnapshot,
+  handleBizarRequest,
+} from "./bizar.ts";
 
 // ─── Module-level server state ────────────────────────────────────────────────
 
-let watcherHandle: { close(): void } | null = null;
+let watcherHandle: ReturnType<typeof watch> | null = null;
 /** Timestamp up to which filesystem-change events should be suppressed (self-write guard). */
 let selfWriteUntil = 0;
 
@@ -153,7 +158,6 @@ async function renderArtifact(markdownPath: string, rawFlag: boolean, theme?: st
   const clean = sanitizeHtml(html, {
     allowedTags: ALLOWED_TAGS,
     allowedAttributes: ALLOWED_ATTRS,
-    filter(url) { return urlFilter(url); },
   });
   return {
     body: `<!DOCTYPE html>
@@ -317,14 +321,20 @@ async function toRequest(req: IncomingMessage): Promise<Request> {
     else if (value !== undefined) headers.set(key, value);
   }
   if (method === "GET" || method === "HEAD") return new Request(url, { method, headers });
-  return new Request(url, { method, headers, body: Readable.toWeb(req) as BodyInit, duplex: "half" });
+  const init = {
+    method,
+    headers,
+    body: Readable.toWeb(req) as BodyInit,
+    duplex: "half",
+  } as RequestInit;
+  return new Request(url, init);
 }
 
 async function writeResponse(res: ServerResponse, response: Response): Promise<void> {
   res.statusCode = response.status;
   response.headers.forEach((value, key) => { res.setHeader(key, value); });
   if (!response.body) { res.end(); return; }
-  const body = Readable.fromWeb(response.body as globalThis.ReadableStream);
+  const body = Readable.fromWeb(response.body as any);
   await new Promise<void>((resolve, reject) => {
     body.on("error", reject); res.on("error", reject); res.on("finish", resolve);
     body.pipe(res);
@@ -582,7 +592,7 @@ export async function apiUpdateTask(_ctx: BoardContext, taskId: string, req: Req
     if (patch.column !== undefined && patch.column !== task.column) columnChanged = true;
     if (patch.title !== undefined) { task.title = patch.title; isEdit = true; }
     if (patch.description !== undefined) { task.description = patch.description; isEdit = true; }
-    if (patch.column !== undefined) task.column = patch.column;
+    if (patch.column !== undefined) task.column = patch.column as ColumnId;
     if (patch.agent !== undefined) task.agent = patch.agent;
     if (patch.model !== undefined) task.model = patch.model;
     if (patch.state !== undefined) task.state = patch.state;
@@ -1012,7 +1022,7 @@ async function apiPreview(req: Request): Promise<Response> {
 
 // ─── Session/status handlers (reuse existing) ─────────────────────────────────
 
-async function apiStartTask(ctx: BoardContext, taskId: string, req: Request): Promise<Response> {
+export async function apiStartTask(projectRoot: string, taskId: string, req: Request): Promise<Response> {
   interface StartBody { agent?: string; model?: string; }
   let body: StartBody;
   try { body = await req.json(); } catch { body = {}; }
@@ -1022,27 +1032,40 @@ async function apiStartTask(ctx: BoardContext, taskId: string, req: Request): Pr
   if (!task) return errorResponse("Task not found", 404);
   if (task.sessionId) return errorResponse("Task already has an active session", 409);
 
-  const agent = body.agent ?? task.agent ?? "";
-  if (agent && ctx.client?.app?.agents) {
-    try {
-      const list: any[] = await ctx.client.app.agents();
-      const known = list.map((a: any) => typeof a === "string" ? a : a.name ?? "").filter(Boolean);
-      if (known.length > 0 && !known.includes(agent)) {
-        return errorResponse(`Unknown agent "${agent}". Available: ${known.join(", ")}`, 400);
-      }
-    } catch (_) { /* allow unknown */ }
+  let knownAgents: string[] = [];
+  try {
+    const snapshot = getBizarSnapshot(projectRoot);
+    knownAgents = Array.isArray(snapshot?.agents)
+      ? snapshot.agents.map((candidate: any) => candidate.id ?? candidate.name).filter(Boolean)
+      : [];
+  } catch (e) {
+    return errorResponse("Unable to load Bizar agents: " + String((e as any)?.message ?? e), 502);
   }
 
-  const sessionOptions: Record<string, any> = { path: { id: `kanban-${taskId}` } };
-  if (agent) sessionOptions.agent = agent;
-  if (body.model) sessionOptions.model = body.model;
+  if (body.agent && knownAgents.length > 0 && !knownAgents.includes(body.agent)) {
+    return errorResponse(`Unknown agent "${body.agent}". Available: ${knownAgents.join(", ")}`, 400);
+  }
+
+  const preferred = body.agent || task.agent;
+  const agent = (preferred && knownAgents.includes(preferred) ? preferred : "")
+    || (knownAgents.includes("mike") ? "mike" : knownAgents[0]);
+  if (!agent) return errorResponse("No Bizar agents are available", 503);
 
   let sessionId: string;
   try {
-    const sess: any = await ctx.client.session.create(sessionOptions);
-    sessionId = sess.id ?? sess.sessionId ?? String(sess);
+    const started = executeBizarCommand(projectRoot, "start-session", {
+      agent,
+      name: `OpenKan: ${task.title}`,
+      prompt: [
+        `Work on OpenKan task ${task.id}: ${task.title}`,
+        task.description,
+        `Keep the task workspace at .openkan/tasks/${task.id}/task.mdx synchronized with progress.`,
+      ].filter(Boolean).join("\n\n"),
+    });
+    sessionId = started?.session?.sessionId ?? started?.session?.id ?? "";
+    if (!sessionId) throw new Error("Bizar did not return a session ID");
   } catch (e) {
-    return errorResponse("session.create failed: " + String((e as any)?.message ?? e), 500);
+    return errorResponse("Bizar session start failed: " + String((e as any)?.message ?? e), 502);
   }
 
   const startedAt = nowIso();
@@ -1059,15 +1082,6 @@ async function apiStartTask(ctx: BoardContext, taskId: string, req: Request): Pr
   });
 
   const updatedTask = (await getBoard()).tasks.find(t => t.id === taskId)!;
-  try {
-    await ctx.client.session.promptAsync({
-      path: { id: sessionId },
-      body: { prompt: `${task.title}\n\n${task.description}`.trim() },
-    });
-  } catch (e) {
-    ctx.log("warn", "promptAsync failed for " + sessionId + ": " + String((e as any)?.message ?? e));
-  }
-
   await writeTaskMdx(updatedTask, KANBAN_DIR, await getBoard());
   await writeBoardMdx(await getBoard(), KANBAN_DIR);
   broadcast("task.updated", updatedTask);
@@ -1080,15 +1094,17 @@ async function apiStartTask(ctx: BoardContext, taskId: string, req: Request): Pr
   return jsonResponse(updatedTask);
 }
 
-async function apiAbortTask(ctx: BoardContext, taskId: string): Promise<Response> {
+export async function apiAbortTask(projectRoot: string, taskId: string): Promise<Response> {
   const board = await getBoard();
   const task = board.tasks.find(t => t.id === taskId);
   if (!task) return errorResponse("Task not found", 404);
   const sessionId = task.sessionId;
   if (!sessionId) return errorResponse("Task has no active session", 409);
 
-  try { await ctx.client.session.abort({ path: { id: sessionId } }); } catch (e: any) {
-    ctx.log("warn", "session.abort failed for " + sessionId + ": " + String((e as any)?.message ?? e));
+  try {
+    executeBizarCommand(projectRoot, "stop-session", { sessionId });
+  } catch (e: any) {
+    return errorResponse("Bizar session stop failed: " + String(e?.message ?? e), 502);
   }
 
   selfWriteUntil = Date.now() + 250;
@@ -1298,7 +1314,11 @@ export async function apiOrganize(_ctx: BoardContext, req: Request): Promise<Res
             if (!t.tags.includes(`area:${op.area}`)) t.tags = [...t.tags, `area:${op.area}`];
             break;
           default:
-            skipped.push({ taskId: op.taskId, kind: (op as any).kind, reason: `Unknown operation kind` });
+            skipped.push({
+              taskId: (op as any).taskId,
+              kind: (op as any).kind,
+              reason: "Unknown operation kind",
+            });
             continue;
         }
         t.updatedAt = nowIso();
@@ -1558,7 +1578,7 @@ async function apiPatchConfigSection(_ctx: BoardContext, sectionId: string, req:
 
 // ─── Updated tasks index (includes archived) ────────────────────────────────
 
-function taskToIndexEntry(task: Task, includeArchived: boolean): TaskIndexEntry & { archived: boolean } {
+function taskToIndexEntry(task: Task, _includeArchived: boolean) {
   return {
     id: task.id,
     title: task.title,
@@ -1576,6 +1596,7 @@ function taskToIndexEntry(task: Task, includeArchived: boolean): TaskIndexEntry 
     priority: task.priority ?? "normal",
     effort: task.effort ?? null,
     archived: task.archived,
+    contributors: [] as Array<{ name: string; email: string; lastSeen: string }>,
   };
 }
 
@@ -1997,7 +2018,7 @@ export async function handleEvent(ctx: BoardContext, event: any): Promise<void> 
         recordEvent(KANBAN_DIR, "agent.ended", {
           taskId: rec.taskId,
           author: "agent",
-          summary: `agent ended (failed) on '${task?.title ?? rec.taskId}'`,
+          summary: `agent ended (failed) on '${updated?.title ?? rec.taskId}'`,
           payload: { sessionId: sid, status: "failed", error: errMsg },
         });
       }
@@ -2016,7 +2037,7 @@ export async function handleEvent(ctx: BoardContext, event: any): Promise<void> 
 async function _startServer(
   ctx: BoardContext,
   opts: { host?: string; port?: number; maxPortTries?: number; webRoot?: string },
-  extraServerOpts?: { writePidFile?: boolean; lockFd?: FLock },
+  extraServerOpts?: { writePidFile?: boolean; lockFd?: number },
 ): Promise<{ server: HttpServer; port: number; hostname: string }> {
   const host = opts.host ?? "127.0.0.1";
   const basePort = opts.port ?? 7777;
@@ -2207,7 +2228,11 @@ export async function startOrAttach(
   }
 
   // 3. We have the lock — bind the server
-  const { server, port, hostname } = await _startServer(ctx, { ...opts, host, port: basePort, maxPortTries: maxTries }, { writePidFile: true, lockFd: lockFd as unknown as FLock | null });
+  const { server, port, hostname } = await _startServer(
+    ctx,
+    { ...opts, host, port: basePort, maxPortTries: maxTries },
+    { writePidFile: true, lockFd: lockFd ?? undefined },
+  );
 
   const pid = process.pid;
   writePidFile(dir, pid);
@@ -2387,7 +2412,7 @@ async function handleRequest(req: Request): Promise<Response> {
   }
 
   // Static: any file under webRoot with an allowed extension. webRoot
-  // defaults to `<project>/web`; the caller (CLI or plugin) can override.
+  // defaults to `<project>/web`; the caller can override.
   if (path === "/" || /\.(html|css|js|json|md|txt)$/.test(path)) {
     const root = webRoot ?? join(KANBAN_DIR, "..", "web");
     const pathForStatic = path === "/" ? "/index.html" : path;
@@ -2599,11 +2624,10 @@ async function handleRequest(req: Request): Promise<Response> {
 
   // /api/tasks/:id/start | /abort
   const actionMatch = path.match(/^\/api\/tasks\/([^/]+)\/(start|abort)$/);
-  if (actionMatch) {
+  if (actionMatch && req.method === "POST") {
     const [_, id, action] = actionMatch;
-    // These need a real ctx with client, so we use runningServer's broadcast directly
-    if (action === "start") return errorResponse("Use plugin session API to start tasks", 501);
-    if (action === "abort") return errorResponse("Use plugin session API to abort tasks", 501);
+    if (action === "start") return apiStartTask(projectRoot, id, req);
+    if (action === "abort") return apiAbortTask(projectRoot, id);
   }
 
   // /api/sessions/:sid/status

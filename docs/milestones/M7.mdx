@@ -43,7 +43,7 @@ Today the board is the source of truth (`board.json`) and the task MDX is a flat
   - `openkan config [get|set|list] [key] [value]` — view and edit `.openkan/config.json` (port, host, defaultAgent, defaultModel, import.include, import.exclude, sandbox.tsxMaxBytes, sandbox.compileTimeoutMs, etc.)
   - `openkan logs [--tail N] [--follow]` — tail `.openkan/server.log` (the running server writes to it)
   - `openkan reset [--hard]` — stop the server and delete `.openkan/`. `--hard` also wipes `tasks/` and `sessions/`
-  - All commands work whether or not OpenCode is running; the CLI is the entry point for headless use
+  - All commands work whether or not Bizar is running; the CLI is the entry point for headless use
 
 ## Files touched
 
@@ -54,7 +54,7 @@ Today the board is the source of truth (`board.json`) and the task MDX is a flat
 - `kanban/inputs.ts` (new) — input request CRUD
 - `kanban/server.ts` — new endpoints
 - `bin/openkan.ts` (new) — standalone CLI (init/start/stop/status/open/config/logs/reset)
-- `plugins/tools.ts` — `kanban_ask`, `kanban_respond`
+- `kanban/server.ts` — `kanban_ask`, `kanban_respond`
 - `web/*` — new task detail view
 - `docs/README.mdx` — update roadmap table
 - `README.md` — update feature list
@@ -70,4 +70,4 @@ Today the board is the source of truth (`board.json`) and the task MDX is a flat
 - [ ] All new endpoints are accessible; SSE events fire for `task.updated` and `task.input.responded`
 - [ ] Existing board operations (drag, start, abort, delete) still work
 - [ ] `bin/openkan.ts` runs as a standalone CLI: `start` writes a PID file, `stop` reads it and shuts down, `status` reports state, `config get/set/list` round-trips through `.openkan/config.json`, `reset [--hard]` cleans up
-- [ ] The CLI works without OpenCode running; OpenCode's plugin entrypoint and the CLI share the same `kanban/server.ts` start/stop code
+- [ ] The CLI works without Bizar running; the retired event adapter and CLI share the same `kanban/server.ts` start/stop code

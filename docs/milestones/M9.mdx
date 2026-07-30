@@ -26,7 +26,7 @@ Text descriptions and bulleted choice lists are limited. A UI element that the u
 - `kanban/mdx-render.ts` — detect `<Preview>` and friends, emit `<iframe sandbox="allow-scripts" srcdoc="…">` with the compiled JS
 - `kanban/tsx-sandbox.ts` (new) — server-side TSX compile, iframe HTML builder
 - `kanban/server.ts` — endpoint for compiling TSX outside the artifact render (`POST /api/preview`) so the UI can preview before saving
-- `plugins/tools.ts` — `kanban_preview` helper for the agent to validate a TSX snippet
+- `kanban/server.ts` — `kanban_preview` helper for the agent to validate a TSX snippet
 - `web/preview-frame.html` (new) — sandbox runtime page
 - `web/mdx-viewer.js` — handle iframe events, fall back to a static placeholder if the iframe errors
 

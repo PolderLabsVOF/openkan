@@ -19,6 +19,8 @@ import {
   handleBizarRequest,
   resolveBizarConfig,
 } from "../kanban/bizar.ts";
+import { initBoard, setProjectRoot } from "../kanban/board.ts";
+import { apiAbortTask, apiCreateTask, apiStartTask } from "../kanban/server.ts";
 
 const roots: string[] = [];
 
@@ -45,6 +47,8 @@ if (args[0] === "control" && args[1] === "snapshot") {
     sessions: [],
     messages: []
   }));
+} else if (args[0] === "control" && args[1] === "session" && args[2] === "start") {
+  process.stdout.write(JSON.stringify({ session: { sessionId: "ses-bizar-1" } }));
 } else if (args.includes("--json")) {
   process.stdout.write(JSON.stringify({ ok: true, args }));
 }
@@ -97,6 +101,42 @@ test("Bizar task API validates and forwards task creation", async () => {
     "--scope", "kanban/bizar.ts",
     "--json",
   ]);
+});
+
+test("OpenKan board sessions start and stop through Bizar", async () => {
+  const { root, log } = fixture();
+  setProjectRoot(root);
+  const ctx = { directory: root, client: null, log: async () => {} };
+  await initBoard(ctx);
+  const createdResponse = await apiCreateTask(ctx, new Request("http://localhost/api/tasks", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title: "Run with Bizar", description: "Verify the bridge." }),
+  }));
+  const created = await createdResponse.json() as { id: string };
+
+  const startedResponse = await apiStartTask(root, created.id, new Request("http://localhost/start", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ agent: "mike" }),
+  }));
+  assert.equal(startedResponse.status, 200);
+  const started = await startedResponse.json() as { state: string; sessionId: string };
+  assert.equal(started.state, "running");
+  assert.equal(started.sessionId, "ses-bizar-1");
+
+  const stoppedResponse = await apiAbortTask(root, created.id);
+  assert.equal(stoppedResponse.status, 200);
+  const stopped = await stoppedResponse.json() as { state: string };
+  assert.equal(stopped.state, "cancelled");
+
+  const calls = readFileSync(log, "utf8").trim().split("\n").map(JSON.parse);
+  assert.ok(calls.some((args: string[]) =>
+    args[0] === "control" && args[1] === "session" && args[2] === "start"
+  ));
+  assert.ok(calls.some((args: string[]) =>
+    args[0] === "control" && args[1] === "session" && args[2] === "stop"
+  ));
 });
 
 test("Bizar WebSocket sends an initial snapshot", async () => {

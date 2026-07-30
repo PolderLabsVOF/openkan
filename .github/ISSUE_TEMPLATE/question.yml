@@ -27,4 +27,4 @@ body:
     id: environment
     attributes:
       label: Environment (optional)
-      placeholder: "OpenCode 1.x.x, Bun 1.1.x, macOS"
+      placeholder: "Bizar 1.x.x, Bun 1.1.x, macOS"

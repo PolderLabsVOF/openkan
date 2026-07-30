@@ -1,17 +1,19 @@
 ---
 title: Auto Kanban Parser — Roadmap
-summary: Milestone plan for openkan: a local-only OpenCode plugin that turns project docs into a live kanban, an MDX-centric task workspace, and an interactive agent↔user handoff surface.
+summary: Milestone history for OpenKan, a local-first kanban, MDX task workspace, and Bizar control plane.
 ---
 
 ## What this is
 
-openkan is a local-only OpenCode plugin that runs a localhost kanban at `http://127.0.0.1:7777`. It already ships with a five-column board, custom OpenCode tools, MDX artifacts, and SSE updates.
+OpenKan is a standalone local application that runs a kanban at
+`http://127.0.0.1:7777`. It ships with a five-column board, HTTP APIs, MDX
+artifacts, live updates, and a Bizar workspace.
 
 This directory contains the milestone plan. The earlier milestones (M0–M6) are about the **kanban as a control surface** — pull tasks from project docs, link back to the source, detect drift, structure handoffs. The newer milestones (M7–M9) pivot to the **MDX as the workspace** — a tasks index pointing to rich MDX artifacts, an interactive review surface with inline comments, and live TSX previews embedded in the MDX so the agent can ask the user a structured question and the user can answer in-place.
 
 ## What's shipped
 
-- **M0** — base plugin: five-column board, four custom tools, MDX artifacts, SSE updates.
+- **M0** — base application: five-column board, four custom tools, MDX artifacts, SSE updates.
 - **M1** — `kanban_import`: scan `.md` / `.mdx` files for `- [ ]` and create one Backlog task per hit. Idempotent on unchanged content.
 - **M2** — `kanban_import` records the source path + line on each task; the task MDX renders a `> 📄 Source:` line and the web UI shows a clickable source chip.
 - **M3** — drift detection: each imported task stores a `sourceHash`; `fs.watch` on `.openkan/` re-checks the hash on every file change and flips a `stale` flag. The UI shows a "Stale" badge and a "Re-derive tags" button.
@@ -21,7 +23,7 @@ This directory contains the milestone plan. The earlier milestones (M0–M6) are
 
 | Milestone | Status | Focus |
 |---|---|---|
-| [M0](./milestones/M0.mdx) | shipped | Base plugin |
+| [M0](./milestones/M0.mdx) | shipped | Base application |
 | [M1](./milestones/M1.mdx) | shipped | Import checkboxes from project docs |
 | [M2](./milestones/M2.mdx) | shipped | Source link on every task |
 | [M3](./milestones/M3.mdx) | shipped | Drift banner when source changes |

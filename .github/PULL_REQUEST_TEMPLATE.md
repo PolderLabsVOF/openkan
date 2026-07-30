@@ -19,11 +19,9 @@ milestone doc if this addresses a milestone (docs/milestones/M*.mdx).
 
 ## Testing
 
-- [ ] I have verified the change works locally (ran OpenCode with the plugin,
-      opened the board at http://127.0.0.1:7777).
-- [ ] The existing CI typecheck passes (`bunx tsc --noEmit --allowJs --checkJs
-      --target ES2022 --module ESNext --moduleResolution Bundler kanban/*.ts
-      plugins/*.ts`).
+- [ ] I have verified the change locally with `npm test`, `npm run check`, and
+      `npm run e2e`.
+- [ ] The existing CI typecheck passes (`npm run typecheck`).
 
 ## Checklist
 

@@ -167,7 +167,7 @@
     {
       "id": "skl7rn2v",
       "title": "Agent skill + /organize slash command",
-      "description": "skills/openkan/SKILL.md teaches agents how to use openkan effectively. .opencode/command/organize.md is the /organize slash command that delegates to the agent for batch reorganization. install.sh deploys both to the global OpenCode config.",
+      "description": "skills/openkan/SKILL.md teaches agents how to use openkan effectively. commands/organize.md is the /organize slash command that delegates to the agent for batch reorganization. install.sh deploys both into the dedicated OpenKan application directory.",
       "column": "review",
       "order": 4,
       "sessionId": null,
@@ -400,7 +400,7 @@
     {
       "id": "m11vr2jp",
       "title": "M11 — /organize slash command, auto-progress, sort/filter polish",
-      "description": "First-class /organize slash command delegates to the agent for batch reorganization. Auto-progress notes appended to task MDX on OpenCode session events. Sort dropdown, saved filters (localStorage), contributors filter (@me), archive segmented control.",
+      "description": "Portable /organize prompt delegates batch reorganization to an agent. Session lifecycle events append progress notes to task MDX. Sort dropdown, saved filters (localStorage), contributors filter (@me), archive segmented control.",
       "column": "done",
       "order": 10,
       "sessionId": null,

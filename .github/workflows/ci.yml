@@ -40,17 +40,5 @@ jobs:
             bun install --frozen-lockfile
           fi
 
-      - name: Install TypeScript
-        if: matrix.runtime == 'bun'
-        run: bun add -d typescript
-
       - name: Typecheck
-        run: |
-          TSC="npx -p typescript tsc"
-          if [ "${{ matrix.runtime }}" = "bun" ]; then
-            TSC="bunx tsc"
-          fi
-          $TSC --noEmit --allowJs --checkJs \
-               --target ES2022 --module ESNext \
-               --moduleResolution Bundler \
-               kanban/*.ts plugins/*.ts
+        run: npm run typecheck

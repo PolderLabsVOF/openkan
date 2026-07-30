@@ -17,10 +17,10 @@ body:
     validations:
       required: true
   - type: input
-    id: opencode-version
+    id: bizar-version
     attributes:
-      label: OpenCode version
-      description: Run `opencode --version` or check your config.
+      label: Bizar version
+      description: Run `bizar --version` or check your config.
       placeholder: "1.x.x"
     validations:
       required: true
@@ -37,7 +37,7 @@ body:
       label: Steps to reproduce
       description: How can we reproduce the bug?
       placeholder: |
-        1. Start OpenCode with openkan installed
+        1. Run openkan start
         2. Open http://127.0.0.1:7777
         3. Click on ...
         4. See error
@@ -47,7 +47,7 @@ body:
     id: logs
     attributes:
       label: Relevant logs or output
-      description: Copy any error messages from the OpenCode console or browser dev tools.
+      description: Copy any error messages from openkan logs or browser dev tools.
       render: shell
   - type: textarea
     id: screenshots

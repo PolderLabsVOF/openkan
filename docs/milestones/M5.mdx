@@ -10,7 +10,7 @@ The existing `.openkan/tasks/tsk-<id>/task.mdx` becomes a structured handoff pac
 
 ## Why now
 
-openkan's target users run coding agents (OpenCode, Claude Code, Codex, etc.). A structured MDX packet means the agent can be pointed at the file directly: `opencode "read .openkan/tasks/tsk-xxx/task.mdx"` and have everything it needs to start work.
+openkan's target users run coding agents (Bizar, Claude Code, Codex, etc.). A structured MDX packet means the agent can be pointed at the file directly: `bizar "read .openkan/tasks/tsk-xxx/task.mdx"` and have everything it needs to start work.
 
 ## Scope
 
@@ -33,13 +33,13 @@ openkan's target users run coding agents (OpenCode, Claude Code, Codex, etc.). A
   - Stop and ask if requirements conflict.
   ```
 
-- `plugins/tools.ts` — extend `kanban_add` (and optionally `kanban_import`) to accept `--goal`, `--context`, and `--acceptance` arguments; persist them to the task and its MDX artifact
+- `kanban/server.ts` — extend `kanban_add` (and optionally `kanban_import`) to accept `--goal`, `--context`, and `--acceptance` arguments; persist them to the task and its MDX artifact
 
 ## Files touched
 
 - `kanban/board.ts`
 - `kanban/mdx.ts`
-- `plugins/tools.ts`
+- `kanban/server.ts`
 
 ## Acceptance criteria
 

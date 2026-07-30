@@ -43,8 +43,6 @@ Primary references:
 - [Claude Code hooks reference](https://code.claude.com/docs/en/hooks)
 - [Claude Code agent view](https://code.claude.com/docs/en/agent-view)
 - [Claude Code subagents](https://code.claude.com/docs/en/sub-agents)
-- [OpenCode plugins](https://opencode.ai/docs/plugins/)
-- [OpenCode SDK](https://opencode.ai/docs/sdk/)
 
 ## Architecture
 
@@ -172,4 +170,3 @@ message and avoids a shared JSONL rewrite race.
 4. Full OpenKan `npm test` and `npm run check`.
 5. Full Bizar `make check`, `make test`, `make e2e`, `make check-arch`, and
    `make clean-check`.
-

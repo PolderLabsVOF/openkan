@@ -124,6 +124,7 @@ export function listDocs(opts: {
  */
 export async function readDoc(opts: {
   root: string;
+  docsDir?: string;
   relPath: string;
   render?: boolean;
 }): Promise<DocFile> {

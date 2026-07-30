@@ -31,7 +31,7 @@ export interface Task {
   column: ColumnId;
   order: number;
   sessionId: string | null;
-  agent: string;          // opencode agent name; "" means default
+  agent: string;          // Bizar agent ID; "" means resolve the project default
   model: string | null;   // "providerID/modelID" or null for default
   /** @deprecated Use state instead. Getter maintains back-compat. */
   status: TaskStatus;
@@ -99,7 +99,7 @@ export const BOARD_FILE = "board.json";
 export const BOARD_MDX  = "board.mdx";
 export const TASKS_INDEX_FILE = "tasks.json";
 
-// ─── Project root (set by plugins/kanban.ts on init; read by tools like kanban_import) ──
+// ─── Project root (set by the CLI/server before project operations) ─────────
 
 let _projectRoot: string | null = null;
 export function setProjectRoot(dir: string): void { _projectRoot = dir; }
@@ -117,7 +117,7 @@ export function setKanbanDir(dir: string): void {
 
 export interface BoardContext {
   directory: string;
-  client: any;    // opencode SDK client (already authenticated)
+  client: any;    // optional event/session adapter retained for compatible callers
   log: (level: "debug" | "info" | "warn" | "error", message: string, extra?: any) => Promise<void>;
 }
 
@@ -233,13 +233,14 @@ export async function getBoard(): Promise<Board> {
 // ─── Write queue ─────────────────────────────────────────────────────────────
 
 export async function withWrite<T>(fn: (board: Board) => Promise<T> | T): Promise<T> {
-  _writeQueue = _writeQueue.then(async () => {
+  const operation = _writeQueue.catch(() => undefined).then(async () => {
     if (!_board) throw new Error("Board not initialised");
     const result = await fn(_board);
     await persist(_board!);
     return result;
   });
-  return _writeQueue;
+  _writeQueue = operation.then(() => undefined, () => undefined);
+  return operation;
 }
 
 // ─── Persist ─────────────────────────────────────────────────────────────────

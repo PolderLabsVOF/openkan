@@ -15,21 +15,21 @@ The board today only shows manually-created tasks. The main value of openkan is 
 ## Scope
 
 - New `kanban/import.ts` — reads files with `fs`, parses checkboxes with a simple regex or `remark`, computes a stable ID per checkbox, creates tasks with `source: { path, line }`
-- New tool `kanban_import` in `plugins/tools.ts` — wraps `kanban/import.ts`, writes new tasks to board state
-- `plugins/kanban.ts` — register the new tool and route its output to the board
+- New tool `kanban_import` in `kanban/server.ts` — wraps `kanban/import.ts`, writes new tasks to board state
+- `kanban/server.ts` — route import output to the board
 - `kanban/board.ts` — add `source: { path: string; line: number }` field to the Task type (used by M2 and M3)
 - Optional: support `include` / `exclude` globs in `.openkan/config.json` to control which folders are scanned
 
 ## Files touched
 
 - `kanban/import.ts` (new)
-- `plugins/tools.ts`
-- `plugins/kanban.ts`
+- `kanban/server.ts`
+- `kanban/server.ts`
 - `kanban/board.ts`
 
 ## Acceptance criteria
 
-- [ ] `kanban_import` is a registered OpenCode tool callable as `kanban_import`
+- [ ] `kanban_import` is a available import operation
 - [ ] Scanning a docs folder containing ~10 `- [ ]` items produces 10 Backlog tasks in state
 - [ ] Each task has a stable ID derived from file path + line number + title slug
 - [ ] Each task records `source: { path, line }` pointing back to its checkbox

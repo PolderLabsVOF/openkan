@@ -1,7 +1,7 @@
 # Dependencies
 node_modules/
 
-# Generated plugin runtime state — track tasks, board, and config but ignore transient files
+# Generated runtime state — track tasks, board, and config but ignore transient files
 .openkan/
 !.openkan/
 !.openkan/board.json
