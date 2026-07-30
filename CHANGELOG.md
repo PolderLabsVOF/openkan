@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The installer now keeps the OpenKan workflow skill synchronized for Codex,
+  Claude Code, and shared agent skill discovery.
+- The OpenKan skill now requires agents to claim durable tasks, keep task
+  workspaces current, avoid overlapping active work, and record verification
+  evidence before completion.
 - The installer now owns a dedicated application directory at
   `${XDG_DATA_HOME:-$HOME/.local/share}/openkan` and updates it atomically.
 - A single hosted `install.sh` can now bootstrap the complete source archive

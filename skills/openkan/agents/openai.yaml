@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenKan Project Workflow"
+  short_description: "Keep agent work synchronized in OpenKan"
+  default_prompt: "Use $openkan to manage this project task and keep its durable status updated."

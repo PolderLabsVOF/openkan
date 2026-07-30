@@ -1,135 +1,139 @@
 ---
 name: openkan
-description: Manage OpenKan tasks, projects, documents, comments, Bizar agents, sessions, and messages through the local OpenKan API and durable project files.
+description: Use OpenKan as the durable project control plane. Always use this skill when a project contains .openkan/, when managing project tasks or agent work, or when the user mentions OpenKan, kanban work, task status, project progress, agent sessions, or collaboration. Keep OpenKan tasks, task workspaces, status, decisions, and verification evidence synchronized throughout non-trivial work.
 ---
 
-# OpenKan
+# OpenKan project workflow
 
-OpenKan is a local-first kanban and Bizar control plane. The server normally
-runs at `http://127.0.0.1:7777` and stores project data under `.openkan/`.
+Treat OpenKan as the source of truth for project work. Keep it synchronized
+while working; do not reconstruct task state only at the end.
 
-## Start and inspect
+## Begin every non-trivial task
 
-```sh
-openkan status
-openkan start
-curl -fsS http://127.0.0.1:7777/api/board
-```
+1. Find the project root by walking upward for `.openkan/`.
+2. Run `openkan status`. If OpenKan is stopped, run `openkan start --no-open`.
+3. Read the board and current work:
 
-Prefer the HTTP API while the server is running so writes remain atomic and
-live browser clients receive updates.
+   ```sh
+   curl -fsS http://127.0.0.1:7777/api/board
+   curl -fsS http://127.0.0.1:7777/api/tasks-index
+   ```
 
-## Task workflow
+4. Reuse the matching active task. Otherwise create a focused task with a
+   concrete outcome and acceptance criteria.
+5. Move the selected task to `doing` before changing project files.
+6. Read its complete workspace with `GET /api/tasks/<id>`.
 
-Create a task:
+Do not create OpenKan tasks for greetings, one-line explanations, or other
+work that makes no project change.
+
+## Keep work synchronized
+
+- Keep one primary task active per agent unless the user explicitly requests
+  parallel work.
+- Update the task title, description, column, priority, agent, and assignees
+  when reality changes.
+- Record plan changes, decisions, blockers, progress, and validation evidence
+  in `.openkan/tasks/<task-id>/task.mdx`.
+- Prefer HTTP API mutations while the server is running. This preserves atomic
+  writes and sends live updates to browsers and collaborating agents.
+- Re-read the task before major transitions. Another agent may have updated it.
+- Use comments for review feedback and durable handoffs. Set authors to
+  `agent:<name>` for agent-written comments.
+- Use structured input requests only when missing information truly blocks
+  progress. Continue safe work while non-blocking questions are pending.
+- Never edit `.openkan/board.json`, comments indexes, input indexes, Bizar
+  databases, or session transcripts directly.
+
+## Task lifecycle
+
+Create:
 
 ```sh
 curl -fsS -X POST http://127.0.0.1:7777/api/tasks \
   -H 'content-type: application/json' \
-  -d '{"title":"Implement feature","description":"Goal and acceptance criteria","column":"todo"}'
+  -d '{
+    "title": "Implement focused outcome",
+    "description": "Goal, constraints, and acceptance criteria",
+    "column": "todo",
+    "priority": "high",
+    "assignee": "agent:NAME"
+  }'
 ```
 
-Read and update:
+Read and claim:
 
 ```sh
-curl -fsS http://127.0.0.1:7777/api/tasks/tsk-example
-curl -fsS -X PATCH http://127.0.0.1:7777/api/tasks/tsk-example \
+curl -fsS http://127.0.0.1:7777/api/tasks/TASK_ID
+curl -fsS -X PATCH http://127.0.0.1:7777/api/tasks/TASK_ID \
   -H 'content-type: application/json' \
-  -d '{"column":"doing","priority":"high"}'
+  -d '{"column":"doing","assignees":["agent:NAME"]}'
 ```
 
-Start a Bizar agent for a board task:
+Move to review only after implementation and targeted validation:
 
 ```sh
-curl -fsS -X POST http://127.0.0.1:7777/api/tasks/tsk-example/start \
+curl -fsS -X PATCH http://127.0.0.1:7777/api/tasks/TASK_ID \
   -H 'content-type: application/json' \
-  -d '{"agent":"mike"}'
+  -d '{"column":"review"}'
 ```
 
-Stop its active session:
+Move to done only when the requested outcome is verified and the task
+workspace includes concise evidence:
 
 ```sh
-curl -fsS -X POST http://127.0.0.1:7777/api/tasks/tsk-example/abort
-```
-
-Archive, restore, or delete:
-
-```sh
-curl -fsS -X POST http://127.0.0.1:7777/api/tasks/tsk-example/archive
-curl -fsS -X POST http://127.0.0.1:7777/api/tasks/tsk-example/restore
-curl -fsS -X DELETE http://127.0.0.1:7777/api/tasks/tsk-example
-```
-
-## Search and bulk changes
-
-```sh
-curl -fsS 'http://127.0.0.1:7777/api/search?query=authentication'
-curl -fsS -X POST http://127.0.0.1:7777/api/tasks/bulk \
+curl -fsS -X PATCH http://127.0.0.1:7777/api/tasks/TASK_ID \
   -H 'content-type: application/json' \
-  -d '{"kind":"move","taskIds":["tsk-one","tsk-two"],"column":"review"}'
+  -d '{"column":"done","state":"done"}'
 ```
 
-For a board-wide cleanup, send a conservative operation list to
-`POST /api/organize`. Do not change active tasks unless the user explicitly
-requested it.
+If work fails or becomes blocked, keep the task out of `done`, record the exact
+blocker, and leave a concrete next action.
 
-## MDX workspace
+## Collaboration
 
-Every task has a durable workspace:
+Before editing shared areas, inspect tasks in `doing` and `review` to avoid
+overlapping ownership. Split independent scopes into subtasks and identify the
+owned files in each task description.
 
-```text
-.openkan/tasks/<task-id>/task.mdx
-```
-
-Use it for goals, context, acceptance criteria, decisions, progress, and
-evidence. Comments and structured inputs live beside it in `comments.json` and
-`inputs.json`.
-
-Read comments:
+Add a handoff or review comment:
 
 ```sh
-curl -fsS http://127.0.0.1:7777/api/tasks/tsk-example/comments
-```
-
-Ask for structured input:
-
-```sh
-curl -fsS -X POST http://127.0.0.1:7777/api/tasks/tsk-example/ask \
+curl -fsS -X POST http://127.0.0.1:7777/api/tasks/TASK_ID/comments \
   -H 'content-type: application/json' \
-  -d '{"type":"choice","question":"Which option?","options":["A","B"]}'
+  -d '{
+    "blockId": "progress",
+    "line": 1,
+    "text": "Changed X; validation Y passed; remaining risk Z.",
+    "author": "agent:NAME"
+  }'
 ```
 
-## Bizar control plane
-
-Snapshot all Bizar resources:
+Ask a blocking choice:
 
 ```sh
-curl -fsS http://127.0.0.1:7777/api/bizar/snapshot
-```
-
-Start an independent session:
-
-```sh
-curl -fsS -X POST http://127.0.0.1:7777/api/bizar/sessions \
+curl -fsS -X POST http://127.0.0.1:7777/api/tasks/TASK_ID/ask \
   -H 'content-type: application/json' \
-  -d '{"agent":"mike","prompt":"Coordinate this project","name":"OpenKan project"}'
+  -d '{
+    "type": "choice",
+    "question": "Which deployment target should be used?",
+    "options": [
+      {"id":"staging","label":"Staging"},
+      {"id":"production","label":"Production"}
+    ]
+  }'
 ```
 
-Send a session message:
+For Bizar sessions, agents, messages, and durable coordination, read
+`references/api.md` before invoking the control-plane endpoints.
 
-```sh
-curl -fsS -X POST http://127.0.0.1:7777/api/bizar/sessions/SESSION_ID/messages \
-  -H 'content-type: application/json' \
-  -d '{"text":"Review the latest task state","from":"openkan"}'
-```
+## Finish
 
-Use the Bizar workspace in the browser for agent discovery, durable task
-leases, session management, message history, feature status, and live updates.
+1. Run the project’s required validation.
+2. Append the commands and outcomes to the task workspace.
+3. Re-read the task and board for concurrent changes.
+4. Move the task to `review` or `done` based on actual evidence.
+5. Leave a concise handoff comment when another agent or user must continue.
 
-## Safety
-
-- Keep the server on loopback.
-- Treat `.openkan/sessions/` as sensitive.
-- Do not edit Bizar databases or Claude session transcripts directly.
-- Prefer API mutations over hand-editing JSON indexes.
-- Preserve task IDs and state transitions.
+Never report completion while OpenKan still shows the work as stale,
+unverified, or in progress.

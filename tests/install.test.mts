@@ -39,6 +39,9 @@ function runInstaller(root: string) {
       ...process.env,
       HOME: home,
       XDG_DATA_HOME: dataHome,
+      CODEX_HOME: join(home, ".codex"),
+      CLAUDE_CONFIG_DIR: join(home, ".claude"),
+      AGENTS_HOME: join(home, ".agents"),
       OPENKAN_BIN_DIR: binDir,
       OPENKAN_SKIP_DEPENDENCIES: "1",
     },
@@ -60,11 +63,16 @@ test("installer creates and atomically updates a dedicated OpenKan home", () => 
   assert.equal(statSync(join(installRoot, "web", "index.html")).isFile(), true);
   assert.equal(statSync(join(installRoot, "commands", "organize.md")).isFile(), true);
   assert.equal(statSync(join(installRoot, "skills", "openkan", "SKILL.md")).isFile(), true);
+  assert.equal(statSync(join(root, "home", ".codex", "skills", "openkan", "SKILL.md")).isFile(), true);
+  assert.equal(statSync(join(root, "home", ".claude", "skills", "openkan", "SKILL.md")).isFile(), true);
+  assert.equal(statSync(join(root, "home", ".agents", "skills", "openkan", "SKILL.md")).isFile(), true);
 
   writeFileSync(join(installRoot, "obsolete-file"), "remove on update\n");
+  writeFileSync(join(root, "home", ".codex", "skills", "openkan", "obsolete-file"), "remove on update\n");
   const second = runInstaller(root);
   assert.equal(second.status, 0, second.stderr || second.stdout);
   assert.throws(() => statSync(join(installRoot, "obsolete-file")));
+  assert.throws(() => statSync(join(root, "home", ".codex", "skills", "openkan", "obsolete-file")));
 
   const legacyName = ["open", "code"].join("");
   assert.doesNotMatch(`${first.stdout}\n${first.stderr}\n${second.stdout}\n${second.stderr}`, new RegExp(legacyName, "i"));
@@ -103,6 +111,9 @@ test("installer bootstraps the complete source tree when piped to bash", () => {
       ...process.env,
       HOME: home,
       XDG_DATA_HOME: dataHome,
+      CODEX_HOME: join(home, ".codex"),
+      CLAUDE_CONFIG_DIR: join(home, ".claude"),
+      AGENTS_HOME: join(home, ".agents"),
       OPENKAN_BIN_DIR: binDir,
       OPENKAN_INSTALL_ARCHIVE_URL: pathToFileURL(archive).href,
       OPENKAN_SKIP_DEPENDENCIES: "1",

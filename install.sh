@@ -29,6 +29,7 @@ Environment:
   OPENKAN_INSTALL_REF_KIND  Source ref kind: heads or tags (default: heads).
   OPENKAN_INSTALL_ARCHIVE_URL
                             Override the source archive URL.
+  OPENKAN_SKIP_AGENT_SKILLS Skip installing agent workflow skills.
   OPENKAN_SKIP_DEPENDENCIES Skip dependency installation (tests/packaging only).
 
 Defaults:
@@ -178,10 +179,31 @@ BACKUP_ROOT=""
 
 ln -sfn "${INSTALL_ROOT}/bin/openkan.mjs" "${BIN_DIR}/openkan"
 
+install_agent_skill() {
+  local skills_root="$1"
+  local target="${skills_root}/openkan"
+  local staged
+
+  mkdir -p "${skills_root}"
+  staged="$(mktemp -d "${skills_root}/.openkan-skill.XXXXXX")"
+  cp -R "${INSTALL_ROOT}/skills/openkan/." "${staged}/"
+  rm -rf "${target}"
+  mv "${staged}" "${target}"
+}
+
+if [[ "${OPENKAN_SKIP_AGENT_SKILLS:-0}" != "1" ]]; then
+  install_agent_skill "${CODEX_HOME:-${HOME}/.codex}/skills"
+  install_agent_skill "${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/skills"
+  install_agent_skill "${AGENTS_HOME:-${HOME}/.agents}/skills"
+fi
+
 echo ""
 echo "OpenKan installed successfully."
 echo "  Application: ${INSTALL_ROOT}"
 echo "  Command:     ${BIN_DIR}/openkan"
+if [[ "${OPENKAN_SKIP_AGENT_SKILLS:-0}" != "1" ]]; then
+  echo "  Agent skill: Codex, Claude Code, and shared agent skill directories"
+fi
 echo ""
 echo "Run 'openkan init' inside a project, then 'openkan start'."
 echo "Dashboard: http://127.0.0.1:7777/"

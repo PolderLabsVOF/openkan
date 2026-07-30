@@ -59,6 +59,8 @@ The installer:
 2. Installs production dependencies inside that staging directory.
 3. Atomically replaces the previous OpenKan installation.
 4. Links `openkan` into `~/.local/bin`.
+5. Installs the OpenKan workflow skill for Codex, Claude Code, and agents that
+   discover shared skills under `~/.agents/skills`.
 
 Obsolete application files are removed on update. Project data is unaffected
 because it remains inside each project's `.openkan/` directory.
@@ -77,6 +79,9 @@ The same overrides work with the remote installer:
 curl -fsSL https://raw.githubusercontent.com/PolderLabsVOF/openkan/main/install.sh \
   | OPENKAN_HOME=/opt/openkan OPENKAN_BIN_DIR="$HOME/bin" bash
 ```
+
+Set `OPENKAN_SKIP_AGENT_SKILLS=1` only when you do not want the installer to
+manage the global OpenKan agent skill.
 
 If `~/.local/bin` is not already on `PATH`, add it to your shell profile:
 
