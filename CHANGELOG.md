@@ -127,7 +127,7 @@ Released as **v0.2.0**.
 ### Added (M3 — Drift detection)
 
 - Imported tasks now store a `sourceHash` (sha256 of the source file at
-  import time). The kanban server runs `fs.watch` on `.openkan/` and
+  import time). The kanban server runs `fs.watch` on `.ok/` and
   re-checks the hash on every file change; if the file's content hash
   diverges, the task's `stale: true` flag flips on.
 - The web UI shows a "Stale" badge on stale cards and a "Re-derive tags"
@@ -136,7 +136,7 @@ Released as **v0.2.0**.
 ### Added (M6 — Sanity check script)
 
 - `npm run check` (or `node --experimental-strip-types scripts/sanity-check.ts`)
-  validates the active project's `.openkan/` state. Catches: duplicate
+  validates the active project's `.ok/` state. Catches: duplicate
   task IDs, missing source paths, stale tasks in `done` column, and
   orphaned per-task files. Exits non-zero on errors.
 
@@ -186,7 +186,7 @@ Released as **v0.2.0**.
 - Four initial agent tools: `kanban_add`, `kanban_move`, `kanban_start`,
   `kanban_view`.
 - Per-task actions: Start (dispatches the agent), Abort, Delete, View Artifact.
-- MDX artifact mirror under `.openkan/tasks/` and `.openkan/sessions/`.
+- MDX artifact mirror under `.ok/tasks/` and `.ok/sessions/`.
 - Initial host-integrated installer.
 
 [Unreleased]: https://github.com/PolderLabsVOF/openkan/compare/v0.3.0...HEAD

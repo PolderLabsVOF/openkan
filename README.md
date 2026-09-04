@@ -4,7 +4,7 @@ Local-first project management for people and coding agents.
 
 OpenKan provides a five-column kanban board, rich MDX task workspaces, project
 documentation browsing, changelogs, contributor attribution, and a Bizar
-control plane. It runs on `127.0.0.1`, stores project state under `.openkan/`,
+control plane. It runs on `127.0.0.1`, stores project state under `.ok/`,
 and does not require a hosted service.
 
 ## Highlights
@@ -65,7 +65,7 @@ The installer:
    discover shared skills under `~/.agents/skills`.
 
 Obsolete application files are removed on update. Project data is unaffected
-because it remains inside each project's `.openkan/` directory.
+because it remains inside each project's `.ok/` directory.
 
 ### Custom locations
 
@@ -121,7 +121,7 @@ Use `openkan --help` for the full CLI.
 ## Bizar integration
 
 OpenKan can manage Bizar agents, durable tasks, sessions, and messages. Add a
-`bizar` section to the managed project's `.openkan/config.json`:
+`bizar` section to the managed project's `.ok/config.json`:
 
 ```json
 {
@@ -150,7 +150,7 @@ or edit session transcripts directly. See
 OpenKan creates this structure inside each managed project:
 
 ```text
-.openkan/
+.ok/
 ├── board.json
 ├── board.mdx
 ├── tasks.json
@@ -166,8 +166,8 @@ OpenKan creates this structure inside each managed project:
     └── <session-id>.mdx
 ```
 
-Keep `.openkan/tasks/` in version control when you want a durable work record.
-Treat `.openkan/sessions/` as sensitive and normally gitignore it.
+Keep `.ok/tasks/` in version control when you want a durable work record.
+Treat `.ok/sessions/` as sensitive and normally gitignore it.
 
 ## Security
 

@@ -18,7 +18,7 @@ The board today only shows manually-created tasks. The main value of openkan is 
 - New tool `kanban_import` in `kanban/server.ts` — wraps `kanban/import.ts`, writes new tasks to board state
 - `kanban/server.ts` — route import output to the board
 - `kanban/board.ts` — add `source: { path: string; line: number }` field to the Task type (used by M2 and M3)
-- Optional: support `include` / `exclude` globs in `.openkan/config.json` to control which folders are scanned
+- Optional: support `include` / `exclude` globs in `.ok/config.json` to control which folders are scanned
 
 ## Files touched
 
@@ -34,7 +34,7 @@ The board today only shows manually-created tasks. The main value of openkan is 
 - [ ] Each task has a stable ID derived from file path + line number + title slug
 - [ ] Each task records `source: { path, line }` pointing back to its checkbox
 - [ ] Re-scanning the same files does not create duplicate tasks (idempotency is M4 — M1 just validates the first-run flow)
-- [ ] Optional include/exclude globs in `.openkan/config.json` are respected if present
+- [ ] Optional include/exclude globs in `.ok/config.json` are respected if present
 
 ## Out of scope
 

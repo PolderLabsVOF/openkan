@@ -14,8 +14,8 @@ Record exactly what the openkan base application already ships today.
 - `kanban/server.ts` — Node `http` server on `http://127.0.0.1:7777`, SSE endpoint at `/api/events`, REST API at `/api/tasks`
 
 **Board**
-- `kanban/board.ts` — five-column kanban state (Backlog, To Do, In Progress, Review, Done), JSON state stored in `.openkan/state.json`
-- `kanban/mdx.ts` — task-to-MDX artifact conversion, writes `.openkan/tasks/tsk-<id>.mdx` and later `tasks/<id>/task.mdx`
+- `kanban/board.ts` — five-column kanban state (Backlog, To Do, In Progress, Review, Done), JSON state stored in `.ok/state.json`
+- `kanban/mdx.ts` — task-to-MDX artifact conversion, writes `.ok/tasks/tsk-<id>.mdx` and later `tasks/<id>/task.mdx`
 
 **Initial agent operations**
 - `kanban/server.ts` — four agent operations implemented by the local API: `kanban_add`, `kanban_move`, `kanban_start`, `kanban_view`
@@ -25,8 +25,8 @@ Record exactly what the openkan base application already ships today.
 - `web/index.html` + `web/app.js` — localhost board UI with column rendering and SSE live updates
 
 **Artifact storage**
-- `.openkan/tasks/tsk-<id>.mdx` (flat) / `tasks/<id>/task.mdx` (M7+ per-task directory) — MDX artifact per task
-- `.openkan/sessions/` — session artifacts
+- `.ok/tasks/tsk-<id>.mdx` (flat) / `tasks/<id>/task.mdx` (M7+ per-task directory) — MDX artifact per task
+- `.ok/sessions/` — session artifacts
 
 ## Acceptance criteria
 
@@ -38,4 +38,4 @@ All of the following are green today:
 - [ ] `kanban_move` and `kanban_start` update task column in state
 - [ ] `kanban_view` returns the board snapshot
 - [ ] SSE endpoint pushes board updates to the web UI
-- [ ] Task MDX artifacts live under `.openkan/tasks/`
+- [ ] Task MDX artifacts live under `.ok/tasks/`

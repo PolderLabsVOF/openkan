@@ -10,7 +10,7 @@ Turn the localhost UI from a single board into a small **dashboard** with three 
 
 ## Why now
 
-The board is the live work surface, but it's missing two things a team-developing-on-the-same-repo needs: an audit trail (what changed, who changed it, when) and visibility into work done by other contributors. The `.openkan/` tree is already git-trackable (M7), so the data layer is in place — what's missing is the surface that exposes it.
+The board is the live work surface, but it's missing two things a team-developing-on-the-same-repo needs: an audit trail (what changed, who changed it, when) and visibility into work done by other contributors. The `.ok/` tree is already git-trackable (M7), so the data layer is in place — what's missing is the surface that exposes it.
 
 ## Scope
 
@@ -19,12 +19,12 @@ The board is the live work surface, but it's missing two things a team-developin
 The single board view is now a tabbed dashboard. The topbar gets three tab buttons: **Tasks**, **Changelog**, **Contributors**. The active tab is the only one rendered; the URL hash encodes the tab (`#tab=tasks`, `#tab=changelog`, `#tab=contributors`).
 
 - **Tasks tab** — the existing board. New: a settings gear icon in the topbar opens a modal with project-level settings.
-- **Changelog tab** — a vertical timeline of every state change in `.openkan/`. Newest first. Filterable by event type, by task, and by author. Each entry shows `{ ts, kind, taskId?, taskTitle?, author, summary, payload }`. Clicking an entry with a `taskId` opens that task in the Tasks tab.
+- **Changelog tab** — a vertical timeline of every state change in `.ok/`. Newest first. Filterable by event type, by task, and by author. Each entry shows `{ ts, kind, taskId?, taskTitle?, author, summary, payload }`. Clicking an entry with a `taskId` opens that task in the Tasks tab.
 - **Contributors tab** — a list of contributors derived from `git log` (name, email, commit count, last seen, tasks attributed). Each contributor's row expands to show the tasks they touched.
 
 ### Full changelog (`kanban/changelog.ts`)
 
-Append-only `JSONL` log at `.openkan/changelog.jsonl` — one event per line. Written via the same `writeFileAtomic` helper as the rest of the project. NEVER rewritten or compacted in v1; readers tolerate missing trailing lines.
+Append-only `JSONL` log at `.ok/changelog.jsonl` — one event per line. Written via the same `writeFileAtomic` helper as the rest of the project. NEVER rewritten or compacted in v1; readers tolerate missing trailing lines.
 
 Each event:
 ```ts
@@ -72,7 +72,7 @@ Used by:
 
 A modal/dialog (not a separate route — keeps the dashboard single-page). Triggered by a gear icon in the topbar. Two sections:
 
-- **Project settings** — read/write `.openkan/config.json`:
+- **Project settings** — read/write `.ok/config.json`:
   - Port, host (display only; restart to apply)
   - Default agent, default model
   - Default column for new tasks
@@ -83,7 +83,7 @@ A modal/dialog (not a separate route — keeps the dashboard single-page). Trigg
   - Display name, email (display only)
   - Theme: dark (default), light, system
 
-Settings changes write to `.openkan/config.json` (via the existing `config` CLI / API) and record a `settings.changed` event in the changelog.
+Settings changes write to `.ok/config.json` (via the existing `config` CLI / API) and record a `settings.changed` event in the changelog.
 
 ### Archive
 
@@ -130,6 +130,6 @@ Existing drag-and-drop is functional but visually thin. v1.1:
 - [ ] Tasks show `contributors` derived from `git log` (commits whose files overlap the task's `source.path` or `scope`)
 - [ ] Archived tasks are hidden from the board by default; `Show archived` reveals them
 - [ ] Archive/restore is reversible and recorded in the changelog
-- [ ] Settings modal updates `.openkan/config.json` and records a `settings.changed` event
+- [ ] Settings modal updates `.ok/config.json` and records a `settings.changed` event
 - [ ] Drag-and-drop shows a ghost card and a drop indicator line; multi-select works
 - [ ] No new auth, no remote sync, no external services

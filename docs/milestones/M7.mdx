@@ -6,7 +6,7 @@ milestone: 7
 
 ## Goal
 
-Make `.openkan/` an MDX-first workspace: every task has a rich, agent-writable MDX artifact, a tasks index, and a first-class **waiting-for-input** state so the agent can ask the user a structured question and block until the user answers.
+Make `.ok/` an MDX-first workspace: every task has a rich, agent-writable MDX artifact, a tasks index, and a first-class **waiting-for-input** state so the agent can ask the user a structured question and block until the user answers.
 
 ## Why now
 
@@ -14,7 +14,7 @@ Today the board is the source of truth (`board.json`) and the task MDX is a flat
 
 ## Scope
 
-- **`.openkan/tasks.json`** — new canonical index. Each entry is `{ id, title, column, order, state, mdxPath, createdAt, updatedAt, source?, agent? }`. The legacy `board.json` is kept for backwards compatibility and derived from `tasks.json` on read.
+- **`.ok/tasks.json`** — new canonical index. Each entry is `{ id, title, column, order, state, mdxPath, createdAt, updatedAt, source?, agent? }`. The legacy `board.json` is kept for backwards compatibility and derived from `tasks.json` on read.
 - **Per-task directory** `tasks/<id>/` containing:
   - `task.mdx` — the rich MDX artifact (was `tasks/<id>.mdx`; both layouts supported)
   - `comments.json` — list of `{ id, blockId, text, author, createdAt, resolved? }` anchored to MDX blocks
@@ -35,14 +35,14 @@ Today the board is the source of truth (`board.json`) and the task MDX is a flat
   - `GET /api/tasks/:id/comments`, `POST /api/tasks/:id/comments`, `DELETE /api/tasks/:id/comments/:cid`
 
 - **Standalone CLI** (`bin/openkan.ts`, runnable as `bunx openkan …` or `node bin/openkan.mjs`):
-  - `openkan init` — create `.openkan/` in the current project (idempotent)
-  - `openkan start [--port N] [--host H] [--no-open]` — start the kanban server; writes a PID file to `.openkan/server.pid`; prints the URL
+  - `openkan init` — create `.ok/` in the current project (idempotent)
+  - `openkan start [--port N] [--host H] [--no-open]` — start the kanban server; writes a PID file to `.ok/server.pid`; prints the URL
   - `openkan stop` — graceful shutdown of the server referenced by the PID file
   - `openkan status` — show whether the server is running, port, PID, uptime
   - `openkan open` — open the kanban UI in the default browser
-  - `openkan config [get|set|list] [key] [value]` — view and edit `.openkan/config.json` (port, host, defaultAgent, defaultModel, import.include, import.exclude, sandbox.tsxMaxBytes, sandbox.compileTimeoutMs, etc.)
-  - `openkan logs [--tail N] [--follow]` — tail `.openkan/server.log` (the running server writes to it)
-  - `openkan reset [--hard]` — stop the server and delete `.openkan/`. `--hard` also wipes `tasks/` and `sessions/`
+  - `openkan config [get|set|list] [key] [value]` — view and edit `.ok/config.json` (port, host, defaultAgent, defaultModel, import.include, import.exclude, sandbox.tsxMaxBytes, sandbox.compileTimeoutMs, etc.)
+  - `openkan logs [--tail N] [--follow]` — tail `.ok/server.log` (the running server writes to it)
+  - `openkan reset [--hard]` — stop the server and delete `.ok/`. `--hard` also wipes `tasks/` and `sessions/`
   - All commands work whether or not Bizar is running; the CLI is the entry point for headless use
 
 ## Files touched
@@ -61,7 +61,7 @@ Today the board is the source of truth (`board.json`) and the task MDX is a flat
 
 ## Acceptance criteria
 
-- [ ] `.openkan/tasks.json` is created on first run and contains one entry per task
+- [ ] `.ok/tasks.json` is created on first run and contains one entry per task
 - [ ] Each task has a directory `tasks/<id>/` with `task.mdx` and (when used) `comments.json` and `inputs.json`
 - [ ] Task `state` includes `waiting-for-input`; setting it shows the task in a "Needs you" lane in the UI
 - [ ] Agent calling `kanban_ask` writes an inline `<Ask>` block into `task.mdx` and creates an entry in `inputs.json`
@@ -69,5 +69,5 @@ Today the board is the source of truth (`board.json`) and the task MDX is a flat
 - [ ] User response is written to `inputs.json` and the task state returns to `running` (or its prior state)
 - [ ] All new endpoints are accessible; SSE events fire for `task.updated` and `task.input.responded`
 - [ ] Existing board operations (drag, start, abort, delete) still work
-- [ ] `bin/openkan.ts` runs as a standalone CLI: `start` writes a PID file, `stop` reads it and shuts down, `status` reports state, `config get/set/list` round-trips through `.openkan/config.json`, `reset [--hard]` cleans up
+- [ ] `bin/openkan.ts` runs as a standalone CLI: `start` writes a PID file, `stop` reads it and shuts down, `status` reports state, `config get/set/list` round-trips through `.ok/config.json`, `reset [--hard]` cleans up
 - [ ] The CLI works without Bizar running; the retired event adapter and CLI share the same `kanban/server.ts` start/stop code

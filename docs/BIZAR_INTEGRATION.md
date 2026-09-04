@@ -78,7 +78,7 @@ bizar control
 
 ## Configuration
 
-OpenKan stores integration settings in `.openkan/config.json`:
+OpenKan stores integration settings in `.ok/config.json`:
 
 ```json
 {

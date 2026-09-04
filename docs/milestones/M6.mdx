@@ -14,7 +14,7 @@ As the board accumulates imported tasks, it is easy to accidentally create dupli
 
 ## Scope
 
-- `scripts/check.ts` — reads `.openkan/state.json` and all task artifacts under `.openkan/tasks/`, then validates:
+- `scripts/check.ts` — reads `.ok/state.json` and all task artifacts under `.ok/tasks/`, then validates:
   1. No duplicate task IDs
   2. For tasks with `source: { path, line }`, the file at `path` exists and the line contains a checkbox
   3. No task has both `status: done` and `stale: true` (Done tasks with stale sources must be resolved manually)
