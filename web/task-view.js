@@ -21,10 +21,10 @@
     "test", "design", "data", "security", "task",
   ]);
   const PRIORITY_META = {
-    urgent: { emoji: "\uD83D\uDEA8", label: "Urgent" },
-    high:   { emoji: "\u2B06\uFE0F", label: "High" },
-    low:    { emoji: "\u2B07\uFE0F", label: "Low" },
-    normal: { emoji: "\u27A1\uFE0F", label: "Normal" },
+    urgent: { code: "P0", label: "Urgent" },
+    high:   { code: "P1", label: "High" },
+    normal: { code: "P2", label: "Normal" },
+    low:    { code: "P3", label: "Low" },
   };
   // Same column progression as the board.
   const COLUMN_ORDER = ["backlog", "todo", "doing", "review", "done"];
@@ -279,10 +279,8 @@
     root.innerHTML = "";
     const header = el("header", "task-header");
 
-    // Quick-actions toolbar — small icon-only buttons anchored to the top of
-    // the task view. Each button shows a tooltip on hover describing what it
-    // does. The icons are glyphs (unicode + emoji) so we don't need to ship
-    // an icon font.
+    // Quick-actions toolbar uses compact text labels so every action remains
+    // clear without relying on emoji or a separate icon dependency.
     const actions = el("div", "task-actions");
     const mkIconBtn = (glyph, label, onClick, danger) => {
       const b = el("button", "task-action-btn" + (danger ? " danger" : ""), {
@@ -295,7 +293,7 @@
       return b;
     };
     // Copy task ID.
-    actions.append(mkIconBtn("🆔", "Copy ID", async () => {
+    actions.append(mkIconBtn("ID", "Copy ID", async () => {
       try {
         await navigator.clipboard.writeText(String(task.id || ""));
         window.OpenKanSettings?.showToast?.("Task ID copied", "success");
@@ -304,7 +302,7 @@
       }
     }));
     // Copy markdown link.
-    actions.append(mkIconBtn("🔗", "Copy markdown link", async () => {
+    actions.append(mkIconBtn("Link", "Copy markdown link", async () => {
       const md = `[${task.title || task.id}](.ok/tasks/${task.id}/task.mdx)`;
       try {
         await navigator.clipboard.writeText(md);
@@ -315,13 +313,13 @@
     }));
     // Open in new tab — same URL but in a fresh tab so the user can keep
     // their context (e.g. side-by-side comparison).
-    actions.append(mkIconBtn("↗", "Open in new tab", () => {
+    actions.append(mkIconBtn("Open", "Open in new tab", () => {
       const url = `${location.origin}${location.pathname}#tab=tasks&taskId=${task.id}`;
       window.open(url, "_blank", "noopener");
     }));
     // Edit — focuses the inline-editable title (the footer also has an Edit
     // button; this one is just closer to the cursor for keyboard users).
-    actions.append(mkIconBtn("✎", "Edit title & description", () => {
+    actions.append(mkIconBtn("Edit", "Edit title & description", () => {
       const titleEl = document.querySelector(".task-title");
       if (titleEl && titleEl.isContentEditable) {
         try { titleEl.focus(); } catch {}
@@ -335,12 +333,12 @@
     }));
     // Archive / Restore.
     if (task.archived) {
-      actions.append(mkIconBtn("↩", "Restore from archive", async () => {
+      actions.append(mkIconBtn("Restore", "Restore from archive", async () => {
         try { await api("POST", `/api/tasks/${task.id}/restore`); }
         catch (err) { alert(`Restore failed: ${err.message}`); }
       }));
     } else {
-      actions.append(mkIconBtn("📥", "Archive", () => {
+      actions.append(mkIconBtn("Archive", "Archive", () => {
         if (!confirm(`Archive "${task.title}"?`)) return;
         api("POST", `/api/tasks/${task.id}/archive`).catch((err) =>
           alert(`Archive failed: ${err.message}`),
@@ -348,7 +346,7 @@
       }));
     }
     // Delete (always last in the toolbar, danger styling).
-    actions.append(mkIconBtn("🗑", "Delete task", () => {
+    actions.append(mkIconBtn("Delete", "Delete task", () => {
       if (!confirm(`Delete task "${task.title}"? This cannot be undone.`)) return;
       api("DELETE", `/api/tasks/${task.id}`)
         .then(() => window.OpenKanTaskView.close())
@@ -382,7 +380,7 @@
     if (pri && task.priority) {
       const pCls = `priority-${task.priority}`;
       statusCol.append(el("span", `pill ${pCls}`, {
-        text: `${pri.emoji} ${pri.label}`,
+        text: `${pri.code} ${pri.label}`,
         title: `priority: ${pri.label}`,
       }));
     }
@@ -977,7 +975,7 @@
       const lbl = el("dt", null, { text: "Priority" });
       const val = el("dd", null, {});
       val.append(el("span", `tag-chip priority priority-${task.priority}`, {
-        text: `${p.emoji} ${p.label}`,
+        text: `${p.code} ${p.label}`,
         title: `priority: ${p.label}`,
       }));
       dl.append(lbl, val);

@@ -63,11 +63,48 @@
       "subtaskIds": []
     },
     {
+      "id": "tsk-HN_8ANs8",
+      "title": "Improve task card readability without emojis",
+      "description": "Refine task-card hierarchy, metadata and source references using typographic indicators rather than emojis. Planning task: tsk-tWDM4oVE.",
+      "column": "done",
+      "order": 1,
+      "sessionId": null,
+      "agent": "",
+      "model": null,
+      "status": "idle",
+      "state": "idle",
+      "lastError": null,
+      "createdAt": "2026-09-04T19:45:44.696Z",
+      "updatedAt": "2026-09-04T19:48:03.672Z",
+      "artifact": "tasks/tsk-HN_8ANs8/task.mdx",
+      "sessionArtifact": null,
+      "pendingInputs": [],
+      "artifacts": {
+        "mdxPath": "tasks/tsk-HN_8ANs8/task.mdx",
+        "commentsPath": "tasks/tsk-HN_8ANs8/comments.json",
+        "inputsPath": "tasks/tsk-HN_8ANs8/inputs.json",
+        "statePath": "tasks/tsk-HN_8ANs8/state.json"
+      },
+      "tags": [
+        "task"
+      ],
+      "category": "task",
+      "priority": "normal",
+      "effort": null,
+      "archived": false,
+      "assignees": [
+        "Berk de Rooij"
+      ],
+      "images": [],
+      "parentId": null,
+      "subtaskIds": []
+    },
+    {
       "id": "tsk-ceHSnjKk",
       "title": "Isolate chat sessions by project",
       "description": "Keep persisted chat selection and live activity scoped to the active project. Planning task: tsk-tm38Q5ho.",
       "column": "done",
-      "order": 1,
+      "order": 2,
       "sessionId": null,
       "agent": "",
       "model": null,
@@ -104,7 +141,7 @@
       "title": "Add branded workspace error pages",
       "description": "Deliver custom browser 404/500 pages while API errors remain JSON. Planning task: tsk-yBuMk_OT.",
       "column": "done",
-      "order": 2,
+      "order": 3,
       "sessionId": null,
       "agent": "",
       "model": null,
@@ -141,7 +178,7 @@
       "title": "Reload tasks when switching projects",
       "description": "Make the server load the selected project board instead of reusing the previous in-memory task set. Planning task: tsk-rZUfj9SF.",
       "column": "done",
-      "order": 3,
+      "order": 4,
       "sessionId": null,
       "agent": "",
       "model": null,

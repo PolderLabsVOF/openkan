@@ -262,3 +262,19 @@ test("scopes chat restoration state to the active project", () => {
   assert.match(sidebar, /loadString\(projectStorageKey\(STORAGE_KEYS\.lastSession\)\)/);
   assert.match(sidebar, /saveString\(projectStorageKey\(STORAGE_KEYS\.lastSession\)/);
 });
+
+test("uses text-led priority and source metadata on task cards", () => {
+  const app = read("web/app.js");
+  const taskView = read("web/task-view.js");
+  const workspace = read("web/workspace.css");
+  assert.match(app, /urgent: \{ code: "P0", label: "Urgent"/);
+  assert.match(app, /text: `\$\{meta\.code\} \$\{meta\.label\}`/);
+  assert.match(app, /card-source-label", \{ text: "Source"/);
+  assert.match(app, /card-state-label/);
+  assert.doesNotMatch(app, /emoji:/);
+  assert.doesNotMatch(taskView, /emoji:/);
+  assert.match(taskView, /mkIconBtn\("Archive", "Archive"/);
+  assert.match(workspace, /Task-card readability refresh/);
+  assert.match(workspace, /\.card-header/);
+  assert.match(workspace, /\.card-priority\.priority-urgent/);
+});

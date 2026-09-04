@@ -28,13 +28,13 @@
     "test", "design", "data", "security", "task",
   ]);
 
-  // Priority → visual label. Emoji-first for the card, full label for the
-  // task view metadata strip.
+  // Priority is explicit text, not a decorative glyph, so it remains
+  // scannable in every theme and does not compete with task titles.
   const PRIORITY_META = {
-    urgent: { emoji: "\uD83D\uDEA8", label: "Urgent", className: "priority-urgent", rank: 0 },
-    high:   { emoji: "\u2B06\uFE0F", label: "High",   className: "priority-high",   rank: 1 },
-    normal: { emoji: "\u27A1\uFE0F", label: "Normal", className: "priority-normal", rank: 2 },
-    low:    { emoji: "\u2B07\uFE0F", label: "Low",    className: "priority-low",    rank: 3 },
+    urgent: { code: "P0", label: "Urgent", className: "priority-urgent", rank: 0 },
+    high:   { code: "P1", label: "High",   className: "priority-high",   rank: 1 },
+    normal: { code: "P2", label: "Normal", className: "priority-normal", rank: 2 },
+    low:    { code: "P3", label: "Low",    className: "priority-low",    rank: 3 },
   };
 
   const EFFORT_RANK = { xl: 0, l: 1, m: 2, s: 3, xs: 4 };
@@ -733,14 +733,11 @@
   function makeCardPriority(t) {
     const meta = PRIORITY_META[t.priority];
     if (!meta) return null;
-    const wrap = el("div", "card-priority");
-    const chip = el("span", `tag-chip priority ${meta.className}`, {
-      text: meta.emoji,
-      title: `priority: ${meta.label}`,
-      "aria-label": `priority: ${meta.label}`,
+    return el("span", `card-priority ${meta.className}`, {
+      text: `${meta.code} ${meta.label}`,
+      title: `Priority: ${meta.label}`,
+      "aria-label": `Priority: ${meta.label}`,
     });
-    wrap.append(chip);
-    return wrap;
   }
 
   function makeCardTags(t) {
@@ -847,10 +844,12 @@
     const motionSeed = [...String(t.id)].reduce((sum, char) => sum + char.charCodeAt(0), 0);
     card.style.setProperty("--card-lift-delay", `${motionSeed % 4 * 14}ms`);
     card.style.setProperty("--card-hover-tilt", `${((motionSeed % 3) - 1) * 0.18}deg`);
-    const pri = makeCardPriority(t);
-    if (pri) card.append(pri);
+    const header = el("div", "card-header");
     const titleEl = el("div", "card-title", { text: t.title || "(untitled)" });
-    card.append(titleEl);
+    header.append(titleEl);
+    const pri = makeCardPriority(t);
+    if (pri) header.append(pri);
+    card.append(header);
     // Subtask count badge — shows on the right of the title when this task
     // has at least one child. Backend supplies `subtaskCount` on the index
     // payload; falls back to the `subtasks` array length if not.
@@ -861,7 +860,7 @@
     })();
     if (subtaskCount > 0) {
       const subBadge = el("span", "card-subtask-badge", {
-        text: `↳ ${subtaskCount}`,
+        text: `${subtaskCount} subtask${subtaskCount === 1 ? "" : "s"}`,
         title: `${subtaskCount} subtask${subtaskCount === 1 ? "" : "s"}`,
       });
       // Right-aligned with the title via inline-block wrapper. We just
@@ -891,7 +890,7 @@
         title: `Imported from ${path}:${line}`,
       });
       chip.append(
-        el("span", "card-source-icon", { text: "📄", "aria-hidden": "true" }),
+        el("span", "card-source-label", { text: "Source", "aria-hidden": "true" }),
         el("span", "card-source-text", { text: `${path}:${line}` }),
       );
       // Stop the click from bubbling up to the card body — we don't want
@@ -938,7 +937,10 @@
     const meta = el("div", "card-meta");
     const left = el("div");
     left.style.cssText = "display:flex;align-items:center;gap:6px;";
-    left.append(el("span", `status-dot ${state}`, { title: state }));
+    left.append(
+      el("span", `status-dot ${state}`, { "aria-hidden": "true" }),
+      el("span", "card-state-label", { text: String(state).replaceAll("-", " "), title: `Status: ${state}` }),
+    );
     if (t.agent)
       left.append(el("span", "card-agent", { text: t.agent, title: `agent: ${t.agent}` }));
     const avs = makeAssigneesStrip(t);
@@ -949,9 +951,9 @@
       const a = el("a", null, {
         href: `/artifacts/tasks/${t.id}`,
         title: "View artifact",
-        text: "↗",
+        text: "Open",
       });
-      a.style.cssText = "color:var(--text-mute);text-decoration:none;";
+      a.className = "card-artifact-link";
       a.addEventListener("click", (e) => e.stopPropagation());
       right.append(a);
     }
