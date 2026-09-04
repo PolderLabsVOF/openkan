@@ -1,7 +1,7 @@
 // tests/cli.test.mjs — CLI subprocess tests for bin/openkan.ts
 //
 // Tests the openkan CLI by spawning it in temp directories. Since the CLI
-// handles its own cwd-based .openkan/ directory, each test runs in a unique
+// handles its own cwd-based .ok/ directory, each test runs in a unique
 // tmpdir to avoid interference.
 
 import { describe, it, before, after } from "node:test";
@@ -44,13 +44,13 @@ function runOk(args, cwd) {
 
 describe("CLI", () => {
   describe("init", () => {
-    it("creates .openkan/board.json and .openkan/tasks.json", () => {
+    it("creates .ok/board.json and .ok/tasks.json", () => {
       const dir = tmpDir();
       try {
         runOk("init", dir);
-        assert.ok(existsSync(join(dir, ".openkan", "board.json")), "board.json exists");
-        assert.ok(existsSync(join(dir, ".openkan", "tasks.json")), "tasks.json exists");
-        assert.ok(existsSync(join(dir, ".openkan", "config.json")), "config.json exists");
+        assert.ok(existsSync(join(dir, ".ok", "board.json")), "board.json exists");
+        assert.ok(existsSync(join(dir, ".ok", "tasks.json")), "tasks.json exists");
+        assert.ok(existsSync(join(dir, ".ok", "openkan.json")), "openkan.json exists");
       } finally {
         rmTmp(dir);
       }
@@ -61,9 +61,9 @@ describe("CLI", () => {
       try {
         runOk("init", dir);
         runOk("init", dir);
-        assert.ok(existsSync(join(dir, ".openkan", "board.json")));
+        assert.ok(existsSync(join(dir, ".ok", "board.json")));
         // Verify board.json is valid JSON
-        const board = JSON.parse(readFileSync(join(dir, ".openkan", "board.json"), "utf-8"));
+        const board = JSON.parse(readFileSync(join(dir, ".ok", "board.json"), "utf-8"));
         assert.ok(board.version);
       } finally {
         rmTmp(dir);

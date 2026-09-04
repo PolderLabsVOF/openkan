@@ -8,4 +8,4 @@ LICENSE linguist-detectable
 
 # Generated / vendored — hide from language stats
 node_modules/ linguist-vendored
-.openkan/ linguist-generated
+.ok/ linguist-generated

@@ -2,21 +2,27 @@
 node_modules/
 
 # Generated runtime state — track tasks, board, and config but ignore transient files
-.openkan/
-!.openkan/
-!.openkan/board.json
-!.openkan/board.mdx
-!.openkan/tasks.json
-!.openkan/config.json
-!.openkan/tasks/
-!.openkan/tasks/**
-!.openkan/tasks/**/task.mdx
-.openkan/sessions/
-.openkan/server.pid
-.openkan/server.log
-.openkan/server.lock
-.openkan/changelog.jsonl
-.openkan/esbuild-cache/
+.ok/
+!.ok/
+!.ok/board.json
+!.ok/board.mdx
+!.ok/tasks.json
+!.ok/openkan.json
+!.ok/tasks/
+!.ok/tasks/**
+!.ok/tasks/**/task.mdx
+.ok/sessions/
+.ok/locks/
+.ok/server.pid
+.ok/server.log
+.ok/server.lock
+.ok/changelog.jsonl
+.ok/esbuild-cache/
+.ok/index.json
+.ok/config.json
+.ok/tasks/*.json
+.ok/plans/
+.ok/prds/
 
 # Local agent / harness noise
 .agents/

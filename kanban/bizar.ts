@@ -32,7 +32,7 @@ export class BizarBridgeError extends Error {
 }
 
 function loadOpenKanConfig(openkanProjectRoot: string): Record<string, unknown> {
-  const path = join(openkanProjectRoot, ".openkan", "config.json");
+  const path = join(openkanProjectRoot, ".ok", "openkan.json");
   try {
     return JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
   } catch {

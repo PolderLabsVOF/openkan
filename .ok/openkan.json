@@ -1,0 +1,28 @@
+{
+  "port": 7777,
+  "host": "127.0.0.1",
+  "defaultAgent": "",
+  "defaultModel": "",
+  "defaultColumn": "backlog",
+  "autoArchiveAfterDays": 0,
+  "import": {
+    "include": [],
+    "exclude": []
+  },
+  "sandbox": {
+    "tsxMaxBytes": 32768
+  },
+  "project": {
+    "defaultAgent": "",
+    "defaultModel": "",
+    "defaultColumn": "backlog",
+    "autoArchiveDays": 2
+  },
+  "theme": "dark",
+  "autoArchiveDays": 2,
+  "bizar": {
+    "enabled": true,
+    "projectRoot": "../BizarHarness",
+    "command": "../BizarHarness/cli/bin.mjs"
+  }
+}

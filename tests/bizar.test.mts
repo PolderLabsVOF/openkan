@@ -31,7 +31,7 @@ afterEach(() => {
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "openkan-bizar-"));
   roots.push(root);
-  mkdirSync(join(root, ".openkan"), { recursive: true });
+  mkdirSync(join(root, ".ok"), { recursive: true });
   const log = join(root, "bizar-args.jsonl");
   const fake = join(root, "bizar");
   writeFileSync(fake, `#!/usr/bin/env node
@@ -54,7 +54,7 @@ if (args[0] === "control" && args[1] === "snapshot") {
 }
 `);
   chmodSync(fake, 0o755);
-  writeFileSync(join(root, ".openkan", "config.json"), JSON.stringify({
+  writeFileSync(join(root, ".ok", "openkan.json"), JSON.stringify({
     bizar: {
       enabled: true,
       projectRoot: ".",

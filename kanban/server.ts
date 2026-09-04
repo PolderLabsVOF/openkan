@@ -1059,7 +1059,7 @@ export async function apiStartTask(projectRoot: string, taskId: string, req: Req
       prompt: [
         `Work on OpenKan task ${task.id}: ${task.title}`,
         task.description,
-        `Keep the task workspace at .openkan/tasks/${task.id}/task.mdx synchronized with progress.`,
+        `Keep the task workspace at .ok/tasks/${task.id}/task.mdx synchronized with progress.`,
       ].filter(Boolean).join("\n\n"),
     });
     sessionId = started?.session?.sessionId ?? started?.session?.id ?? "";
@@ -1371,7 +1371,7 @@ const DEFAULT_SETTINGS = {
 };
 
 async function apiGetSettings(): Promise<Response> {
-  const configPath = join(KANBAN_DIR, "config.json");
+  const configPath = join(KANBAN_DIR, "openkan.json");
   let config: Record<string, unknown> = {};
   try {
     if (existsSync(configPath)) config = JSON.parse(readFileSync(configPath, "utf-8")) as Record<string, unknown>;
@@ -1385,7 +1385,7 @@ async function apiGetSettings(): Promise<Response> {
 async function apiPatchSettings(_ctx: BoardContext, req: Request): Promise<Response> {
   let patch: Record<string, unknown>;
   try { patch = await req.json(); } catch { return errorResponse("Invalid JSON"); }
-  const configPath = join(KANBAN_DIR, "config.json");
+  const configPath = join(KANBAN_DIR, "openkan.json");
   let existing: Record<string, unknown> = {};
   try {
     if (existsSync(configPath)) existing = JSON.parse(readFileSync(configPath, "utf-8")) as Record<string, unknown>;
@@ -1418,7 +1418,7 @@ export interface ConfigSection {
 }
 
 function loadConfig(): Record<string, unknown> {
-  const configPath = join(KANBAN_DIR, "config.json");
+  const configPath = join(KANBAN_DIR, "openkan.json");
   try {
     if (existsSync(configPath)) {
       return JSON.parse(readFileSync(configPath, "utf-8")) as Record<string, unknown>;
@@ -1569,7 +1569,7 @@ async function apiPatchConfigSection(_ctx: BoardContext, sectionId: string, req:
     }
   }
 
-  const configPath = join(KANBAN_DIR, "config.json");
+  const configPath = join(KANBAN_DIR, "openkan.json");
   writeFileAtomic(configPath, JSON.stringify(config, null, 2));
 
   // Return the updated section
@@ -1824,7 +1824,7 @@ async function apiCreateProject(req: Request): Promise<Response> {
 
   const entry = addProject({ name: body.name ?? body.root, root: body.root });
   // Update KANBAN_DIR for this server instance so subsequent requests use the new project
-  const newKanbanDir = join(entry.root, ".openkan");
+  const newKanbanDir = join(entry.root, ".ok");
   setKanbanDir(newKanbanDir);
   return jsonResponse(entry, 201);
 }
@@ -1854,7 +1854,7 @@ async function apiDeleteProject(id: string): Promise<Response> {
   if (wasActive) {
     const newActive = activeProject();
     if (newActive) {
-      setKanbanDir(join(newActive.root, ".openkan"));
+      setKanbanDir(join(newActive.root, ".ok"));
     }
   }
   return jsonResponse({ ok: true });
@@ -1864,7 +1864,7 @@ async function apiActivateProject(id: string): Promise<Response> {
   const prev = setActiveProject(id);
   if (prev === null) return errorResponse("Project not found", 404);
   const entry = activeProject();
-  if (entry) setKanbanDir(join(entry.root, ".openkan"));
+  if (entry) setKanbanDir(join(entry.root, ".ok"));
   return jsonResponse(entry);
 }
 
@@ -2149,7 +2149,7 @@ export async function startOrAttach(
   const basePort = opts.port ?? 7777;
   const maxTries = opts.maxPortTries ?? 10;
 
-  const dir = join(ctx.directory, ".openkan");
+  const dir = join(ctx.directory, ".ok");
 
   // 1. Check if existing server is alive
   const existingPid = readPidFile(dir);
@@ -2237,7 +2237,7 @@ export async function startOrAttach(
   const pid = process.pid;
   writePidFile(dir, pid);
   // Resolve and cache webRoot so the request handler can serve static files.
-  // Default: <project>/web (one level up from .openkan).
+  // Default: <project>/web (one level up from .ok).
   webRoot = opts.webRoot ?? join(ctx.directory, "web");
 
   // Set up HTTP request handler (full routing)
@@ -2281,7 +2281,7 @@ export async function startOrAttach(
 
   // ─── File watcher (SSE broadcaster) ───────────────────────────────────────
   // Watch the project root so we also catch changes to source files (e.g. docs/*.mdx)
-  // that are tracked as task sources. Events from .openkan subdirs are filtered out
+  // that are tracked as task sources. Events from .ok subdirs are filtered out
   // to avoid the existing board.json / task.mdX event spam.
   const projectRoot = join(dir, "..");
   watcherHandle = watch({
@@ -2289,7 +2289,7 @@ export async function startOrAttach(
     ignore: (p) =>
       /server\.(lock|log|pid)$/.test(p) ||
       p.endsWith(".tmp") ||
-      p.replace(/\\/g, "/").includes("/.openkan/"),
+      p.replace(/\\/g, "/").includes("/.ok/"),
   });
 
   // Periodic drift sweep — every 60 s, re-check all source hashes.
@@ -2313,7 +2313,7 @@ export async function startOrAttach(
         }
       }
 
-      if (ev.path.endsWith("board.json") || ev.path.replace(/\\/g, "/").endsWith(".openkan/board.json")) {
+      if (ev.path.endsWith("board.json") || ev.path.replace(/\\/g, "/").endsWith(".ok/board.json")) {
         broadcast("board.changed", { path: ev.path });
       } else if (ev.path.endsWith("changelog.jsonl")) {
         broadcast("changelog.appended", { path: ev.path });
@@ -2396,7 +2396,7 @@ export async function startServer(
 async function handleRequest(req: Request): Promise<Response> {
   // Resolve the active project root and set KANBAN_DIR for this request.
   const projectRoot = getActiveProjectRoot();
-  setKanbanDir(join(projectRoot, ".openkan"));
+  setKanbanDir(join(projectRoot, ".ok"));
 
   const url = new URL(req.url);
   const path = url.pathname;

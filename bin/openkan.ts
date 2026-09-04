@@ -41,7 +41,7 @@ const DEFAULT_CONFIG: Config = {
 };
 
 function configPath(): string {
-  return join(process.cwd(), ".openkan", "config.json");
+  return join(process.cwd(), ".ok", "openkan.json");
 }
 
 function loadConfig(): Config {
@@ -53,7 +53,7 @@ function loadConfig(): Config {
 }
 
 function saveConfig(cfg: Config): void {
-  ensureDir(join(process.cwd(), ".openkan"));
+  ensureDir(join(process.cwd(), ".ok"));
   writeFileSync(configPath(), JSON.stringify(cfg, null, 2), "utf-8");
 }
 
@@ -102,7 +102,7 @@ function parseArgs(argv: string[]): ParsedArgs {
 // ─── Subcommand: init ─────────────────────────────────────────────────────────
 
 async function cmdInit(): Promise<void> {
-  const dir = join(process.cwd(), ".openkan");
+  const dir = join(process.cwd(), ".ok");
   ensureDir(dir);
 
   const boardFile = join(dir, "board.json");
@@ -120,7 +120,7 @@ async function cmdInit(): Promise<void> {
     saveConfig(DEFAULT_CONFIG);
   }
 
-  console.log("Initialized .openkan/ directory.");
+  console.log("Initialized .ok/ directory.");
 }
 
 // ─── Subcommand: start ───────────────────────────────────────────────────────
@@ -157,9 +157,9 @@ async function cmdStart(ctx: BoardContext, argv: string[]): Promise<void> {
     // Write PID and log files. Format: "pid:port" so status can read both
     // without re-probing. The port may differ from the config if the
     // configured port was busy.
-    const pidFile = join(ctx.directory, ".openkan", "server.pid");
+    const pidFile = join(ctx.directory, ".ok", "server.pid");
     writeFileSync(pidFile, `${result.pid}:${result.port}`, "utf-8");
-    const logFile = join(ctx.directory, ".openkan", "server.log");
+    const logFile = join(ctx.directory, ".ok", "server.log");
     const logStream = appendFileSync ? appendFileSync : (() => {}) as any;
 
     console.log(`OpenKan server at ${result.url} (pid=${result.pid})`);
@@ -173,7 +173,7 @@ async function cmdStart(ctx: BoardContext, argv: string[]): Promise<void> {
 // ─── Subcommand: stop ─────────────────────────────────────────────────────────
 
 async function cmdStop(ctx: BoardContext): Promise<void> {
-  const pidFile = join(ctx.directory, ".openkan", "server.pid");
+  const pidFile = join(ctx.directory, ".ok", "server.pid");
   if (!existsSync(pidFile)) {
     console.error("No server.pid found — is the server running?");
     process.exit(1);
@@ -211,7 +211,7 @@ async function cmdStop(ctx: BoardContext): Promise<void> {
 // ─── Subcommand: status ───────────────────────────────────────────────────────
 
 async function cmdStatus(ctx: BoardContext): Promise<void> {
-  const pidFile = join(ctx.directory, ".openkan", "server.pid");
+  const pidFile = join(ctx.directory, ".ok", "server.pid");
   if (!existsSync(pidFile)) {
     console.log("status: stopped");
     return;
@@ -306,7 +306,7 @@ async function cmdLogs(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
   const tail = parseInt((args.flags["tail"] as string) ?? "50", 10);
   const follow = args.flags["follow"] === true || args.flags["follow"] === "true";
-  const logFile = join(process.cwd(), ".openkan", "server.log");
+  const logFile = join(process.cwd(), ".ok", "server.log");
 
   if (!existsSync(logFile)) {
     console.error("No server.log found.");
@@ -349,7 +349,7 @@ async function cmdReset(ctx: BoardContext, argv: string[]): Promise<void> {
   // Stop if running
   try { await cmdStop(ctx); } catch { /* ignore */ }
 
-  const dir = join(ctx.directory, ".openkan");
+  const dir = join(ctx.directory, ".ok");
 
   if (hard) {
     // Wipe tasks and sessions subdirs
@@ -378,14 +378,14 @@ function openUrl(url: string): void {
 
 function printHelp(cmd?: string): void {
   const msgs: Record<string, string> = {
-    init: "init                             Create .openkan/ directory (idempotent)",
+    init: "init                             Create .ok/ directory (idempotent)",
     start: "start [--port N] [--host H] [--no-open] [--no-auto-detect] [--foreground] [--project /abs/path]  Start the server",
     stop: "stop                             Stop the running server",
     status: "status                          Show server status, port, pid, uptime",
     open: "open                             Open the kanban UI in browser",
     config: "config list|get <key>|set <key> <value>  Manage config",
     logs: "logs [--tail N] [--follow]       Print server logs",
-    reset: "reset [--hard]                  Reset .openkan/ (--hard also wipes tasks/sessions)",
+    reset: "reset [--hard]                  Reset .ok/ (--hard also wipes tasks/sessions)",
   };
   if (cmd && msgs[cmd]) {
     console.log(`openkan ${msgs[cmd]}`);
