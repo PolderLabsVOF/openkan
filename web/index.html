@@ -32,6 +32,7 @@
         <button type="button" class="tab" role="tab" data-tab="contributors" aria-selected="false">Contributors</button>
         <button type="button" class="tab" role="tab" data-tab="docs" aria-selected="false">Docs</button>
         <button type="button" class="tab" role="tab" data-tab="bizar" aria-selected="false">Bizar</button>
+        <button type="button" class="tab" role="tab" data-tab="claude" aria-selected="false">Claude</button>
       </nav>
       <div class="topbar-right">
         <span id="status-pill" class="pill pill-disconnected" role="status" aria-live="polite">
@@ -325,6 +326,11 @@
         <div id="bizar-root" class="view-root"></div>
       </section>
 
+      <!-- ─── TAB: Claude ─────────────────────────────────────────────── -->
+      <section id="tab-claude" class="tab-pane" role="tabpanel" data-tab="claude" hidden>
+        <div id="claude-pane-root" class="claude-pane view-root"></div>
+      </section>
+
       <!-- ─── Add Project + Settings modals are top-level (below) ─────────
            They used to live inside <main class="dashboard">. When a task
            view opens, the dashboard gets display:none and the modals
@@ -429,6 +435,10 @@
     <script src="contributors-view.js" defer></script>
     <script src="docs-view.js" defer></script>
     <script src="bizar.js" defer></script>
+    <!-- claude-pane.js exposes window.OpenKanClaude. It must load BEFORE
+         app.js (which calls OpenKanClaude.mount(...) when the Claude tab
+         is activated) but AFTER api.js (so window.OpenKanAPI.api exists). -->
+    <script src="claude-pane.js" defer></script>
     <!-- M13: keyboard module loads before the palette so the palette can
          subscribe to "palette.open" / "palette.close" / "palette.isOpen". -->
     <script src="keyboard.js" defer></script>

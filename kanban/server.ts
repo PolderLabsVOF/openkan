@@ -65,6 +65,9 @@ import {
   getBizarSnapshot,
   handleBizarRequest,
 } from "./bizar.ts";
+import * as claudeState from "./claude-state.ts";
+import { handleClaudeRequest } from "./claude-state.ts";
+import { WebSocketServer, WebSocket } from "ws";
 
 // ─── Module-level server state ────────────────────────────────────────────────
 
@@ -98,6 +101,7 @@ export interface RunningServer {
 let runningServer: RunningServer | null = null;
 let webRoot: string | null = null;
 let bizarSocketBridge: { close(): void; broadcastSnapshot(): void } | null = null;
+let claudeSocketBridge: { close(): void } | null = null;
 
 /**
  * Read the current git user from local config (same logic as git.ts currentUser
@@ -1034,7 +1038,7 @@ export async function apiStartTask(projectRoot: string, taskId: string, req: Req
 
   let knownAgents: string[] = [];
   try {
-    const snapshot = getBizarSnapshot(projectRoot);
+    const snapshot = await getBizarSnapshot(projectRoot);
     knownAgents = Array.isArray(snapshot?.agents)
       ? snapshot.agents.map((candidate: any) => candidate.id ?? candidate.name).filter(Boolean)
       : [];
@@ -2253,6 +2257,8 @@ export async function startOrAttach(
   });
   bizarSocketBridge?.close();
   bizarSocketBridge = attachBizarWebSocket(server, getActiveProjectRoot);
+  claudeSocketBridge?.close();
+  claudeSocketBridge = attachClaudeWebSocket(server, getActiveProjectRoot);
 
     runningServer = {
       port,
@@ -2265,6 +2271,8 @@ export async function startOrAttach(
         clearInterval(driftSweepInterval);
         bizarSocketBridge?.close();
         bizarSocketBridge = null;
+        claudeSocketBridge?.close();
+        claudeSocketBridge = null;
         await new Promise<void>((resolve, reject) => {
           server.close((err) => (err ? reject(err) : resolve()));
         });
@@ -2393,6 +2401,97 @@ export async function startServer(
 
 // ─── Request router ──────────────────────────────────────────────────────────
 
+/**
+ * Attach a small WebSocket bridge to `ws://…/api/claude/ws`. Mirrors
+ * `attachBizarWebSocket` (the legacy `/api/bizar/ws` endpoint) but sources
+ * the snapshot and live updates from `kanban/claude-state.ts` so callers
+ * no longer need the external `bizar` CLI. SSE on `/api/claude/events` is the
+ * preferred transport; this bridge exists for clients that prefer WS.
+ */
+function attachClaudeWebSocket(
+  server: HttpServer,
+  projectRoot: () => string,
+): { close(): void } {
+  const wss = new WebSocketServer({ noServer: true });
+
+  function send(socket: WebSocket, value: unknown): void {
+    if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value));
+  }
+
+  async function snapshot(socket: WebSocket): Promise<void> {
+    try {
+      const root = homedirFromProjectRoot(projectRoot());
+      const data = await claudeState.readSnapshot(root);
+      send(socket, { type: "snapshot", data });
+    } catch (error) {
+      send(socket, { type: "error", error: (error as Error)?.message || String(error) });
+    }
+  }
+
+  const upgrade = (req: IncomingMessage, socket: any, head: Buffer) => {
+    let pathname = "";
+    try { pathname = new URL(req.url || "/", "http://localhost").pathname; } catch { /* invalid */ }
+    if (pathname !== "/api/claude/ws") return;
+    if (!isLoopback(req)) {
+      socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, (client) => wss.emit("connection", client, req));
+  };
+  server.on("upgrade", upgrade);
+
+  wss.on("connection", (socket) => {
+    void snapshot(socket);
+    socket.on("message", (raw) => {
+      let message: { type?: string; requestId?: string };
+      try { message = JSON.parse(raw.toString()) as typeof message; }
+      catch {
+        send(socket, { type: "error", error: "Invalid JSON" });
+        return;
+      }
+      if (message.type === "refresh") {
+        void snapshot(socket);
+        return;
+      }
+      send(socket, {
+        type: "error",
+        requestId: message.requestId,
+        error: "Unknown message type",
+      });
+    });
+  });
+
+  const interval = setInterval(() => {
+    if (wss.clients.size > 0) {
+      for (const client of wss.clients) void snapshot(client);
+    }
+  }, 5_000);
+  interval.unref?.();
+
+  return {
+    close() {
+      clearInterval(interval);
+      server.off("upgrade", upgrade);
+      for (const client of wss.clients) client.close();
+      wss.close();
+    },
+  };
+}
+
+function isLoopback(req: IncomingMessage): boolean {
+  const address = req.socket.remoteAddress || "";
+  return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
+}
+
+function homedirFromProjectRoot(_projectRoot: string): string {
+  // The Claude-state readers look under <homedir>/.claude/...
+  // Today the project root IS the user's home for single-tenant installs;
+  // when multi-user support lands the project will own an explicit
+  // `claudeHome` setting that this helper resolves instead.
+  return process.env.HOME || process.env.USERPROFILE || "/";
+}
+
 async function handleRequest(req: Request): Promise<Response> {
   // Resolve the active project root and set KANBAN_DIR for this request.
   const projectRoot = getActiveProjectRoot();
@@ -2426,6 +2525,10 @@ async function handleRequest(req: Request): Promise<Response> {
 
   if (path.startsWith("/api/bizar/")) {
     return handleBizarRequest(projectRoot, req, path);
+  }
+
+  if (path.startsWith("/api/claude/")) {
+    return handleClaudeRequest(projectRoot, req, path);
   }
 
   // GET /api/tasks-index

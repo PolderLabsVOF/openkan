@@ -15,12 +15,13 @@
     "test": "node --test --experimental-strip-types tests/*.test.mts tests/*.test.mjs",
     "typecheck": "tsc --noEmit --allowImportingTsExtensions --allowJs --checkJs --skipLibCheck --target ES2022 --module ESNext --moduleResolution Bundler bin/*.ts kanban/*.ts ok/*.ts ok/commands/*.ts",
     "check": "node --experimental-strip-types scripts/sanity-check.ts",
-    "e2e": "node --experimental-strip-types scripts/bizar-e2e.mts",
+    "e2e": "node --experimental-strip-types scripts/claude-e2e.mts",
     "openkan": "node --experimental-strip-types bin/openkan.ts",
     "ok": "node --experimental-strip-types bin/ok.ts",
     "ok-install": "node --experimental-strip-types bin/ok-install.ts"
   },
   "dependencies": {
+    "gray-matter": "^4.0.3",
     "marked": "^14.0.0",
     "nanoid": "^5.0.0",
     "sanitize-html": "^2.13.0",

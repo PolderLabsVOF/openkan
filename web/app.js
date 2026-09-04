@@ -3224,7 +3224,7 @@
 
   // ---------- Tab router ----------
   function activateTab(name, opts = {}) {
-    const valid = ["tasks", "changelog", "contributors", "docs", "bizar"];
+    const valid = ["tasks", "changelog", "contributors", "docs", "bizar", "claude"];
     if (!valid.includes(name)) name = "tasks";
     for (const btn of document.querySelectorAll(".tab")) {
       const isActive = btn.dataset.tab === name;
@@ -3263,12 +3263,16 @@
     } else if (name === "bizar") {
       const root = document.getElementById("bizar-root");
       if (root && window.OpenKanBizar) window.OpenKanBizar.mount(root);
+    } else if (name === "claude") {
+      const root = document.getElementById("claude-pane-root");
+      if (root && window.OpenKanClaude) window.OpenKanClaude.mount(root);
     } else if (name === "tasks") {
       // Unmount non-active views to free any subscriptions.
       window.OpenKanChangelog?.unmount?.();
       window.OpenKanContributors?.unmount?.();
       window.OpenKanDocs?.unmount?.();
       window.OpenKanBizar?.unmount?.();
+      window.OpenKanClaude?.unmount?.();
     }
   }
 
