@@ -1,231 +1,233 @@
 # OpenKan Chat Sidebar
 
-A right-rail chat orchestrator for Claude Code. Lets you talk to
-`claude -p` from inside OpenKan with full session, model, effort, and
-permission control, and gives you a live view of every tool call the
-assistant makes while it works.
+A right-rail chat orchestrator for Claude Code, styled as a focused,
+"what should we work on?" interface. Lets you talk to `claude -p` from
+inside OpenKan with full session, model, effort, and permission control,
+and gives you a live view of every tool call the assistant makes while
+it works.
 
 ## Quick start
 
-1. Boot OpenKan: `npm run openkan -- start`
-2. Click the speech-bubble button in the top-right of the topbar, or press
-   `Alt+C`, to open the chat rail.
-3. Pick a session from the header selector. Pick a model, effort level,
-   and permission mode from the inline pill selectors attached to the
-   composer's bottom edge.
-4. Type a message and press `Enter`. `Shift+Enter` inserts a newline;
+1. Boot OpenKan: `npm run openkan -- start`.
+2. Click the speech-bubble button in the top-right of the topbar, or
+   press `Alt+C`, to open the chat rail.
+3. Type a message and press `Enter`. `Shift+Enter` inserts a newline;
    IME composition events do **not** send mid-composition.
-5. While a turn is in flight, click **■** (or the Abort button) to kill
+4. While a turn is in flight, click **■** (or the Abort button) to kill
    the running process.
-6. Press `Cmd+K` / `Ctrl+K` while the sidebar is open to focus the
+5. Press `Cmd+K` / `Ctrl+K` while the sidebar is open to focus the
    composer.
+6. Open the model pill (`Default ▾` on the right of the input bar) to
+   pick a model, effort level, or permission mode.
+7. Click `+` on the left of the input bar to start a new session,
+   import a file, or add to the planning list.
 
-## What you get
+## Layout
 
-### Layout
+```text
+┌─────────────────────────────────────────────────┐
+│  ← [Session title  ▾]                           │   ← header (collapse + session chip)
+│                                                 │
+│              What should we work on?            │   ← hero (only when no messages)
+│                                                 │
+│  ┌─────────────────────────────────────────┐  │
+│  │ ╋  Work on anything…           GPT-5 ▾ 🎤 ➤│   ← composer (attach + input + model + mic + send)
+│  └─────────────────────────────────────────┘  │
+│                                                 │
+│  📁 Project  🗂 Files  🔌 Plugins  🖥 Activity  │   ← tabs row
+│                                                 │
+│  [bubbles + tool chips appear here once user sends]
+│                                                 │
+└─────────────────────────────────────────────────┘
+```
 
-The rail is split into three zones:
+The hero ("What should we work on?") is only visible while the active
+session has zero messages. As soon as you send your first message, the
+hero is replaced by the scrollable transcript of bubbles and tool chips.
 
-| Zone          | Contents                                                                 |
-| ------------- | ------------------------------------------------------------------------ |
-| **Header**    | Session selector + meta (turn count) + `+ New` / `Archive` / `Activity`. |
-| **Transcript**| Chat bubbles — user on the right (coral-tinted), assistant on the left   |
-|               | (neutral paper), system messages full-width and muted.                    |
-| **Composer**  | A single-line-to-six-line textarea + three pill selectors + `⏎` send.    |
+## Header
 
-User and assistant bubbles both have an avatar dot, an optional timestamp
-on hover, a copy button on hover, and a retry button on hover for failed
-turns. User bubbles show a status indicator next to the message
-(`sending` animated, `sent` static dot, `failed` warning).
+- **Session chip** — small pill in the top-left showing the current
+  session title (or "New session"). Click to open the session list
+  popover: `+ New session` plus the 20 most recent sessions. Picking one
+  restores that session's transcript and (when available) its last
+  model / effort / permission mode.
+- **Collapse handle** (`←`) — the absolute-positioned tab on the
+  sidebar's left edge. Same toggle as `Alt+C` and the topbar button.
 
-### Tool activity
+## Composer
+
+The composer is a rounded input bar with five controls:
+
+| Button | Purpose |
+| --- | --- |
+| `+`            | Open the attach menu (New session / Import / Add to planning). |
+| `<textarea>`   | Auto-resizing input (1–6 lines; scrolls internally beyond that). |
+| `<model pill>` | Pick the model, effort, and permission mode (see below). |
+| `🎤`           | Placeholder for future voice input. Currently disabled with a "Coming soon" toast. |
+| `➤`            | Send (Enter). Replaced by `■` while a turn is in flight (click to abort). |
+
+### Keyboard
+
+| Shortcut | Action |
+| --- | --- |
+| `Enter`                          | Send. |
+| `Shift+Enter`                    | Insert a newline. |
+| `Esc`                            | Blur the composer / collapse any open chip. |
+| `Cmd/Ctrl+K` (sidebar open)      | Focus the composer. |
+| `Alt+C`                          | Open / close the chat sidebar. |
+
+IME composition events (Japanese / Chinese / Korean input methods) are
+guarded — `Enter` does **not** send while the IME is composing.
+
+## Selectors — model + effort + permissions
+
+Clicking the model pill (right of the input) opens a popover anchored to
+the pill, with three sections:
+
+1. **Model** — `Default` plus every model the project's
+   `.claude/model-router.json` lists. Labels strip the `provider/`
+   prefix so `minimax/MiniMax-M3` displays as `MiniMax-M3`. The list is
+   sourced from the server via `GET /api/chat/picker-options` so the
+   UI and the routing policy stay in sync.
+2. **Effort** — `low`, `medium`, `high`, `max`.
+3. **Permissions** — `accept-edits`, `default`, `plan`,
+   `bypass-permissions`.
+
+Selecting an option updates `state.selectors` in memory, persists it to
+`localStorage` under `ok.chat.selectors`, syncs the visible pill label,
+and closes the popover. The values are then sent on the next turn as
+`--model`, `--effort`, and `--permission-mode` flags to the Claude
+Code binary.
+
+The popover closes on outside-click or `Escape`.
+
+## Tabs row — Project / Files / Plugins / Activity
+
+A row of four icon-and-label tabs sits below the input bar. Clicking a
+tab opens a small popover or toggles the activity footer; only one is
+active at a time.
+
+- **Project** — popover with "Switch project…" (uses
+  `OpenKanPathPicker.open()` if loaded) and "List sessions in this
+  project".
+- **Files** — popover with "Open documentation browser" and "Toggle
+  docs pane". Both fire `openkan:open-docs` /
+  `openkan:toggle-docs-pane` events on `window`.
+- **Plugins** — popover with "M1 import" (same handler as the attach
+  menu's Import), "Planning CLI" (fires `openkan:open-planning-cli`),
+  and "Agents catalog" (fires `openkan:open-agents-catalog`).
+- **Activity** — toggles the slide-in activity footer that mounts the
+  existing `claude-pane.js` (subagent / team / workflow visibility).
+
+The active tab uses the coral accent underline; click the same tab
+again to close it.
+
+## + menu — New session / Import / Add to planning
+
+Click `+` on the left of the input bar to open the attach menu:
+
+1. **New session** — `POST /api/chat/sessions` via `OpenKanAPI.api`,
+   then refresh the local session list.
+2. **Import from file** — opens a native file picker (`.md`, `.mdx`,
+   `.markdown`, `.txt`, `.json`). Each file's contents are POSTed to
+   `/api/import`. Drag-and-drop a file onto the sidebar to use the same
+   endpoint.
+3. **Add to planning** — POST the current composer text to
+   `/api/planning/tasks` (the equivalent of `ok task add`). The first
+   line becomes the title, the full body is preserved.
+4. **Cancel** — closes the menu.
+
+The menu closes on outside-click, `Escape`, or selection.
+
+## Bubble and tool chip rendering
+
+User and assistant bubbles both render with an avatar dot, optional
+timestamp on hover, a copy button on hover, and a retry button on hover
+for failed turns. User bubbles show a status indicator next to the
+message (`sending` animated, `sent` static dot, `failed` warning).
 
 Whenever the assistant calls a tool (Read / Write / Edit / Bash / Grep /
-Glob / WebFetch / WebSearch / Agent / …), OpenKan renders a compact chip
-stack between the user bubble and the assistant bubble. Each chip shows
-the human-readable label of the tool call (e.g. `Reading server.ts`,
-`Running npm test`) and its current state:
+Glob / WebFetch / WebSearch / Agent / …), OpenKan renders a compact
+chip stack between the user bubble and the assistant bubble. Each chip
+shows the human-readable label of the tool call (e.g. `Reading
+server.ts`, `Running npm test`) and its current state:
 
-- **started** — pulsing coral dot while the tool runs.
-- **streaming-input** — ellipsis after the label while input JSON
-  trickles in.
-- **completed** — coral check, label static, `▾` reveal on hover.
+- **started** — pulsing dot, label only.
+- **streaming** — pulsing dot, label with chevron (click to expand).
+- **completed** — solid dot.
 - **failed** — warning dot, label suffixed with `— failed`.
-- **aborted** — strikethrough label, muted.
 
-Click (or press Enter / Space on a focused) chip to expand inline details
-showing the full input JSON plus a 200-char preview of the tool result.
-Press Escape to collapse.
+Clicking a chip expands an inline `<pre>` with the tool input and (when
+known) the result preview. Press `Esc` to collapse any open chip.
 
-### Persistence
+The transcript auto-scrolls to the bottom as new turns arrive. While
+scrolled up, a "↓ New messages" pill surfaces at the bottom of the
+transcript; clicking it scrolls back to the bottom.
 
-Every turn is appended to `.ok/sessions/<sid>.jsonl` with the assembled
-text, the ordered list of tool-use blocks, and the selectors in effect.
-Sessions persist across reloads; the last-selected session is restored
-automatically. The header's `+ New` button starts a fresh session; the
-`Archive` button moves the current session to `.ok/sessions/.archived/`.
-When you reopen an archived session from history, the composer pills
-re-populate from that session's last turn so the next message uses the
-same model / effort / permission mode.
+## Activity footer (subagent / team / workflow)
 
-### Live activity footer
+Toggling the **Activity** tab in the tabs row slides in a footer that
+mounts `claude-pane.js` (the existing project-level Claude Code
+control surface: subagent runs, team plans, workflow status). When the
+tab is closed, the footer collapses and `OpenKanClaude.unmount()` is
+called to release any active subscriptions.
 
-The `Activity` button expands the same `web/claude-pane.js` view used by
-the Claude tab, so you can watch subagents / teams / workflows while
-chatting.
+The transition respects `prefers-reduced-motion: reduce` and disables
+the slide-in for that media query.
 
-### Markdown rendering
+## Storage
 
-Assistant messages are rendered server-side via
-`POST /api/chat/render-markdown` (sanitised HTML) — same pipeline as the
-rest of the app. Code blocks get a 1 px coral left border and scroll
-internally up to 240 px.
+- `ok.chat.open` — `"1"` / `"0"`. Restored on mount so the rail reopens
+  where it left off.
+- `ok.chat.lastSession` — last-selected session id.
+- `ok.chat.selectors` — JSON `{ model, effort, permissionMode }`.
 
-### SSE-driven updates
+All persistence is local. `.ok/sessions/<sid>.jsonl` is gitignored, so
+user / assistant transcripts never leak into commits.
 
-Two complementary channels:
+## Stream events
 
-- `GET /api/chat/events` — every chat event in the project (used for the
-  global `chat.turn` rollup so multiple tabs stay in sync).
-- `GET /api/chat/sessions/<sid>/events` — events scoped to a single
-  session. The sidebar subscribes to this so it can stream
-  `chat.text-delta` directly into the assistant bubble without re-
-  rendering markdown per token, and push `chat.tool-use` / `chat.tool-
-  result` / `chat.message-done` events that drive the chip stack and the
-  final markdown rehydration.
+SSE channels:
 
-## HTTP API
+- `/api/chat/events` — every event in the project.
+- `/api/chat/sessions/<sid>/events` — events scoped to a session.
 
-All endpoints live under `/api/chat/*` and are registered in
-`kanban/chat.ts`.
+Typed events:
 
-| Method   | Path                                          | Purpose                              |
-| -------- | --------------------------------------------- | ------------------------------------ |
-| `GET`    | `/api/chat/sessions`                          | List all sessions (active + archived). |
-| `GET`    | `/api/chat/sessions/:sid`                     | Full transcript for one session.     |
-| `DELETE` | `/api/chat/sessions/:sid`                     | Archive an active session.           |
-| `POST`   | `/api/chat/sessions/:sid/abort`               | Kill the running subprocess.         |
-| `GET`    | `/api/chat/sessions/:sid/events`              | Per-session SSE stream (text / tool / message events). |
-| `POST`   | `/api/chat/send`                              | Send a user turn; returns the assembled reply. |
-| `GET`    | `/api/chat/events`                            | Global SSE stream of every chat event. |
-| `GET`    | `/api/chat/selectors`                         | Allowed effort + permission values.  |
-| `POST`   | `/api/chat/render-markdown`                   | Server-side markdown rendering.      |
-
-### `POST /api/chat/send`
-
-Request body:
-
-```json
-{
-  "sessionId": "ses-…",          // optional — omit to start a new session
-  "message": "your prompt",
-  "model": "default",            // any model from /api/claude/model-router
-  "effort": "high",              // low | medium | high | max
-  "permissionMode": "default"    // accept-edits | default | plan | bypass-permissions
-}
-```
-
-Response:
-
-```json
-{
-  "sessionId": "ses-…",
-  "userTurn":      { "ts": "...", "role": "user",      "content": "..." },
-  "assistantTurn": { "ts": "...", "role": "assistant", "content": "...",
-                     "model": "...", "effort": "...",
-                     "permissionMode": "...",
-                     "toolUses": [
-                       { "id": "tu_1", "name": "Read",
-                         "input": { "file_path": "kanban/chat.ts" },
-                         "status": "completed",
-                         "resultPreview": "…" }
-                     ] }
-}
-```
+| Event name              | Source                                                       | Effect                                         |
+| ----------------------- | ------------------------------------------------------------ | ---------------------------------------------- |
+| `chat.tool-use`         | `content_block_start` with `tool_use`                        | Add live chip → running.                       |
+| `chat.tool-input-delta` | `content_block_delta` for tool_use `input_json_delta`        | Update chip input preview (chunked).           |
+| `chat.text-delta`       | `content_block_delta` for `text`                             | Append to live assistant bubble (no re-render). |
+| `chat.tool-result`      | `content_block_start` with `tool_result`                     | Transition chip → completed / failed.          |
+| `chat.message-done`     | `message_stop`                                               | Finalise streaming bubble (markdown render).   |
+| `chat.turn`             | SSE-broadcast after `sendTurn` returns (carries user + assistant turns, including `status` / `error` fields). | Append new turns to transcript and re-render. |
 
 Errors: `422` for invalid selectors or empty message, `500` for spawn
 failure.
 
-## Subprocess model
+## HTTP API (selected)
 
-For each user turn the server spawns:
-
-```
-claude -p "<message>" \
-       --model <m> \
-       --effort <e> \
-       --permission-mode <p> \
-       --output-format stream-json \
-       --verbose
-```
-
-`cwd` is the active OpenKan project root. `env` is inherited from the
-OpenKan process. The child PID is tracked in an in-process
-`Map<sessionId, ChildProcess>`; abort issues `SIGTERM` and falls back to
-`SIGKILL` after two seconds.
-
-Override the binary path with `CLAUDE_BIN=/path/to/claude`.
-
-## Tool-use label mapping
-
-`kanban/chat.ts` exports `toolUseLabel(toolUse)` that turns a tool call
-into a short human label, e.g.:
-
-| Tool name       | Label                                |
-| --------------- | ------------------------------------ |
-| `Read`          | `Reading <basename(file_path)>`      |
-| `Write`         | `Writing <basename(file_path)>`      |
-| `Edit`          | `Editing <basename(file_path)>`      |
-| `Bash`          | `Running <command>` (≤ 60 chars)     |
-| `Grep`          | `Searching for "<query>"`            |
-| `Glob`          | `Finding <pattern>`                  |
-| `WebFetch`      | `Fetching <url>`                     |
-| `WebSearch`     | `Searching the web for "<query>"`    |
-| `Agent`/`Task`  | `Delegating to <subagent_type>`      |
-| anything else   | `Using <tool_name>`                  |
-
-The browser mirrors this mapper so chips render identically whether they
-arrive via the live stream or are replayed from JSONL on session restore.
-
-## Stream event types
-
-The per-session SSE channel emits the following typed events; the
-sidebar subscribes to each and updates the UI without re-rendering
-markdown per token.
-
-| Event                       | When                                        | Used for                       |
-| --------------------------- | ------------------------------------------- | ------------------------------ |
-| `chat.text-delta`           | `content_block_delta` with `text_delta`     | Append into active bubble.     |
-| `chat.tool-use`             | `content_block_start` with `tool_use`       | Push a new chip (started).     |
-| `chat.tool-input-delta`     | `content_block_delta` with `input_json_delta` | Mark chip as streaming-input. |
-| `chat.tool-result`          | `content_block_start` with `tool_result`    | Transition chip → completed / failed. |
-| `chat.message-delta`        | `message_delta`                             | Surface `stop_reason`.         |
-| `chat.message-done`         | `message_stop`                              | Finalise bubble markdown + reset live state. |
-| `chat.turn`                 | Turn boundary                               | Roll-up of `userTurn` + `assistantTurn`. |
-
-## Data layout
-
-- `.ok/sessions/<sid>.jsonl` — one JSON object per line. Each assistant
-  turn includes `toolUses: ToolUseRecord[]` (in addition to the legacy
-  `content` / `model` / `effort` / `permissionMode` / `messageId` /
-  `status` / `error` fields).
-- `.ok/sessions/.archived/<sid>.jsonl` — archived transcripts.
-- Both directories are covered by the existing `.gitignore` rule
-  (`.ok/sessions/`), so user conversations never land in commits.
-
-### Backwards compatibility
-
-Turns written before `toolUses` existed load cleanly: `readSession`
-backfills `toolUses: []` for any turn where the field is absent, so the
-renderer can iterate without `undefined` checks. Legacy turns render
-without chip rows.
+| Endpoint | Method | Notes |
+| --- | --- | --- |
+| `/api/chat/sessions` | GET | list of session summaries (active + archived, last-activity desc). |
+| `/api/chat/sessions/<sid>` | GET | full transcript. |
+| `/api/chat/sessions/<sid>` | DELETE | archive. |
+| `/api/chat/sessions/<sid>/abort` | POST | kill the running subprocess. |
+| `/api/chat/send` | POST | body: `{ message, model?, effort?, permissionMode?, sessionId? }`. |
+| `/api/chat/events` | GET | SSE fan-out. |
+| `/api/chat/sessions/<sid>/events` | GET | per-session SSE. |
+| `/api/chat/selectors` | GET | `{ efforts, permissionModes }` (legacy). |
+| `/api/chat/picker-options` | GET | `{ models: [{id, label}], efforts, permissionModes }` sourced from `.claude/model-router.json`. |
+| `/api/chat/render-markdown` | POST | sanitised HTML for chat messages. |
 
 ## Tests
 
 `tests/chat.test.mts` covers:
 
-- JSONL round-trip (`appendTurn` + `readSession`), including legacy rows
-  without `toolUses`.
+- JSONL round-trip (`appendTurn` + `readSession`), including legacy
+  rows without `toolUses`.
 - Subprocess spawn with selectors, mocked by prepending a fake `claude`
   binary to `$PATH`. The fake fixture detects `--output-format
   stream-json` and emits NDJSON events.
@@ -234,6 +236,7 @@ without chip rows.
 - HTTP dispatcher: list / read / archive / abort / send / SSE /
   render-markdown happy and error paths.
 - `validateSelectors` enforces effort + permission-mode allowlists.
+- `GET /api/chat/picker-options` returns the expected shape.
 
 `tests/chat-tools.test.mts` covers:
 
@@ -247,4 +250,5 @@ without chip rows.
 - JSONL round-trip with `toolUses` array.
 - Legacy JSONL without `toolUses` reads cleanly and surfaces an empty
   `toolUses` array.
-</new_string>
+- `toPickerLabel` strips `provider/` prefixes consistently.
+- `pickerOptions` returns the expected shape from an injected fixture.
