@@ -1468,3 +1468,46 @@ body.workspace-mode-chat { padding-left: 0; }
   .card-priority { font-size: 8px; }
   .task-actions { justify-self: start; }
 }
+
+/* A chat rail reduces the task canvas, not the width of its cards. Keep a
+   consistent five-column board and let the dedicated board viewport scroll
+   horizontally once the available task area becomes too narrow. This applies
+   only to task mode: chat mode intentionally renders the compact right rail. */
+@media (min-width: 901px) {
+  body.chat-sidebar-open:not(.workspace-mode-chat) .dashboard,
+  body.chat-sidebar-open:not(.workspace-mode-chat) #tab-tasks {
+    min-width: 0;
+  }
+
+  body.chat-sidebar-open:not(.workspace-mode-chat) .workspace-intro {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  body.chat-sidebar-open:not(.workspace-mode-chat) .board-overview {
+    flex: 1 1 330px;
+    min-width: 0;
+  }
+
+  body.chat-sidebar-open:not(.workspace-mode-chat) .filter-primary {
+    grid-template-columns: minmax(220px, 1fr);
+  }
+
+  body.chat-sidebar-open:not(.workspace-mode-chat) .filter-bar-row.controls {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  body.chat-sidebar-open:not(.workspace-mode-chat) #main-content {
+    overflow: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-gutter: stable both-edges;
+  }
+
+  body.chat-sidebar-open:not(.workspace-mode-chat) .board {
+    min-width: 1340px;
+    grid-template-columns: repeat(5, minmax(260px, 1fr));
+    overflow: visible;
+  }
+}

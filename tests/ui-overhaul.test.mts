@@ -9,7 +9,7 @@ const read = (path: string) => readFileSync(join(root, path), "utf8");
 describe("workspace UI contract", () => {
   test("loads the dedicated workspace theme after legacy component styles", () => {
     const html = read("web/index.html");
-    assert.ok(html.indexOf('href="style.css"') < html.indexOf('href="workspace.css?v=20260730"'));
+    assert.ok(html.indexOf('href="style.css"') < html.indexOf('href="workspace.css?v=20260904-board-width"'));
   });
 
   test("provides board health and progressively disclosed filters", () => {
@@ -49,6 +49,21 @@ describe("workspace UI contract", () => {
     assert.match(css, /column\[data-column="todo"\] \{ order: 1; \}/);
     assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
   });
+});
+
+test("keeps task cards readable by scrolling rather than shrinking the board under chat", () => {
+  const css = read("web/workspace.css");
+  assert.match(css, /body\.chat-sidebar-open:not\(\.workspace-mode-chat\) #main-content\s*\{[\s\S]*?overflow: auto/);
+  assert.match(css, /body\.chat-sidebar-open:not\(\.workspace-mode-chat\) \.board\s*\{[\s\S]*?min-width: 1340px[\s\S]*?repeat\(5, minmax\(260px, 1fr\)\)/);
+  assert.match(css, /body\.chat-sidebar-open:not\(\.workspace-mode-chat\) \.filter-primary\s*\{[\s\S]*?minmax\(220px, 1fr\)/);
+});
+
+test("uses a compact priority code while preserving full priority context", () => {
+  const app = read("web/app.js");
+  const priority = app.slice(app.indexOf("function makeCardPriority"), app.indexOf("function makeCardTags"));
+  assert.match(priority, /text: meta\.code/);
+  assert.match(priority, /title: `Priority: \$\{meta\.label\}`/);
+  assert.doesNotMatch(priority, /text: `\$\{meta\.code\} \$\{meta\.label\}`/);
 });
 
 test("loads GSAP before the status-specific chat motion module", () => {
@@ -268,7 +283,8 @@ test("uses text-led priority and source metadata on task cards", () => {
   const taskView = read("web/task-view.js");
   const workspace = read("web/workspace.css");
   assert.match(app, /urgent: \{ code: "P0", label: "Urgent"/);
-  assert.match(app, /text: `\$\{meta\.code\} \$\{meta\.label\}`/);
+  assert.match(app, /text: meta\.code/);
+  assert.match(app, /title: `Priority: \$\{meta\.label\}`/);
   assert.match(app, /card-source-label", \{ text: "Source"/);
   assert.match(app, /card-state-label/);
   assert.doesNotMatch(app, /emoji:/);

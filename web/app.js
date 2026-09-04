@@ -734,7 +734,9 @@
     const meta = PRIORITY_META[t.priority];
     if (!meta) return null;
     return el("span", `card-priority ${meta.className}`, {
-      text: `${meta.code} ${meta.label}`,
+      // Preserve title space on narrow board viewports. The full priority
+      // stays available through the accessible label and native tooltip.
+      text: meta.code,
       title: `Priority: ${meta.label}`,
       "aria-label": `Priority: ${meta.label}`,
     });
