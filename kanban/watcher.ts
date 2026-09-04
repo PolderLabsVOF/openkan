@@ -16,7 +16,7 @@ export interface WatchEvent {
 }
 
 export interface WatchOptions {
-  root: string;                                // directory to watch (e.g. .openkan)
+  root: string;                                // directory to watch (e.g. .ok)
   debounceMs?: number;                         // default 100
   ignore?: (absPath: string) => boolean;      // additional ignores beyond defaults
 }

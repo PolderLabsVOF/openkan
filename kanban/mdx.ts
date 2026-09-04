@@ -268,7 +268,7 @@ export function extractDescription(mdx: string): string {
 /**
  * Return the mtime of a task's MDX file, or null if it doesn't exist.
  * @param taskId - the task id
- * @param kanbanDir - the .openkan directory path
+ * @param kanbanDir - the .ok directory path
  */
 export function statMdxMtime(taskId: string, kanbanDir: string): string | null {
   const mdxPath = join(kanbanDir, "tasks", taskId, "task.mdx");

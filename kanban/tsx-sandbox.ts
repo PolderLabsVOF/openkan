@@ -186,7 +186,7 @@ body{font-family:system-ui,sans-serif;padding:16px;background:#fafafa}
 <script>${BUILTIN_LIBRARY}</script>
 <script>${RUNTIME}</script>
 <script>
-window.openkan = { Button, Card, Row, Column, Text, Heading, Image, ColorSwatch, Code, respond, h, render };
+window.ok = { Button, Card, Row, Column, Text, Heading, Image, ColorSwatch, Code, respond, h, render };
 try {
   ${wrappedJs}
 } catch(e) {

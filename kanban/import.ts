@@ -37,11 +37,11 @@ const MD_EXTENSIONS = new Set([".md", ".mdx"]);
 
 // Dirs that are always skipped regardless of include/exclude.
 const SYSTEM_DIRS = new Set([
-  "node_modules", ".git", ".openkan", "dist", ".next",
+  "node_modules", ".git", ".ok", "dist", ".next",
 ]);
 
 function isSystemDir(name: string): boolean {
-  if (name.startsWith(".") && name !== ".openkan") return true;
+  if (name.startsWith(".") && name !== ".ok") return true;
   return SYSTEM_DIRS.has(name);
 }
 

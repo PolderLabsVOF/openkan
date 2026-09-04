@@ -1,6 +1,6 @@
 ---
 name: openkan
-description: Use OpenKan as the durable project control plane. Always use this skill when a project contains .openkan/, when managing project tasks or agent work, or when the user mentions OpenKan, kanban work, task status, project progress, agent sessions, or collaboration. Keep OpenKan tasks, task workspaces, status, decisions, and verification evidence synchronized throughout non-trivial work.
+description: Use OpenKan as the durable project control plane. Always use this skill when a project contains .ok/, when managing project tasks or agent work, or when the user mentions OpenKan, kanban work, task status, project progress, agent sessions, or collaboration. Keep OpenKan tasks, task workspaces, status, decisions, and verification evidence synchronized throughout non-trivial work.
 ---
 
 # OpenKan project workflow
@@ -10,7 +10,7 @@ while working; do not reconstruct task state only at the end.
 
 ## Begin every non-trivial task
 
-1. Find the project root by walking upward for `.openkan/`.
+1. Find the project root by walking upward for `.ok/`.
 2. Run `openkan status`. If OpenKan is stopped, run `openkan start --no-open`.
 3. Read the board and current work:
 
@@ -34,7 +34,7 @@ work that makes no project change.
 - Update the task title, description, column, priority, agent, and assignees
   when reality changes.
 - Record plan changes, decisions, blockers, progress, and validation evidence
-  in `.openkan/tasks/<task-id>/task.mdx`.
+  in `.ok/tasks/<task-id>/task.mdx`.
 - Prefer HTTP API mutations while the server is running. This preserves atomic
   writes and sends live updates to browsers and collaborating agents.
 - Re-read the task before major transitions. Another agent may have updated it.
@@ -42,7 +42,7 @@ work that makes no project change.
   `agent:<name>` for agent-written comments.
 - Use structured input requests only when missing information truly blocks
   progress. Continue safe work while non-blocking questions are pending.
-- Never edit `.openkan/board.json`, comments indexes, input indexes, Bizar
+- Never edit `.ok/board.json`, comments indexes, input indexes, Bizar
   databases, or session transcripts directly.
 
 ## Task lifecycle

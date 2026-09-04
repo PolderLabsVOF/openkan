@@ -123,7 +123,7 @@ if [[ "${INSTALL_ROOT}" == "${SOURCE_ROOT}" ]]; then
   exit 2
 fi
 
-STAGING_ROOT="$(mktemp -d "${INSTALL_PARENT}/.openkan-install.XXXXXX")"
+STAGING_ROOT="$(mktemp -d "${INSTALL_PARENT}/.ok-install.XXXXXX")"
 BACKUP_ROOT=""
 
 cleanup() {
@@ -185,7 +185,7 @@ install_agent_skill() {
   local staged
 
   mkdir -p "${skills_root}"
-  staged="$(mktemp -d "${skills_root}/.openkan-skill.XXXXXX")"
+  staged="$(mktemp -d "${skills_root}/.ok-skill.XXXXXX")"
   cp -R "${INSTALL_ROOT}/skills/openkan/." "${staged}/"
   rm -rf "${target}"
   mv "${staged}" "${target}"

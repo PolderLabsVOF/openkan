@@ -8,14 +8,14 @@
 //   - dangling references in tasks.json / board.json
 // Exits non-zero on any error.
 //
-// Supports OPENKAN_DIR env var for testing (defaults to <cwd>/.openkan).
+// Supports OPENKAN_DIR env var for testing (defaults to <cwd>/.ok).
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const KANBAN_DIR = process.env.OPENKAN_DIR
   ? join(process.env.OPENKAN_DIR)
-  : join(process.cwd(), ".openkan");
+  : join(process.cwd(), ".ok");
 
 // Project root is the parent of KANBAN_DIR (or cwd when OPENKAN_DIR is not set)
 const PROJECT_ROOT = process.env.OPENKAN_DIR
@@ -26,7 +26,7 @@ let board: any;
 try {
   board = JSON.parse(readFileSync(join(KANBAN_DIR, "board.json"), "utf-8"));
 } catch {
-  console.error("ERROR: Could not read .openkan/board.json");
+  console.error("ERROR: Could not read .ok/board.json");
   process.exit(1);
 }
 

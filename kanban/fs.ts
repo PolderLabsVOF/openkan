@@ -194,7 +194,7 @@ export function parents(path: string, maxDepth: number): FsEntry[] {
 
   // Split by "/" to get segments (works on all platforms since absPath uses forward slashes)
   const raw = absPath.split("/").filter(Boolean);
-  // raw = ["home", "drb0rk", "Projects", "openkan", ".openkan"] for /home/drb0rk/Projects/openkan/.openkan
+  // raw = ["home", "drb0rk", "Projects", "openkan", ".ok"] for /home/drb0rk/Projects/openkan/.ok
 
   const result: FsEntry[] = [];
 

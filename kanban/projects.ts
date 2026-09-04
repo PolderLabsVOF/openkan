@@ -132,11 +132,11 @@ export function removeProject(id: string): boolean {
 
 /**
  * Resolve a project's openkan dir. Returns null if root doesn't exist.
- * Returns <root>/.openkan
+ * Returns <root>/.ok
  */
 export function projectKanbanDir(p: ProjectEntry): string | null {
   if (!existsSync(p.root)) return null;
-  return join(p.root, ".openkan");
+  return join(p.root, ".ok");
 }
 
 // ─── Auto-detect interfaces ────────────────────────────────────────────────────

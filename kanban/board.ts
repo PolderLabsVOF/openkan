@@ -3,6 +3,9 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { writeFileAtomic, ensureDir, cleanupStaleTmp, removeDir } from "./io.ts";
 import type { Priority, Effort, Category } from "./tags.ts";
+import { writeTask, readConfig, writeConfig, paths as okPaths, rebuildIndex } from "../ok/storage.ts";
+import { nowIso as okNowIso } from "../ok/ids.ts";
+import type { Task as OkTask } from "../ok/schemas.ts";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -16,7 +19,7 @@ export interface Column {
   title: string;
 }
 
-/** Paths to task sub-artifacts, relative to .openkan/. */
+/** Paths to task sub-artifacts, relative to .ok/. */
 export interface TaskArtifacts {
   mdxPath: string;         // e.g. "tasks/tsk-xxx/task.mdx"
   commentsPath: string;    // e.g. "tasks/tsk-xxx/comments.json"
@@ -60,7 +63,7 @@ export interface Task {
 
 // ─── Task getter / setter helpers ─────────────────────────────────────────────
 
-/** Return artifact paths for a task, under .openkan/. */
+/** Return artifact paths for a task, under .ok/. */
 export function taskArtifacts(taskId: string): TaskArtifacts {
   return {
     mdxPath: `tasks/${taskId}/task.mdx`,
@@ -193,7 +196,7 @@ async function migrateLegacyTaskArtifacts(board: Board): Promise<void> {
 }
 
 export async function initBoard(ctx: BoardContext): Promise<{ board: Board; dir: string }> {
-  const dir = join(ctx.directory, ".openkan");
+  const dir = join(ctx.directory, ".ok");
   KANBAN_DIR = dir;
 
   ensureDir(dir);
@@ -245,8 +248,87 @@ export async function withWrite<T>(fn: (board: Board) => Promise<T> | T): Promis
 
 // ─── Persist ─────────────────────────────────────────────────────────────────
 
+/**
+ * Map an OpenKan engine `Task` onto the planning-system `ok.task.v1`
+ * shape. Column placement (`backlog|todo|doing|review|done`) maps onto
+ * the planning status enum (`pending|in_progress|review|done|cancelled`)
+ * so a single field is the canonical lifecycle indicator.
+ */
+function toPlanningTask(task: Task): OkTask {
+  const status = mapColumnToStatus(task.column, task.state, task.archived);
+  const ok: OkTask = {
+    schema: "ok.task.v1",
+    id: task.id.startsWith("tsk-") ? task.id : `tsk-${task.id}`,
+    title: task.title || "untitled",
+    status,
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt,
+  };
+  if (task.agent) ok.owner = task.agent;
+  if (task.description && task.description.trim().length > 0) ok.description = task.description;
+  if (task.tags && task.tags.length > 0) ok.scopes = task.tags;
+  return ok;
+}
+
+function mapColumnToStatus(
+  column: Task["column"],
+  state: Task["state"],
+  archived: boolean,
+): OkTask["status"] {
+  if (archived) return "cancelled";
+  if (state === "done") return "done";
+  if (state === "cancelled" || state === "failed") return "cancelled";
+  if (state === "running" || state === "waiting-for-input") return "in_progress";
+  if (column === "review") return "review";
+  if (column === "doing") return "in_progress";
+  return "pending";
+}
+
+let _okMirrorWritesDisabled = false;
+/** Disable the side-effect per-task mirror writes (used by tests). */
+export function setOkMirrorWritesDisabled(v: boolean): void { _okMirrorWritesDisabled = v; }
+
+/**
+ * Mirror the engine board into the planning-system store. Idempotent:
+ * existing per-task JSONs are overwritten with the latest engine view.
+ * `config.json` is created on first call so the planning system sees the
+ * project as initialised.
+ */
+async function mirrorToOkStore(board: Board): Promise<void> {
+  if (_okMirrorWritesDisabled) return;
+  if (!KANBAN_DIR) return;
+  // KANBAN_DIR = <root>/.ok/. The planning layout is exactly that.
+  // We resolve the project root as the parent of KANBAN_DIR.
+  const projectRoot = join(KANBAN_DIR, "..");
+  const p = okPaths(projectRoot);
+  ensureDir(p.tasksDir);
+  ensureDir(p.plansDir);
+  ensureDir(p.prdsDir);
+  ensureDir(p.sessionsDir);
+  ensureDir(p.locksDir);
+  // Ensure config.json exists
+  if (!existsSync(p.configFile)) {
+    const now = okNowIso();
+    await writeConfig(p, { schema: "ok.config.v1", version: 1, createdAt: now, updatedAt: now });
+  }
+  // Write one JSON per task, plus idempotent tasks.json index.
+  const seen = new Set<string>();
+  const indexEntries: { id: string; status: string; title: string; updatedAt: string }[] = [];
+  for (const t of board.tasks) {
+    const okTask = toPlanningTask(t);
+    await writeTask(p, okTask);
+    seen.add(okTask.id);
+    indexEntries.push({ id: okTask.id, status: okTask.status, title: okTask.title, updatedAt: okTask.updatedAt });
+  }
+  // Best-effort index rebuild (non-fatal if it fails).
+  try { await rebuildIndex(p); } catch { /* swallow */ }
+}
+
 export async function persist(board: Board): Promise<void> {
   if (!KANBAN_DIR) return;
   const dest = join(KANBAN_DIR, BOARD_FILE);
   writeFileAtomic(dest, JSON.stringify(board, null, 2));
+  // Mirror into the planning-system store. Side effect only; failure does
+  // not abort the engine write.
+  try { await mirrorToOkStore(board); } catch { /* swallow */ }
 }
