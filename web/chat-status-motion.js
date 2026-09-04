@@ -5,6 +5,7 @@
 
   const MODES = Object.freeze({
     thinking: { label: "Thinking", cells: 8 },
+    searching: { label: "Searching the web", cells: 7 },
     reading: { label: "Reading", cells: 6 },
     command: { label: "Running command", cells: 7 },
     editing: { label: "Editing", cells: 7 },
@@ -25,6 +26,7 @@
     if (/(mcp)/.test(value)) return "mcp";
     if (/(team|workflow|orchestrat)/.test(value)) return "orchestration";
     if (/(subagent|delegat|agent)/.test(value)) return "agent";
+    if (/(websearch|searching the web|search the web)/.test(value)) return "searching";
     if (/(read|search|find|fetch|glob|grep)/.test(value)) return "reading";
     if (/(write|edit|patch|save)/.test(value)) return "editing";
     if (/(bash|command|run(?:ning)?|terminal|exec)/.test(value)) return "command";
@@ -86,6 +88,11 @@
         tl.to(pixels, { autoAlpha: 0.36, duration: 0.1 })
           .to(pixels, { autoAlpha: 1, scaleY: 1.45, duration: 0.14, stagger: { each: 0.065, from: "start" } })
           .to(pixels, { autoAlpha: 0.32, scaleY: 0.92, duration: 0.16, stagger: { each: 0.065, from: "end" } });
+        break;
+      case "searching":
+        tl.to(pixels, { autoAlpha: 0.3, scale: 0.82, duration: 0.12 })
+          .to(pixels, { autoAlpha: 1, scale: 1.2, duration: 0.17, stagger: { each: 0.07, from: "center" } })
+          .to(pixels, { autoAlpha: 0.36, scale: 0.92, duration: 0.2, stagger: { each: 0.07, from: "edges" } });
         break;
       case "command":
         tl.to(pixels, { autoAlpha: 0.34, duration: 0.1 })

@@ -44,6 +44,7 @@ has_complete_source() {
     [[ -d "${SOURCE_ROOT}/bin" ]] &&
     [[ -d "${SOURCE_ROOT}/commands" ]] &&
     [[ -d "${SOURCE_ROOT}/kanban" ]] &&
+    [[ -d "${SOURCE_ROOT}/ok" ]] &&
     [[ -d "${SOURCE_ROOT}/skills" ]] &&
     [[ -d "${SOURCE_ROOT}/web" ]] &&
     [[ -f "${SOURCE_ROOT}/package.json" ]] &&
@@ -136,7 +137,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for directory in bin commands kanban skills web; do
+for directory in bin commands kanban ok skills web; do
   cp -R "${SOURCE_ROOT}/${directory}" "${STAGING_ROOT}/${directory}"
 done
 

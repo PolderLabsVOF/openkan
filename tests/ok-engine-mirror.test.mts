@@ -108,6 +108,14 @@ describe("OpenKan engine → .ok/ mirror", () => {
     const p = okPaths(root);
     const got = await readTask(p, "tsk-mirror2");
     assert.strictEqual(got!.status, "review");
+
+    // A card can be moved to Done before an agent sets its runtime state to
+    // `done`; column placement must still remain terminal in the .ok mirror.
+    const done = { ...t, id: "tsk-mirror-done", title: "done-lane task", column: "done" as const, state: "idle" as const, status: "idle" as const };
+    board.tasks.push(done);
+    await persist(board);
+    const doneTask = await readTask(p, "tsk-mirror-done");
+    assert.strictEqual(doneTask!.status, "done");
   });
 
   it("engine persist mirrors archived → cancelled", async () => {

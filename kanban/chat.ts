@@ -77,6 +77,12 @@ export interface ToolUseRecord {
   resultPreview?: string;
   /** True when the tool call returned an error result. */
   isError?: boolean;
+  /** Forwarded tool work performed by a Claude Code subagent. */
+  source?: "subagent";
+  /** Parent Agent tool-use id when `source` is `subagent`. */
+  parentToolUseId?: string;
+  /** Internal chronological ordering key for persisted activity. */
+  sequence?: number;
 }
 
 /** Live state held while a turn is in flight, mutated by the stream parser. */
@@ -87,6 +93,10 @@ interface TurnState {
   /** tool_use_id -> index in `toolUses` so we can attach results. */
   toolIndexById: Map<string, number>;
   toolResults: Map<string, { content: string; isError: boolean }>;
+  /** Tool work reported from forwarded Claude Code subagent streams. */
+  subagentToolUses: Map<string, ToolUseRecord>;
+  /** Monotonic ordering across parent and subagent tool calls. */
+  toolSequence: number;
   /** The most recent `message_delta` stop reason. */
   stopReason: string | null;
 }
@@ -128,8 +138,8 @@ export interface SendTurnOptions extends ChatSelectors {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   claudeBin?: string;
-  /** Callback invoked for every parsed stream event (chat-side use only). */
-  onStreamEvent?: (event: StreamEvent) => void;
+  /** Callback invoked for each parsed event and the non-duplicated effect it had. */
+  onStreamEvent?: (event: StreamEvent, applied: StreamApplyResult) => void;
   signal?: AbortSignal;
 }
 
@@ -150,6 +160,12 @@ export interface SendTurnResult {
 export interface StreamEvent {
   type: string;
   index?: number;
+  /**
+   * Present on messages forwarded from Claude Code subagents. This is the
+   * parent Agent tool-use id, so the UI can reconstruct the native agent
+   * tree without confusing a child transcript with the parent reply.
+   */
+  parentToolUseId?: string;
   /** Convenience copy of `event.content_block` when present. */
   contentBlock?: {
     type: "text" | "thinking" | "tool_use" | "tool_result";
@@ -586,7 +602,20 @@ export function parseStreamLine(line: string): StreamEvent | null {
     raw = raw.event as Record<string, unknown>;
   }
   let type = typeof raw.type === "string" ? raw.type : "unknown";
+  const parentFrom = (value: unknown): string | undefined => {
+    if (!value || typeof value !== "object") return undefined;
+    const record = value as Record<string, unknown>;
+    const id = record.parent_tool_use_id ?? record.parentToolUseId;
+    return typeof id === "string" && id.length > 0 ? id : undefined;
+  };
   const event: StreamEvent = { type, raw: { ...raw, _envelope: envelope.type === "stream_event" ? envelope : undefined } };
+  // `--forward-subagent-text` annotates forwarded assistant/user messages
+  // with this id. Claude Code has shipped it both on the outer record and on
+  // `message`, so accept either documented shape (and the partial envelope).
+  event.parentToolUseId = parentFrom(raw)
+    ?? parentFrom(raw.message)
+    ?? parentFrom(envelope)
+    ?? parentFrom((envelope as Record<string, unknown>).message);
 
   if (typeof raw.index === "number") event.index = raw.index;
 
@@ -662,10 +691,89 @@ export function parseStreamLine(line: string): StreamEvent | null {
  *  were produced, so callers can fan them out over SSE without re-parsing.
  *  Exported for unit tests.
  */
+function nextToolSequence(state: TurnState): number {
+  state.toolSequence = (state.toolSequence ?? 0) + 1;
+  return state.toolSequence;
+}
+
+/** Preserve subagent file/tool work in the final parent activity audit while
+ * deliberately excluding forwarded text and thinking from the parent reply. */
+function applyForwardedToolEvent(state: TurnState, event: StreamEvent): void {
+  const parentToolUseId = event.parentToolUseId;
+  const block = event.contentBlock;
+  if (!parentToolUseId || !block) return;
+  const tools = state.subagentToolUses ??= new Map<string, ToolUseRecord>();
+  if (block.type === "tool_use" && block.id) {
+    const key = `${parentToolUseId}:${block.id}`;
+    tools.set(key, {
+      id: `subagent:${key}`,
+      name: block.name ?? "unknown",
+      input: block.input ?? {},
+      status: "started",
+      source: "subagent",
+      parentToolUseId,
+      sequence: nextToolSequence(state),
+    });
+    return;
+  }
+  if (block.type !== "tool_result" || !block.tool_use_id) return;
+  const existing = tools.get(`${parentToolUseId}:${block.tool_use_id}`);
+  if (!existing) return;
+  const text = typeof block.content === "string"
+    ? block.content
+    : Array.isArray(block.content)
+      ? block.content.map((item) => item.text ?? "").join("")
+      : "";
+  const rawBlock = event.raw.content_block as Record<string, unknown> | undefined;
+  existing.status = rawBlock?.is_error ? "failed" : "completed";
+  existing.resultPreview = text.slice(0, 200);
+  existing.isError = Boolean(rawBlock?.is_error);
+  tools.set(`${parentToolUseId}:${block.tool_use_id}`, existing);
+}
+
+export type StreamApplyResult = { toolUseIndex: number; toolUse: ToolUseRecord }
+  | { toolResult: ToolUseRecord }
+  | { textDelta: string }
+  | { reasoningDelta: string }
+  | { stopReason: string }
+  | null;
+
+/**
+ * Merge a text event without replaying Claude's assistant snapshots after
+ * incremental stream deltas. The return value is exactly the new suffix that
+ * belongs in the live SSE transcript.
+ */
+function mergeText(state: TurnState, index: number, text: string, snapshot: boolean): string {
+  const previous = state.textByBlock.get(index) ?? "";
+  if (!snapshot) {
+    state.textByBlock.set(index, previous + text);
+    return text;
+  }
+  if (!previous) {
+    state.textByBlock.set(index, text);
+    return text;
+  }
+  if (previous === text || previous.endsWith(text) || previous.startsWith(text)) return "";
+  if (text.startsWith(previous)) {
+    state.textByBlock.set(index, text);
+    return text.slice(previous.length);
+  }
+  // An assistant snapshot should supersede a partial stream rather than
+  // duplicate it. It is intentionally not emitted as a second live delta.
+  state.textByBlock.set(index, text);
+  return "";
+}
+
 export function applyStreamEvent(
   state: TurnState,
   event: StreamEvent,
-): { toolUseIndex: number; toolUse: ToolUseRecord } | { toolResult: ToolUseRecord } | { textDelta: string } | { reasoningDelta: string } | { stopReason: string } | null {
+): StreamApplyResult {
+  // Forwarded child text and thinking stay out of the parent reply, while
+  // their real tool effects remain available in the completed audit trail.
+  if (event.parentToolUseId) {
+    applyForwardedToolEvent(state, event);
+    return null;
+  }
   // `result` is a fallback for providers that skip assistant text events.
   // Do not append it when a normal assistant snapshot has already supplied text.
   if (event.raw.type === "result" && [...state.textByBlock.values()].some(Boolean)) return null;
@@ -687,6 +795,7 @@ export function applyStreamEvent(
           name: cb.name ?? "unknown",
           input: cb.input ?? {},
           status: "started",
+          sequence: nextToolSequence(state),
         };
         state.toolUses.set(event.index, toolUse);
         state.toolIndexById.set(cb.id, event.index);
@@ -718,10 +827,8 @@ export function applyStreamEvent(
       const d = event.delta;
       if (!d) return null;
       if (d.type === "text_delta" && typeof event.index === "number") {
-        const prev = state.textByBlock.get(event.index) ?? "";
-        const next = prev + (d.text ?? "");
-        state.textByBlock.set(event.index, next);
-        return { textDelta: d.text ?? "" };
+        const text = mergeText(state, event.index, d.text ?? "", event.raw.type === "assistant");
+        return { textDelta: text };
       }
       if ((d.type === "thinking_delta" || d.type === "reasoning_delta") && typeof event.index === "number") {
         const text = d.thinking ?? d.text ?? "";
@@ -776,9 +883,10 @@ export function assembleAssistantTurn(
     .map((i) => state.reasoningByBlock.get(i) ?? "").join("");
 
   // Concatenate tool uses in the order they were opened (index order).
-  const toolUses: ToolUseRecord[] = [...state.toolUses.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([, t]) => t);
+  const toolUses: ToolUseRecord[] = [
+    ...[...state.toolUses.entries()].sort((a, b) => a[0] - b[0]).map(([, tool]) => tool),
+    ...[...(state.subagentToolUses ?? new Map()).values()],
+  ].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
 
   const turn: ChatTurn = {
     ts: assistantTs,
@@ -833,6 +941,7 @@ export async function sendTurn(
     "--verbose",
     "--include-partial-messages",
     "--include-hook-events",
+    "--forward-subagent-text",
   ];
 
   const child = spawn(bin, args, {
@@ -867,6 +976,8 @@ export async function sendTurn(
     toolUses: new Map(),
     toolIndexById: new Map(),
     toolResults: new Map(),
+    subagentToolUses: new Map(),
+    toolSequence: 0,
     stopReason: null,
   };
 
@@ -884,7 +995,7 @@ export async function sendTurn(
           const event = parseStreamLine(line);
           if (!event) continue;
           const applied = applyStreamEvent(state, event);
-          if (applied && opts.onStreamEvent) opts.onStreamEvent(event);
+          opts.onStreamEvent?.(event, applied);
         }
       });
       child.stderr?.on("data", (chunk: Buffer) => {
@@ -898,8 +1009,8 @@ export async function sendTurn(
   if (lineBuf.trim()) {
     const event = parseStreamLine(lineBuf);
     if (event) {
-      applyStreamEvent(state, event);
-      if (opts.onStreamEvent) opts.onStreamEvent(event);
+      const applied = applyStreamEvent(state, event);
+      opts.onStreamEvent?.(event, applied);
     }
   }
 
@@ -971,6 +1082,16 @@ function broadcastChatSession(sessionId: string, event: string, data: unknown): 
   for (const ctrl of ctrls) {
     try { ctrl.enqueue(new TextEncoder().encode(payload)); } catch { /* ignore */ }
   }
+}
+
+function isHighSignalActivity(event: StreamEvent): boolean {
+  const raw = event.raw;
+  const hook = raw.hook_event_name ?? raw.hookEventName;
+  const subtype = typeof raw.subtype === "string" ? raw.subtype.toLowerCase() : "";
+  if (event.parentToolUseId && event.contentBlock?.type === "tool_use") return true;
+  if (hook || raw.mcp_server_name || raw.mcp_tool_name) return true;
+  if (subtype.includes("retry") || subtype.includes("team") || subtype.includes("workflow") || subtype.includes("agent")) return true;
+  return event.type === "error" || raw.type === "error";
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -1167,18 +1288,23 @@ export async function handleChatRequest(
           model: selectors.model,
           effort: selectors.effort,
           permissionMode: selectors.permissionMode,
-          onStreamEvent: (event) => {
-            // Preserve every documented stream/hook/system event for the
-            // activity timeline. Typed branches below still drive bubbles and
-            // tool cards; this channel exposes retries, MCP, hooks, teams,
-            // workflows, and new future event kinds without dropping them.
-            broadcastChatSession(sessionId, "chat.activity", {
-              sessionId,
-              type: event.type,
-              subtype: typeof event.raw.subtype === "string" ? event.raw.subtype : undefined,
-              raw: event.raw,
-              ts: nowIso(),
-            });
+          onStreamEvent: (event, applied) => {
+            // Live activity remains intentionally quiet: lifecycle changes and
+            // the current subagent tool are useful while work is running;
+            // individual thinking/text tokens are retained nowhere in the UI.
+            if (isHighSignalActivity(event)) {
+              broadcastChatSession(sessionId, "chat.activity", {
+                sessionId,
+                type: event.type,
+                subtype: typeof event.raw.subtype === "string" ? event.raw.subtype : undefined,
+                parentToolUseId: event.parentToolUseId,
+                raw: event.raw,
+                ts: nowIso(),
+              });
+            }
+            // Subagent output belongs to the nested activity tree. Never
+            // stream it into the parent assistant bubble.
+            if (event.parentToolUseId) return;
             // Per-session channel: stream typed events for chips + bubbles.
             switch (event.type) {
               case "content_block_start": {
@@ -1197,10 +1323,10 @@ export async function handleChatRequest(
               }
               case "content_block_delta": {
                 const d = event.delta;
-                if (d?.type === "text_delta" && typeof d.text === "string") {
+                if (d?.type === "text_delta" && applied && "textDelta" in applied && applied.textDelta) {
                   broadcastChatSession(sessionId, "chat.text-delta", {
                     sessionId,
-                    text: d.text,
+                    text: applied.textDelta,
                   });
                 } else if ((d?.type === "thinking_delta" || d?.type === "reasoning_delta") && typeof (d.thinking ?? d.text) === "string") {
                   broadcastChatSession(sessionId, "chat.reasoning-delta", {

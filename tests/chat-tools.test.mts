@@ -274,3 +274,21 @@ test("pickerOptions returns the expected shape from an injected fixture", async 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("assistant snapshots do not replay already-streamed text", () => {
+  const state = {
+    textByBlock: new Map<number, string>(),
+    reasoningByBlock: new Map<number, string>(),
+    toolUses: new Map<number, ToolUseRecord>(),
+    toolIndexById: new Map<string, number>(),
+    toolResults: new Map<string, { content: string; isError: boolean }>(),
+    subagentToolUses: new Map<string, ToolUseRecord>(),
+    toolSequence: 0,
+    stopReason: null as string | null,
+  };
+  const streamed = parseStreamLine(`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}`)!;
+  const snapshot = parseStreamLine(`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hello"}]}}`)!;
+  assert.deepEqual(applyStreamEvent(state, streamed), { textDelta: "Hello" });
+  assert.deepEqual(applyStreamEvent(state, snapshot), { textDelta: "" });
+  assert.equal(state.textByBlock.get(0), "Hello");
+});

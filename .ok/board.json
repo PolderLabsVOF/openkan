@@ -24,160 +24,9 @@
   ],
   "tasks": [
     {
-      "id": "tsk-cI78y_RZ",
-      "title": "Verify development environment setup",
-      "description": "Ensure all dependencies are installed and dev server runs without errors.",
-      "column": "backlog",
-      "order": 0,
-      "sessionId": null,
-      "agent": "",
-      "model": null,
-      "status": "idle",
-      "state": "idle",
-      "lastError": null,
-      "createdAt": "2026-09-04T15:21:43.004Z",
-      "updatedAt": "2026-09-04T15:21:43.004Z",
-      "artifact": "tasks/tsk-cI78y_RZ/task.mdx",
-      "sessionArtifact": null,
-      "pendingInputs": [],
-      "artifacts": {
-        "mdxPath": "tasks/tsk-cI78y_RZ/task.mdx",
-        "commentsPath": "tasks/tsk-cI78y_RZ/comments.json",
-        "inputsPath": "tasks/tsk-cI78y_RZ/inputs.json",
-        "statePath": "tasks/tsk-cI78y_RZ/state.json"
-      },
-      "tags": [
-        "backend"
-      ],
-      "category": "backend",
-      "priority": "normal",
-      "effort": null,
-      "archived": false,
-      "assignees": [
-        "Berk de Rooij"
-      ],
-      "images": [],
-      "parentId": null,
-      "subtaskIds": []
-    },
-    {
-      "id": "tsk-PEubbzUN",
-      "title": "Add unit tests for kanban board component",
-      "description": "Write tests covering drag-and-drop, column transitions, and task creation flows.",
-      "column": "backlog",
-      "order": 1,
-      "sessionId": null,
-      "agent": "",
-      "model": null,
-      "status": "idle",
-      "state": "idle",
-      "lastError": null,
-      "createdAt": "2026-09-04T15:21:46.713Z",
-      "updatedAt": "2026-09-04T15:21:46.713Z",
-      "artifact": "tasks/tsk-PEubbzUN/task.mdx",
-      "sessionArtifact": null,
-      "pendingInputs": [],
-      "artifacts": {
-        "mdxPath": "tasks/tsk-PEubbzUN/task.mdx",
-        "commentsPath": "tasks/tsk-PEubbzUN/comments.json",
-        "inputsPath": "tasks/tsk-PEubbzUN/inputs.json",
-        "statePath": "tasks/tsk-PEubbzUN/state.json"
-      },
-      "tags": [
-        "test",
-        "frontend"
-      ],
-      "category": "frontend",
-      "priority": "normal",
-      "effort": null,
-      "archived": false,
-      "assignees": [
-        "Berk de Rooij"
-      ],
-      "images": [],
-      "parentId": null,
-      "subtaskIds": []
-    },
-    {
-      "id": "tsk-ehMVnR0N",
-      "title": "Research dark mode implementation options",
-      "description": "Evaluate CSS custom properties vs. Tailwind dark mode. Provide recommendation with tradeoffs.",
-      "column": "backlog",
-      "order": 0,
-      "sessionId": null,
-      "agent": "",
-      "model": null,
-      "status": "idle",
-      "state": "idle",
-      "lastError": null,
-      "createdAt": "2026-09-04T15:21:50.394Z",
-      "updatedAt": "2026-09-04T15:25:18.622Z",
-      "artifact": "tasks/tsk-ehMVnR0N/task.mdx",
-      "sessionArtifact": null,
-      "pendingInputs": [],
-      "artifacts": {
-        "mdxPath": "tasks/tsk-ehMVnR0N/task.mdx",
-        "commentsPath": "tasks/tsk-ehMVnR0N/comments.json",
-        "inputsPath": "tasks/tsk-ehMVnR0N/inputs.json",
-        "statePath": "tasks/tsk-ehMVnR0N/state.json"
-      },
-      "tags": [
-        "feature",
-        "task"
-      ],
-      "category": "task",
-      "priority": "normal",
-      "effort": null,
-      "archived": false,
-      "assignees": [
-        "Berk de Rooij"
-      ],
-      "images": [],
-      "parentId": null,
-      "subtaskIds": []
-    },
-    {
-      "id": "tsk-_BhF982G",
-      "title": "Fix mobile navigation overflow on small screens",
-      "description": "Header nav items wrap incorrectly below 375px. Reproduce and apply minimal CSS fix.",
-      "column": "todo",
-      "order": 0,
-      "sessionId": null,
-      "agent": "",
-      "model": null,
-      "status": "idle",
-      "state": "idle",
-      "lastError": null,
-      "createdAt": "2026-09-04T15:21:54.863Z",
-      "updatedAt": "2026-09-04T17:13:05.433Z",
-      "artifact": "tasks/tsk-_BhF982G/task.mdx",
-      "sessionArtifact": null,
-      "pendingInputs": [],
-      "artifacts": {
-        "mdxPath": "tasks/tsk-_BhF982G/task.mdx",
-        "commentsPath": "tasks/tsk-_BhF982G/comments.json",
-        "inputsPath": "tasks/tsk-_BhF982G/inputs.json",
-        "statePath": "tasks/tsk-_BhF982G/state.json"
-      },
-      "tags": [
-        "bug",
-        "task"
-      ],
-      "category": "task",
-      "priority": "normal",
-      "effort": "s",
-      "archived": false,
-      "assignees": [
-        "Berk de Rooij"
-      ],
-      "images": [],
-      "parentId": null,
-      "subtaskIds": []
-    },
-    {
-      "id": "tsk-ZzGdJ7o7",
-      "title": "Set up CI pipeline with GitHub Actions",
-      "description": "Configure lint, test, and build steps on push and PR events.",
+      "id": "tsk-_cQ_ofBX",
+      "title": "Restore Docs workspace scrolling",
+      "description": "Ensure long MDX documents scroll inside the Docs stage while the document controls remain reachable. Planning task: tsk-j8qEB1CR.",
       "column": "done",
       "order": 0,
       "sessionId": null,
@@ -186,27 +35,103 @@
       "status": "idle",
       "state": "idle",
       "lastError": null,
-      "createdAt": "2026-09-04T15:21:57.616Z",
-      "updatedAt": "2026-09-04T15:21:57.616Z",
-      "artifact": "tasks/tsk-ZzGdJ7o7/task.mdx",
+      "createdAt": "2026-09-04T19:29:00.435Z",
+      "updatedAt": "2026-09-04T19:29:37.957Z",
+      "artifact": "tasks/tsk-_cQ_ofBX/task.mdx",
       "sessionArtifact": null,
       "pendingInputs": [],
       "artifacts": {
-        "mdxPath": "tasks/tsk-ZzGdJ7o7/task.mdx",
-        "commentsPath": "tasks/tsk-ZzGdJ7o7/comments.json",
-        "inputsPath": "tasks/tsk-ZzGdJ7o7/inputs.json",
-        "statePath": "tasks/tsk-ZzGdJ7o7/state.json"
+        "mdxPath": "tasks/tsk-_cQ_ofBX/task.mdx",
+        "commentsPath": "tasks/tsk-_cQ_ofBX/comments.json",
+        "inputsPath": "tasks/tsk-_cQ_ofBX/inputs.json",
+        "statePath": "tasks/tsk-_cQ_ofBX/state.json"
       },
       "tags": [
-        "test",
-        "infra"
+        "docs",
+        "task",
+        "frontend"
       ],
-      "category": "infra",
+      "category": "docs",
+      "priority": "normal",
+      "effort": null,
+      "archived": false,
+      "assignees": [
+        "codex"
+      ],
+      "images": [],
+      "parentId": null,
+      "subtaskIds": []
+    },
+    {
+      "id": "tsk-LlTtdcOZ",
+      "title": "Add branded workspace error pages",
+      "description": "Deliver custom browser 404/500 pages while API errors remain JSON. Planning task: tsk-yBuMk_OT.",
+      "column": "done",
+      "order": 1,
+      "sessionId": null,
+      "agent": "",
+      "model": null,
+      "status": "idle",
+      "state": "idle",
+      "lastError": null,
+      "createdAt": "2026-09-04T19:37:00.620Z",
+      "updatedAt": "2026-09-04T19:39:23.329Z",
+      "artifact": "tasks/tsk-LlTtdcOZ/task.mdx",
+      "sessionArtifact": null,
+      "pendingInputs": [],
+      "artifacts": {
+        "mdxPath": "tasks/tsk-LlTtdcOZ/task.mdx",
+        "commentsPath": "tasks/tsk-LlTtdcOZ/comments.json",
+        "inputsPath": "tasks/tsk-LlTtdcOZ/inputs.json",
+        "statePath": "tasks/tsk-LlTtdcOZ/state.json"
+      },
+      "tags": [
+        "task"
+      ],
+      "category": "task",
       "priority": "normal",
       "effort": null,
       "archived": false,
       "assignees": [
         "Berk de Rooij"
+      ],
+      "images": [],
+      "parentId": null,
+      "subtaskIds": []
+    },
+    {
+      "id": "tsk-RxaNne12",
+      "title": "Reload tasks when switching projects",
+      "description": "Make the server load the selected project board instead of reusing the previous in-memory task set. Planning task: tsk-rZUfj9SF.",
+      "column": "done",
+      "order": 2,
+      "sessionId": null,
+      "agent": "",
+      "model": null,
+      "status": "idle",
+      "state": "idle",
+      "lastError": null,
+      "createdAt": "2026-09-04T19:31:19.333Z",
+      "updatedAt": "2026-09-04T19:34:11.963Z",
+      "artifact": "tasks/tsk-RxaNne12/task.mdx",
+      "sessionArtifact": null,
+      "pendingInputs": [],
+      "artifacts": {
+        "mdxPath": "tasks/tsk-RxaNne12/task.mdx",
+        "commentsPath": "tasks/tsk-RxaNne12/comments.json",
+        "inputsPath": "tasks/tsk-RxaNne12/inputs.json",
+        "statePath": "tasks/tsk-RxaNne12/state.json"
+      },
+      "tags": [
+        "backend",
+        "projects"
+      ],
+      "category": "backend",
+      "priority": "normal",
+      "effort": null,
+      "archived": false,
+      "assignees": [
+        "codex"
       ],
       "images": [],
       "parentId": null,

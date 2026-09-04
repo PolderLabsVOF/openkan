@@ -483,48 +483,128 @@
     }).join("")}</div>`;
   }
 
-  function chipHTML(tool) {
-    const label = esc(toolUseLabel(tool));
-    const status = tool.status || "started";
-    const idAttr = esc(tool.id || "");
-    const dotCls = `chat-chip-dot chat-chip-dot-${esc(status)}`;
-    return `
-      <div class="chat-chip" data-chip-id="${idAttr}" data-chip-status="${esc(status)}" tabindex="0" role="button" aria-expanded="false">
-        <span class="${dotCls}" aria-hidden="true"></span>
-        <span class="chat-chip-label">${label}</span>
-        <span class="chat-chip-tail" aria-hidden="true">▾</span>
-        <div class="chat-chip-details" hidden>
-          <pre class="chat-chip-input">${esc(JSON.stringify(tool.input || {}, null, 2))}</pre>
-          ${tool.resultPreview ? `<pre class="chat-chip-result">${esc(tool.resultPreview)}</pre>` : ""}
-        </div>
-      </div>
-    `;
+  function toolInput(tool) {
+    return tool && tool.input && typeof tool.input === "object" ? tool.input : {};
   }
+
+  function toolFilePath(tool) {
+    const input = toolInput(tool);
+    for (const key of ["file_path", "filePath", "path", "target_path", "targetPath"]) {
+      if (typeof input[key] === "string" && input[key].trim()) return input[key].trim();
+    }
+    return "";
+  }
+
+  function toolCommand(tool) {
+    const command = toolInput(tool).command;
+    return typeof command === "string" ? command.trim() : "";
+  }
+
+  function deletedPathsFromCommand(command) {
+    if (!command) return [];
+    const deleted = [];
+    const matcher = /(?:^|[;&|]\s*)(?:sudo\s+)?(?:rm|unlink)\s+((?:-[\w-]+\s+)*(?:"[^"]+"|'[^']+'|[^\s;&|]+)(?:\s+(?:"[^"]+"|'[^']+'|[^\s;&|]+))*)/g;
+    for (const match of command.matchAll(matcher)) {
+      const tokens = match[1].match(/"[^"]+"|'[^']+'|[^\s]+/g) || [];
+      for (const token of tokens) {
+        if (!token.startsWith("-")) deleted.push(token.replace(/^(?:"|')|(?:"|')$/g, ""));
+      }
+    }
+    return [...new Set(deleted)];
+  }
+
+  function activityInfo(tool) {
+    const name = String(tool?.name || "");
+    const file = toolFilePath(tool);
+    const command = toolCommand(tool);
+    const deleted = name === "Delete" || name === "Remove" ? (file ? [file] : []) : deletedPathsFromCommand(command);
+    if (name === "Read") return { kind: "read", verb: "Read", label: `Read ${basename(file) || "file"}`, file, deleted: [] };
+    if (name === "Write") return { kind: "created", verb: "Created", label: `Created ${basename(file) || "file"}`, file, deleted: [] };
+    if (name === "Edit" || name === "MultiEdit") return { kind: "changed", verb: "Changed", label: `Changed ${basename(file) || "file"}`, file, deleted: [] };
+    if (name === "Delete" || name === "Remove") return { kind: "deleted", verb: "Deleted", label: `Deleted ${basename(file) || "file"}`, file, deleted };
+    if (name === "Bash") return { kind: "command", verb: "Ran", label: `Ran ${truncate(command.replace(/\s+/g, " "), 76) || "command"}`, command, deleted };
+    if (name === "Grep" || name === "Glob") return { kind: "search", verb: "Searched", label: toolUseLabel(tool), file: "", deleted: [] };
+    if (name === "Agent" || name === "Task") return { kind: "agent", verb: "Delegated", label: toolUseLabel(tool), file: "", deleted: [] };
+    return { kind: "other", verb: "Used", label: toolUseLabel(tool), file: "", deleted: [] };
+  }
+
+  function activityIcon(kind) {
+    const icons = {
+      read: '<path d="M3.5 4.5A2.5 2.5 0 0 1 6 2h6.5v12H6a2.5 2.5 0 0 0-2.5 2.5v-12Z"/><path d="M12.5 2H14a2.5 2.5 0 0 1 2.5 2.5v12A2.5 2.5 0 0 0 14 14h-1.5"/>',
+      created: '<path d="M4 2.5h6L14 6v9.5H4z"/><path d="M10 2.5V6h4M9 8.5v5M6.5 11h5"/>',
+      changed: '<path d="m4 13.5 1.3-3.8L12.8 2.2a1.5 1.5 0 0 1 2.1 2.1l-7.5 7.5L4 13.5Z"/><path d="m11.7 3.3 2.1 2.1"/>',
+      deleted: '<path d="M4.5 5.5h9M7 5.5v-2h4v2M6 7.5v6M9 7.5v6M12 7.5v6M5 5.5l.7 10h6.6l.7-10"/>',
+      command: '<path d="m4 5 3 3-3 3M9 12h4"/>',
+      search: '<circle cx="8" cy="8" r="4.5"/><path d="m11.5 11.5 3 3"/>',
+      agent: '<path d="M5 13.5 3.5 15V5.5A2.5 2.5 0 0 1 6 3h6a2.5 2.5 0 0 1 2.5 2.5v5A2.5 2.5 0 0 1 12 13H7l-2 2Z"/><path d="M7 7.5h.01M10 7.5h.01M13 7.5h.01"/>',
+      other: '<path d="M8 2.5v11M2.5 8h11"/>',
+    };
+    return `<svg class="chat-activity-row__icon" viewBox="0 0 18 18" aria-hidden="true">${icons[kind] || icons.other}</svg>`;
+  }
+
+  function activityDetailLines(tool, info) {
+    const lines = [];
+    if (tool?.source === "subagent") lines.push(`<li><span>Agent</span><code>Subagent</code></li>`);
+    if (info.file) lines.push(`<li><span>File</span><code title="${esc(info.file)}">${esc(info.file)}</code></li>`);
+    for (const deleted of info.deleted || []) lines.push(`<li><span>Deleted</span><code title="${esc(deleted)}">${esc(deleted)}</code></li>`);
+    if (info.command) lines.push(`<li><span>Command</span><code>${esc(info.command)}</code></li>`);
+    if (tool?.resultPreview) lines.push(`<li class="chat-activity-row__output"><span>${tool.isError ? "Error" : "Output"}</span><pre>${esc(tool.resultPreview)}</pre></li>`);
+    if (!lines.length) lines.push(`<li><span>Activity</span><code>${esc(toolUseLabel(tool))}</code></li>`);
+    return lines.join("");
+  }
+
+  function chipHTML(tool) {
+    const info = activityInfo(tool);
+    const status = tool.status || "started";
+    const completed = status === "completed";
+    return `<details class="chat-activity-row chat-activity-row--${esc(info.kind)}" data-chip-id="${esc(tool.id || "")}" data-chip-status="${esc(status)}">
+      <summary>
+        ${activityIcon(info.kind)}
+        <span class="chat-activity-row__label">${tool.source === "subagent" ? `Subagent · ${esc(info.label)}` : esc(info.label)}</span>
+        <span class="chat-activity-row__status">${completed ? "done" : status === "failed" ? "failed" : "working"}</span>
+        <svg class="chat-activity-row__chevron" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="m4 5 3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </summary>
+      <ul class="chat-activity-row__details">${activityDetailLines(tool, info)}</ul>
+    </details>`;
+  }
+
+  function activityCounts(tools) {
+    const counts = { read: 0, created: 0, changed: 0, deleted: 0, command: 0 };
+    for (const tool of tools) {
+      const info = activityInfo(tool);
+      if (Object.hasOwn(counts, info.kind)) counts[info.kind] += 1;
+      counts.deleted += (info.deleted || []).length;
+    }
+    return counts;
+  }
+
+  function plural(count, singular) { return `${count} ${singular}${count === 1 ? "" : "s"}`; }
 
   function activitySummaryHTML(turn) {
     if (turn.role !== "assistant" && turn.role !== "system") return "";
     const tools = Array.isArray(turn.toolUses) ? turn.toolUses : [];
-    const reads = tools.filter((tool) => tool.name === "Read" || tool.name === "Glob" || tool.name === "Grep").length;
-    const commands = tools.filter((tool) => tool.name === "Bash").length;
-    const seconds = Math.max(1, Math.round((turn.durationMs || 0) / 1000));
-    const bits = [`Thought for ${seconds}s`];
-    if (reads) bits.push(`read ${reads} file${reads === 1 ? "" : "s"}`);
-    if (commands) bits.push(`ran ${commands} command${commands === 1 ? "" : "s"}`);
     if (!turn.durationMs && !tools.length) return "";
+    const seconds = Math.max(1, Math.round((turn.durationMs || 0) / 1000));
+    const counts = activityCounts(tools);
+    const countBits = [
+      counts.read && plural(counts.read, "file read"),
+      counts.created && plural(counts.created, "file created"),
+      counts.changed && plural(counts.changed, "file changed"),
+      counts.deleted && plural(counts.deleted, "file deleted"),
+      counts.command && plural(counts.command, "command run"),
+    ].filter(Boolean);
     const reasoning = typeof turn.reasoning === "string" ? turn.reasoning.trim() : "";
     const reasoningDetail = reasoning
-      ? `<div class="chat-reasoning-output"><strong>Reasoning summary</strong><pre>${esc(reasoning)}</pre></div>`
-      : `<span class="chat-reasoning-unavailable">No provider-visible reasoning summary was emitted for this turn.</span>`;
+      ? `<div class="chat-reasoning-output"><strong>Thought process</strong><pre>${esc(reasoning)}</pre></div>`
+      : `<span class="chat-reasoning-unavailable">No provider-visible thought summary was emitted.</span>`;
     const completion = window.OpenKanChatMotion?.render?.({ phase: "complete", label: "Completed" }) || "";
-    return `<details class="chat-activity-summary"><summary><span class="chat-activity-completion" data-chat-completion="${esc(turn.ts || "")}">${completion}</span>${bits.join(" · ")}</summary><div class="chat-activity-details"><strong>Activity details</strong><span>${tools.length ? "Open each tool below to inspect its input and result." : "No tools were used."}</span>${reasoningDetail}</div></details>`;
+    return `<details class="chat-activity-summary"><summary><span class="chat-activity-completion" data-chat-completion="${esc(turn.ts || "")}">${completion}</span><span class="chat-activity-summary__title">Thought for ${seconds}s</span>${countBits.length ? `<span class="chat-activity-summary__counts">${esc(countBits.join(" · "))}</span>` : ""}<svg class="chat-activity-summary__chevron" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="m4 5 3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></summary><div class="chat-activity-details">${reasoningDetail}</div></details>`;
   }
 
   function chipsHTML(turn) {
     const toolUses = Array.isArray(turn.toolUses) ? turn.toolUses : [];
     if (toolUses.length === 0) return "";
-    return `<div class="chat-chips" data-chips-for="${esc(turn.ts || "")}">
-      ${toolUses.map(chipHTML).join("")}
-    </div>`;
+    return `<div class="chat-chips chat-activity-feed" data-chips-for="${esc(turn.ts || "")}">${toolUses.map(chipHTML).join("")}</div>`;
   }
 
   /* ----------------------------------------------------------------------
@@ -688,7 +768,11 @@
           // Skip if we already have this chip id (defensive — the server
           // can fan the same event twice across channels).
           if (state.liveChips.some((c) => c.id === data.id)) return;
-          updateLiveStatus({ phase: "tool", label: toolUseLabel({ name: data.name, input: data.input || {} }) });
+          const label = toolUseLabel({ name: data.name, input: data.input || {} });
+          updateLiveStatus({
+            phase: data.name === "WebSearch" ? "searching" : "tool",
+            label,
+          });
           state.liveChips.push({
             id: data.id,
             name: data.name,
@@ -715,12 +799,17 @@
             chip.isError = !!data.isError;
           }
           renderLiveChips();
+          // A tool result does not necessarily produce text immediately. Do
+          // not leave "Searching the web" (or another finished operation)
+          // rendered until Claude emits its next response token.
+          syncLiveToolStatus();
         } catch (_err) { /* ignore */ }
       });
       src.addEventListener("chat.message-done", (_e) => {
         // Finalise streaming bubble — re-render markdown now that content
         // is complete, and reset live state.
         finalizeLiveBubble();
+        removeStreamingIndicator();
       });
       state.sessionSse = src;
     } catch (_err) {
@@ -736,6 +825,10 @@
     state.liveChips = null;
     state.liveActivity = [];
     state.liveBubble = null;
+    // A session can close after its final tool result but before a text
+    // delta or message-done event reaches this EventSource. Terminal cleanup
+    // must never retain the last tool label.
+    removeStreamingIndicator();
   }
 
   function renderLiveChips() {
@@ -758,29 +851,160 @@
       chipsNode.className = "chat-chips chat-chips-live";
       row.parentElement?.insertBefore(chipsNode, row);
     }
-    chipsNode.innerHTML = list.map(chipHTML).join("");
-    bindChipClicks(chipsNode);
+    // While work is live, show only the current operation. The full audit is
+    // rendered from the persisted assistant turn once the prompt settles.
+    const current = [...list].reverse().find((tool) => tool.status === "started" || tool.status === "streaming");
+    if (!current) { chipsNode.remove(); return; }
+    chipsNode.innerHTML = chipHTML(current);
     maybeAutoScroll(transcript);
   }
 
+  function currentLiveTool() {
+    return [...(state.liveChips || [])].reverse().find((tool) => (
+      tool.status === "started" || tool.status === "streaming"
+    ));
+  }
+
+  function syncLiveToolStatus() {
+    const activeTool = currentLiveTool();
+    if (activeTool) {
+      updateLiveStatus({
+        phase: activeTool.name === "WebSearch" ? "searching" : "tool",
+        label: toolUseLabel(activeTool),
+      });
+      return;
+    }
+    // Claude continues reasoning after a tool completes. This intentionally
+    // replaces the completed operation rather than exposing noisy internals.
+    updateLiveStatus({ phase: "thinking", label: "Thinking" });
+  }
+
+  function activityRaw(event) { return event?.raw && typeof event.raw === "object" ? event.raw : {}; }
+  function activityTool(event) {
+    const raw = activityRaw(event);
+    const block = raw.content_block && typeof raw.content_block === "object" ? raw.content_block : {};
+    const messageContent = Array.isArray(raw.message?.content) ? raw.message.content : [];
+    const messageTool = messageContent.find((part) => part && typeof part === "object" && part.type === "tool_use") || {};
+    return {
+      id: block.id || messageTool.id || raw.tool_use_id || raw.toolUseId || "",
+      name: block.name || messageTool.name || raw.tool_name || raw.mcp_tool_name || raw.name || "",
+      input: block.input || messageTool.input || raw.tool_input || raw.toolInput || {},
+      type: block.type || messageTool.type || "",
+    };
+  }
+  function activityParentId(event) {
+    const raw = activityRaw(event);
+    return event?.parentToolUseId || raw.parent_tool_use_id || raw.parentToolUseId || raw.message?.parent_tool_use_id || raw.message?.parentToolUseId || "";
+  }
+  function activityPreview(event) {
+    const raw = activityRaw(event);
+    const delta = raw.delta && typeof raw.delta === "object" ? raw.delta : {};
+    const block = raw.content_block && typeof raw.content_block === "object" ? raw.content_block : {};
+    const content = Array.isArray(raw.message?.content) ? raw.message.content : [];
+    const text = [
+      delta.thinking, delta.text, block.thinking, block.text, block.content,
+      ...content.filter((part) => part && typeof part === "object").map((part) => part.thinking || part.text),
+      raw.last_assistant_message, raw.summary,
+    ].find((value) => typeof value === "string" && value.trim());
+    return typeof text === "string" ? truncate(text.replace(/\s+/g, " ").trim(), 180) : "";
+  }
+  function isForwardedTranscript(event) {
+    const raw = activityRaw(event);
+    // Full assistant/user snapshots carry the useful child transcript. Do
+    // not render token-level deltas as rows; they would create a noisy wall
+    // of blocks while streaming.
+    return Boolean(activityParentId(event)) && ["assistant", "user"].includes(String(raw.type || "").toLowerCase());
+  }
   function activityLabel(event) {
-    const raw = event?.raw || {};
-    const tool = raw.content_block?.name || raw.tool_name || raw.name;
-    if (tool) return `${tool}: ${raw.subtype || event.type}`;
+    const raw = activityRaw(event);
+    const tool = activityTool(event);
+    const hook = raw.hook_event_name || raw.hookEventName;
+    if (hook === "SubagentStart") return `Started ${raw.agent_type || raw.agentType || "subagent"}`;
+    if (hook === "SubagentStop") return `Completed ${raw.agent_type || raw.agentType || "subagent"}`;
+    if (tool.name === "Agent" || tool.name === "Task") return `Delegating to ${tool.input?.subagent_type || tool.input?.subagentType || "subagent"}`;
+    if (tool.name) return toolUseLabel({ name: tool.name, input: tool.input || {} });
+    if (isForwardedTranscript(event)) return activityPreview(event) ? "Subagent update" : "Subagent working";
     if (raw.subtype === "api_retry") return `Retrying API request (${raw.attempt || 1}/${raw.max_retries || "?"})`;
     return [event?.type, event?.subtype].filter(Boolean).join(" · ") || "Agent activity";
   }
   function isImportantActivity(event) {
-    const raw = event?.raw || {};
-    const block = raw.content_block || {};
+    const raw = activityRaw(event);
+    const tool = activityTool(event);
     const type = String(event?.type || raw.type || "").toLowerCase();
     const subtype = String(event?.subtype || raw.subtype || "").toLowerCase();
-    // Keep the work a person can act on or inspect. Text/thinking deltas are
-    // already visible in the response and must not become a wall of traces.
-    if (["tool_use", "tool_result"].includes(String(block.type || ""))) return true;
-    if (raw.tool_name || raw.hook_event_name || raw.mcp_server_name || raw.mcp_tool_name) return true;
+    // Forwarded assistant snapshots are often emitted per token. They are
+    // intentionally excluded from live UI; completed turns retain the real
+    // tool/file audit instead of transient thought fragments.
+    if (isForwardedTranscript(event)) return false;
+    // Hook records and native tool boundaries convey meaningful lifecycle
+    // changes; intermediate text/thinking deltas remain excluded.
+    if (tool.type === "tool_use" || tool.type === "tool_result" || tool.name) return true;
+    if (raw.hook_event_name || raw.hookEventName || raw.mcp_server_name || raw.mcp_tool_name) return true;
     if (subtype.includes("retry") || subtype.includes("hook") || subtype.includes("team") || subtype.includes("workflow") || subtype.includes("agent") || subtype.includes("mcp")) return true;
     return type === "system" || type === "error";
+  }
+  function nativeActivityGroups(events) {
+    const groups = new Map();
+    const roots = new Map();
+    for (const event of events) {
+      const tool = activityTool(event);
+      if ((tool.name === "Agent" || tool.name === "Task") && tool.id) {
+        roots.set(tool.id, `subagent:${tool.id}`);
+        groups.set(`subagent:${tool.id}`, {
+          id: `subagent:${tool.id}`,
+          title: String(tool.input?.subagent_type || tool.input?.subagentType || "Subagent"),
+          state: "running",
+          parentId: activityParentId(event) && roots.get(activityParentId(event)) || null,
+          events: [],
+        });
+      }
+    }
+    for (const event of events) {
+      const raw = activityRaw(event);
+      const tool = activityTool(event);
+      const parent = activityParentId(event);
+      const hook = raw.hook_event_name || raw.hookEventName;
+      const key = (tool.name === "Agent" || tool.name === "Task") && tool.id && roots.get(tool.id)
+        ? roots.get(tool.id)
+        : parent
+        ? (roots.get(parent) || `subagent:${parent}`)
+        : hook === "SubagentStart" || hook === "SubagentStop"
+          ? `hook:${raw.agent_id || raw.agentId || raw.agent_type || raw.agentType || "subagent"}`
+          : "coordinator";
+      if (!groups.has(key)) {
+        groups.set(key, {
+          id: key,
+          title: key === "coordinator" ? "Coordinator" : String(raw.agent_type || raw.agentType || "Subagent"),
+          state: hook === "SubagentStop" ? "completed" : "running",
+          parentId: null,
+          events: [],
+        });
+      }
+      const group = groups.get(key);
+      if (hook === "SubagentStop") group.state = "completed";
+      if (hook === "SubagentStart") group.state = "running";
+      if (tool.name === "Agent" || tool.name === "Task") group.state = "running";
+      group.events.push(event);
+    }
+    return [...groups.values()].filter((group) => group.events.length > 0);
+  }
+  function nativeActivityTreeHTML(groups) {
+    const byParent = new Map();
+    for (const group of groups) {
+      const parent = group.parentId && groups.some((candidate) => candidate.id === group.parentId) ? group.parentId : "root";
+      byParent.set(parent, [...(byParent.get(parent) || []), group]);
+    }
+    const renderGroup = (group, depth) => `<details class="chat-native-agent" data-native-depth="${depth}" open><summary><span class="chat-native-agent-state chat-native-agent-state--${esc(group.state)}"></span><strong>${esc(group.title)}</strong><span>${group.state === "completed" ? "completed" : "working"} · ${group.events.length}</span></summary><div>${group.events.slice(-3).map(nativeActivityEventHTML).join("")}${(byParent.get(group.id) || []).map((child) => renderGroup(child, depth + 1)).join("")}</div></details>`;
+    return (byParent.get("root") || []).map((group) => renderGroup(group, 0)).join("");
+  }
+  function nativeActivityEventHTML(event) {
+    const tool = activityTool(event);
+    if (tool.name) return chipHTML({ ...tool, status: "completed" });
+    const preview = activityPreview(event);
+    const raw = activityRaw(event);
+    const hook = raw.hook_event_name || raw.hookEventName;
+    const label = activityLabel(event);
+    return `<details class="chat-activity-row chat-activity-row--agent chat-native-event"><summary>${activityIcon("agent")}<span class="chat-activity-row__label">${esc(label)}</span><span class="chat-activity-row__status">${hook === "SubagentStop" ? "done" : "working"}</span><svg class="chat-activity-row__chevron" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="m4 5 3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>${preview ? `<div class="chat-native-event__detail">${esc(preview)}</div>` : ""}</details>`;
   }
   function renderLiveActivity() {
     const transcript = state.root?.querySelector("#chat-sidebar-transcript");
@@ -790,12 +1014,14 @@
     const events = (state.liveActivity || []).filter(isImportantActivity);
     if (events.length === 0) { node?.remove(); return; }
     const latest = events.at(-1);
+    const groups = nativeActivityGroups(events);
+    const subagentCount = groups.filter((group) => group.id !== "coordinator").length;
     const motion = window.OpenKanChatMotion?.render?.({
       phase: latest?.type,
       label: activityLabel(latest),
-      name: latest?.raw?.content_block?.name || latest?.raw?.tool_name,
+      name: activityTool(latest).name,
     }) || "";
-    node.innerHTML = `<summary><span class="chat-live-activity-motion">${motion}</span>Important agent activity <span>${events.length}</span></summary><div class="chat-live-activity-list">${events.map((event) => `<details><summary>${esc(activityLabel(event))}</summary><pre>${esc(JSON.stringify(event.raw || {}, null, 2))}</pre></details>`).join("")}</div>`;
+    node.innerHTML = `<summary><span class="chat-live-activity-motion">${motion}</span><span>Native activity${subagentCount ? ` · ${subagentCount} subagent${subagentCount === 1 ? "" : "s"}` : ""}</span><span>${events.length}</span></summary><div class="chat-live-activity-list chat-native-activity-tree">${nativeActivityTreeHTML(groups)}</div>`;
     window.OpenKanChatMotion?.animateWithin?.(node);
     maybeAutoScroll(transcript);
   }

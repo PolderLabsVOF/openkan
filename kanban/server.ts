@@ -21,7 +21,7 @@ import {
   nowIso,
   KANBAN_DIR,
   taskArtifacts,
-  setKanbanDir,
+  ensureBoardForProject,
 } from "./board.ts";
 import { extractMetadata } from "./tags.ts";
 import {
@@ -378,6 +378,93 @@ function jsonResponse(data: unknown, status = 200, extraHeaders?: Record<string,
 
 function errorResponse(message: string, status = 400): Response {
   return jsonResponse({ error: message }, status);
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>'"]/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "'": "&#39;",
+    '"': "&quot;",
+  })[character] ?? character);
+}
+
+/** A self-contained browser error page; API clients continue to receive JSON. */
+export function browserErrorPage(status: 404 | 500, pathname = "/"): Response {
+  const notFound = status === 404;
+  const title = notFound ? "Page not found" : "Workspace error";
+  const eyebrow = notFound ? "Route unavailable" : "Something went wrong";
+  const message = notFound
+    ? "This workspace page does not exist, or it may have moved."
+    : "OpenKan could not complete this page request. Your project files are still safe.";
+  const route = escapeHtml(pathname || "/");
+
+  const body = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>${status} — ${title} · OpenKan</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    body { min-height: 100vh; margin: 0; display: grid; place-items: center; overflow: hidden; color: #e8edf7; background: #090d14; }
+    body::before, body::after { content: ""; position: fixed; width: 48rem; height: 48rem; border-radius: 50%; pointer-events: none; filter: blur(20px); opacity: .18; }
+    body::before { top: -32rem; left: -26rem; background: #6c63ff; }
+    body::after { right: -30rem; bottom: -35rem; background: #2fba91; }
+    main { position: relative; width: min(42rem, calc(100vw - 2rem)); padding: clamp(1.5rem, 6vw, 4rem); border: 1px solid #263247; border-radius: 1.5rem; background: rgba(16, 23, 35, .9); box-shadow: 0 1.5rem 5rem rgba(0, 0, 0, .38); }
+    .brand { display: flex; align-items: center; gap: .65rem; color: #b9c4d7; font-size: .85rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+    .mark { display: grid; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: .55rem; color: #fff; background: linear-gradient(135deg, #766dff, #4850db); font-size: 1.1rem; font-weight: 800; letter-spacing: 0; text-transform: none; box-shadow: 0 .35rem 1.25rem rgba(105, 96, 255, .3); }
+    .code { margin: clamp(2.5rem, 7vw, 4.5rem) 0 .6rem; color: #f1f4fb; font-size: clamp(4.75rem, 18vw, 8.5rem); font-weight: 800; letter-spacing: -.09em; line-height: .82; }
+    .eyebrow { margin: 0 0 .7rem; color: #8f87ff; font-size: .76rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+    h1 { max-width: 28rem; margin: 0; font-size: clamp(1.65rem, 4vw, 2.35rem); letter-spacing: -.045em; line-height: 1.05; }
+    p { max-width: 32rem; margin: 1rem 0 0; color: #aeb9cb; font-size: 1rem; line-height: 1.65; }
+    code { padding: .16rem .38rem; border: 1px solid #2c3850; border-radius: .36rem; color: #d4dbeb; background: #111a29; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85em; overflow-wrap: anywhere; }
+    .actions { display: flex; flex-wrap: wrap; gap: .7rem; margin-top: 2rem; }
+    a { display: inline-flex; align-items: center; justify-content: center; min-height: 2.7rem; padding: .65rem 1rem; border: 1px solid #34435e; border-radius: .7rem; color: #d7e0ef; background: #172236; font-weight: 700; text-decoration: none; transition: transform .16s ease, border-color .16s ease, background .16s ease; }
+    a:hover { transform: translateY(-1px); border-color: #837cff; background: #202e48; }
+    a.primary { border-color: transparent; color: #fff; background: #665cf6; box-shadow: 0 .55rem 1.4rem rgba(94, 83, 237, .28); }
+    a.primary:hover { background: #756cff; }
+    a:focus-visible { outline: 3px solid #a39cff; outline-offset: 3px; }
+    .route { margin-top: 2.1rem; color: #728099; font-size: .8rem; }
+    @media (max-width: 34rem) { main { border-radius: 1.1rem; } .actions { display: grid; } a { width: 100%; } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="brand"><span class="mark" aria-hidden="true">K</span> OpenKan</div>
+    <div class="code" aria-label="Error ${status}">${status}</div>
+    <p class="eyebrow">${eyebrow}</p>
+    <h1>${title}</h1>
+    <p>${message}</p>
+    <div class="actions"><a class="primary" href="/">Open workspace</a></div>
+    <p class="route">Requested route: <code>${route}</code></p>
+  </main>
+</body>
+</html>`;
+
+  return new Response(body, {
+    status,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
+
+function isBrowserNavigation(req: Request): boolean {
+  if (req.method !== "GET" && req.method !== "HEAD") return false;
+  return req.headers.get("accept")?.includes("text/html") ?? false;
+}
+
+export function requestErrorResponse(req: Request, status: 404 | 500, message: string): Response {
+  if (isBrowserNavigation(req) && !new URL(req.url).pathname.startsWith("/api/")) {
+    return browserErrorPage(status, new URL(req.url).pathname);
+  }
+  return errorResponse(message, status);
 }
 
 // ─── Tasks index ───────────────────────────────────────────────────────────────
@@ -1984,9 +2071,7 @@ async function apiCreateProject(req: Request): Promise<Response> {
   if (!body.root) return errorResponse("root is required", 422);
 
   const entry = addProject({ name: body.name ?? body.root, root: body.root });
-  // Update KANBAN_DIR for this server instance so subsequent requests use the new project
-  const newKanbanDir = join(entry.root, ".ok");
-  setKanbanDir(newKanbanDir);
+  await ensureBoardForProject(projectBoardContext(entry.root));
   return jsonResponse(entry, 201);
 }
 
@@ -2015,7 +2100,7 @@ async function apiDeleteProject(id: string): Promise<Response> {
   if (wasActive) {
     const newActive = activeProject();
     if (newActive) {
-      setKanbanDir(join(newActive.root, ".ok"));
+      await ensureBoardForProject(projectBoardContext(newActive.root));
     }
   }
   return jsonResponse({ ok: true });
@@ -2025,8 +2110,12 @@ async function apiActivateProject(id: string): Promise<Response> {
   const prev = setActiveProject(id);
   if (prev === null) return errorResponse("Project not found", 404);
   const entry = activeProject();
-  if (entry) setKanbanDir(join(entry.root, ".ok"));
+  if (entry) await ensureBoardForProject(projectBoardContext(entry.root));
   return jsonResponse(entry);
+}
+
+function projectBoardContext(directory: string): BoardContext {
+  return { directory, client: null, log: async () => undefined };
 }
 
 // ─── Active project info endpoint ─────────────────────────────────────────────
@@ -2446,7 +2535,8 @@ export async function startOrAttach(
       const response = await handleRequest(request);
       await writeResponse(res, response);
     } catch (e) {
-      const response = errorResponse(e?.message ?? "Internal server error", 500);
+      const message = e instanceof Error ? e.message : "Internal server error";
+      const response = requestErrorResponse(await toRequest(req), 500, message);
       await writeResponse(res, response);
     }
   });
@@ -2688,9 +2778,11 @@ function homedirFromProjectRoot(_projectRoot: string): string {
 }
 
 async function handleRequest(req: Request): Promise<Response> {
-  // Resolve the active project root and set KANBAN_DIR for this request.
+  // Resolve and load the active project for this request. The board is cached
+  // in process, so changing a directory alone would leak the previous
+  // project's tasks into the selected project.
   const projectRoot = getActiveProjectRoot();
-  setKanbanDir(join(projectRoot, ".ok"));
+  await ensureBoardForProject(projectBoardContext(projectRoot));
 
   const url = new URL(req.url);
   const path = url.pathname;
@@ -2988,7 +3080,7 @@ async function handleRequest(req: Request): Promise<Response> {
     } catch (e) { const m = (e as any)?.message || "Render error"; return errorResponse(m, 500); }
   }
 
-  return errorResponse("Not found", 404);
+  return requestErrorResponse(req, 404, "Not found");
 }
 
 // ─── Event subscription ───────────────────────────────────────────────────────

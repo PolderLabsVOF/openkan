@@ -125,6 +125,11 @@ export interface BoardContext {
 }
 
 let _board: Board | null = null;
+// `KANBAN_DIR` names the persistence directory, but a running server also
+// needs to know which root populated its in-memory board. Keeping this
+// separately prevents a project switch from merely changing output paths
+// while continuing to serve the previous project's cached tasks.
+let _loadedProjectRoot = "";
 let _writeQueue: Promise<void> = Promise.resolve();
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -196,6 +201,9 @@ async function migrateLegacyTaskArtifacts(board: Board): Promise<void> {
 }
 
 export async function initBoard(ctx: BoardContext): Promise<{ board: Board; dir: string }> {
+  // Finish writes against the current board before replacing its cache. This
+  // makes project activation an atomic boundary for callers sharing a server.
+  await _writeQueue.catch(() => undefined);
   const dir = join(ctx.directory, ".ok");
   KANBAN_DIR = dir;
 
@@ -225,7 +233,20 @@ export async function initBoard(ctx: BoardContext): Promise<{ board: Board; dir:
     await persist(_board!);
   }
 
+  _loadedProjectRoot = ctx.directory;
   return { board: _board!, dir };
+}
+
+/**
+ * Load the board for `ctx.directory` when the active project changed.
+ * Unlike `setKanbanDir`, this refreshes the in-memory board as well as its
+ * destination path, which is required for a long-lived multi-project server.
+ */
+export async function ensureBoardForProject(ctx: BoardContext): Promise<{ board: Board; dir: string }> {
+  if (_board && _loadedProjectRoot === ctx.directory) {
+    return { board: _board, dir: KANBAN_DIR };
+  }
+  return initBoard(ctx);
 }
 
 export async function getBoard(): Promise<Board> {
@@ -281,6 +302,7 @@ function mapColumnToStatus(
   if (state === "running" || state === "waiting-for-input") return "in_progress";
   if (column === "review") return "review";
   if (column === "doing") return "in_progress";
+  if (column === "done") return "done";
   return "pending";
 }
 

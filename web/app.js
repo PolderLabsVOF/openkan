@@ -2149,6 +2149,9 @@
     ghost: null,
     draggedIds: [],
     activeColumn: null,
+    indicator: null,
+    indicatorBody: null,
+    indicatorIndex: null,
   };
 
   function buildGhost(card, ids) {
@@ -2181,9 +2184,18 @@
     }
     dragState.draggedIds = [];
     dragState.activeColumn = null;
+    clearDropIndicator();
     delete window.OpenKanActiveTaskDrag;
     document.querySelectorAll(".column.drag-over").forEach((c) => c.classList.remove("drag-over"));
-    document.querySelectorAll(".drop-indicator").forEach((d) => d.remove());
+  }
+
+  function clearDropIndicator() {
+    dragState.indicator?.remove();
+    dragState.indicator = null;
+    dragState.indicatorBody = null;
+    dragState.indicatorIndex = null;
+    // Defensive cleanup for an indicator orphaned by an external board render.
+    document.querySelectorAll(".drop-indicator").forEach((indicator) => indicator.remove());
   }
 
   function attachDnD(column) {
@@ -2193,7 +2205,7 @@
       e.dataTransfer.dropEffect = "move";
       if (dragState.activeColumn !== column) {
         document.querySelectorAll(".column.drag-over").forEach((item) => item.classList.remove("drag-over"));
-        document.querySelectorAll(".drop-indicator").forEach((item) => item.remove());
+        clearDropIndicator();
         dragState.activeColumn = column;
       }
       column.classList.add("drag-over");
@@ -2208,7 +2220,7 @@
       if (!column.contains(e.relatedTarget)) {
         column.classList.remove("drag-over");
         if (dragState.activeColumn === column) {
-          body.querySelectorAll(".drop-indicator").forEach((item) => item.remove());
+          clearDropIndicator();
           dragState.activeColumn = null;
         }
       }
@@ -2242,8 +2254,11 @@
   document.addEventListener("dragend", teardownDragVisuals);
 
   function showDropIndicator(body, idx) {
-    // There is exactly one active insertion target across the board.
-    document.querySelectorAll(".drop-indicator").forEach((d) => d.remove());
+    // Dragover fires for every pointer movement. Keep the existing node when
+    // its column and insertion index are unchanged so the placement line does
+    // not re-mount, restart its arrival animation, or flicker in place.
+    if (dragState.indicatorBody === body && dragState.indicatorIndex === idx && dragState.indicator?.isConnected) return;
+    clearDropIndicator();
     const indicator = el("div", "drop-indicator");
     const cards = [...body.querySelectorAll(".card:not(.dragging):not(.selected)")];
     if (idx >= cards.length) {
@@ -2251,6 +2266,9 @@
     } else {
       body.insertBefore(indicator, cards[idx]);
     }
+    dragState.indicator = indicator;
+    dragState.indicatorBody = body;
+    dragState.indicatorIndex = idx;
   }
 
   function dropIndex(body, y, draggingId) {

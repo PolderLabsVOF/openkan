@@ -30,6 +30,7 @@ import {
   isSessionArchived,
   listSessions,
   listRunningSessions,
+  parseStreamLine,
   readSession,
   resolveClaudeBin,
   sendTurn,
@@ -219,6 +220,14 @@ const outFormat = outIdx >= 0 ? args[outIdx + 1] : "text";
 if (prompt.includes("STAY_ALIVE")) {
   setInterval(() => {}, 1000);
 } else if (outFormat === "stream-json") {
+  if (prompt.includes("WITH_SUBAGENT")) {
+    process.stdout.write(JSON.stringify({ type: "content_block_start", index: 3, content_block: { type: "tool_use", id: "tool_agent_1", name: "Agent", input: { subagent_type: "Explore", prompt: "Inspect the repo" } } }) + "\\n");
+    process.stdout.write(JSON.stringify({ type: "assistant", message: { role: "assistant", parent_tool_use_id: "tool_agent_1", content: [{ type: "text", text: "SUBAGENT_ONLY: inspected four files" }] } }) + "\\n");
+    process.stdout.write(JSON.stringify({ type: "content_block_start", parent_tool_use_id: "tool_agent_1", index: 8, content_block: { type: "tool_use", id: "child_read_1", name: "Read", input: { file_path: "web/chat-sidebar.js" } } }) + "\\n");
+    process.stdout.write(JSON.stringify({ type: "content_block_start", parent_tool_use_id: "tool_agent_1", index: 9, content_block: { type: "tool_result", tool_use_id: "child_read_1", content: "chat sidebar source", is_error: false } }) + "\\n");
+    process.stdout.write(JSON.stringify({ type: "hook_started", hook_event_name: "SubagentStart", agent_id: "agent_1", agent_type: "Explore" }) + "\\n");
+    process.stdout.write(JSON.stringify({ type: "hook_response", hook_event_name: "SubagentStop", agent_id: "agent_1", agent_type: "Explore", last_assistant_message: "Inspection complete" }) + "\\n");
+  }
   const text = "PROMPT:" + prompt + "\\n" + "ARGS:" + JSON.stringify(args) + "\\n";
   process.stdout.write(JSON.stringify({ type: "message_start", message: { id: "msg_test", role: "assistant" } }) + "\\n");
   process.stdout.write(JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }) + "\\n");
@@ -272,9 +281,51 @@ test("sendTurn spawns claude -p with selectors and persists both turns", async (
     assert.equal(logLine.argv[5], "high");
     assert.equal(logLine.argv[6], "--permission-mode");
     assert.equal(logLine.argv[7], "acceptEdits");
+    assert.ok(logLine.argv.includes("--include-partial-messages"));
+    assert.ok(logLine.argv.includes("--include-hook-events"));
+    assert.ok(logLine.argv.includes("--forward-subagent-text"));
   } finally {
     process.env.PATH = prevPath;
   }
+});
+
+test("forwarded subagent activity is observable without leaking into the parent reply", async () => {
+  const { root, binDir } = fakeClaudeFixture();
+  const prevPath = process.env.PATH;
+  process.env.PATH = binDir + ":" + prevPath;
+  try {
+    const events: Array<{ type: string; parentToolUseId?: string }> = [];
+    const result = await sendTurn(root, {
+      sessionId: "ses-subagent-1",
+      message: "WITH_SUBAGENT please inspect this",
+      model: "minimax/MiniMax-M3",
+      effort: "high",
+      permissionMode: "bypassPermissions",
+      onStreamEvent: (event) => events.push(event),
+    });
+    assert.ok(events.some((event) => event.parentToolUseId === "tool_agent_1"));
+    assert.ok(events.some((event) => event.type === "hook_started"));
+    assert.match(result.assistantTurn.content, /PROMPT:WITH_SUBAGENT/);
+    assert.doesNotMatch(result.assistantTurn.content, /SUBAGENT_ONLY/);
+    const subagentRead = result.assistantTurn.toolUses?.find((tool) => tool.source === "subagent");
+    assert.equal(subagentRead?.name, "Read");
+    assert.deepEqual(subagentRead?.input, { file_path: "web/chat-sidebar.js" });
+    assert.equal(subagentRead?.status, "completed");
+  } finally {
+    process.env.PATH = prevPath;
+  }
+});
+
+test("parseStreamLine keeps parent tool identity from forwarded assistant messages", () => {
+  const event = parseStreamLine(JSON.stringify({
+    type: "assistant",
+    message: {
+      parent_tool_use_id: "tool_agent_42",
+      content: [{ type: "text", text: "child update" }],
+    },
+  }));
+  assert.equal(event?.parentToolUseId, "tool_agent_42");
+  assert.equal(event?.type, "content_block_delta");
 });
 
 test("sendTurn keeps task context compact in the persisted user turn", async () => {

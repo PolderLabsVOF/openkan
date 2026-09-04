@@ -84,7 +84,7 @@ test("installer bootstraps the complete source tree when piped to bash", () => {
   const archiveRoot = join(root, "archive", "openkan-main");
   mkdirSync(archiveRoot, { recursive: true });
 
-  for (const directory of ["bin", "commands", "kanban", "skills", "web"]) {
+  for (const directory of ["bin", "commands", "kanban", "ok", "skills", "web"]) {
     cpSync(join(repoRoot, directory), join(archiveRoot, directory), { recursive: true });
   }
   for (const file of ["install.sh", "package.json", "package-lock.json", "README.md", "CHANGELOG.md", "LICENSE"]) {
