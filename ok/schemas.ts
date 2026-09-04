@@ -444,6 +444,123 @@ export function byUpdatedDesc<T extends { updatedAt: string }>(items: T[]): T[] 
   return [...items].sort((a, b) => isoCompare(b.updatedAt, a.updatedAt));
 }
 
+// ─── Agent profiles ──────────────────────────────────────────────────────────
+
+export type AgentKind = "claude-code" | "codex-cli" | "cursor" | "cline" | "custom";
+
+export interface AgentProfile {
+  schema: "openkan.agent-profile.v1";
+  /** Unique identifier for this profile, e.g. "claude-code", "codex-cli". */
+  id: string;
+  /** Discriminator matching the agent runtimes this profile targets. */
+  kind: AgentKind;
+  /** Path or command to the agent binary. Required; must be non-empty. */
+  bin: string;
+  /** Optional description shown in the UI. */
+  description?: string;
+  /** Arbitrary extra fields; engines may add their own keys. */
+  meta?: Record<string, unknown>;
+}
+
+export interface AgentsConfig {
+  schema: "openkan.agents.v1";
+  /** The currently active profile id. */
+  active: string;
+  /** All registered profiles. */
+  profiles: AgentProfile[];
+}
+
+export function isAgentProfile(v: unknown): v is AgentProfile {
+  return (
+    typeof v === "object" && v !== null &&
+    (v as AgentProfile).schema === "openkan.agent-profile.v1"
+  );
+}
+
+export function isAgentsConfig(v: unknown): v is AgentsConfig {
+  return (
+    typeof v === "object" && v !== null &&
+    (v as AgentsConfig).schema === "openkan.agents.v1"
+  );
+}
+
+const VALID_KINDS = new Set<AgentKind>(["claude-code", "codex-cli", "cursor", "cline", "custom"]);
+
+export interface AgentProfileValidationError {
+  path: string;
+  reason: string;
+}
+
+/**
+ * Validate a single AgentProfile.
+ * Returns null on success, or the first error found.
+ */
+export function validateAgentProfile(obj: unknown): AgentProfileValidationError | null {
+  if (typeof obj !== "object" || obj === null) {
+    return { path: "", reason: "expected object" };
+  }
+  const o = obj as Record<string, unknown>;
+
+  if (typeof o["id"] !== "string" || !o["id"]) {
+    return { path: "id", reason: "required, non-empty string" };
+  }
+  if (!o["kind"] || !VALID_KINDS.has(o["kind"] as AgentKind)) {
+    return { path: "kind", reason: `required, must be one of: ${[...VALID_KINDS].join(", ")}` };
+  }
+  if (typeof o["bin"] !== "string" || !o["bin"].trim()) {
+    return { path: "bin", reason: "required, non-empty string" };
+  }
+  if (o["description"] !== undefined && typeof o["description"] !== "string") {
+    return { path: "description", reason: "optional, must be string" };
+  }
+  if (o["meta"] !== undefined && (typeof o["meta"] !== "object" || o["meta"] === null || Array.isArray(o["meta"]))) {
+    return { path: "meta", reason: "optional, must be object" };
+  }
+  return null;
+}
+
+/**
+ * Validate an AgentsConfig object.
+ * Returns null on success, or the first error found.
+ */
+export function validateAgentsConfig(obj: unknown): AgentProfileValidationError | null {
+  if (typeof obj !== "object" || obj === null) {
+    return { path: "", reason: "expected object" };
+  }
+  const o = obj as Record<string, unknown>;
+
+  if (typeof o["active"] !== "string" || !o["active"]) {
+    return { path: "active", reason: "required, non-empty string" };
+  }
+  if (!Array.isArray(o["profiles"])) {
+    return { path: "profiles", reason: "required, must be array" };
+  }
+  for (let i = 0; i < (o["profiles"] as unknown[]).length; i++) {
+    const err = validateAgentProfile((o["profiles"] as unknown[])[i]);
+    if (err) {
+      err.path = `profiles[${i}].${err.path}`;
+      return err;
+    }
+  }
+  return null;
+}
+
+/** Default agent profile registered when no profiles exist yet. */
+export const DEFAULT_AGENT_PROFILE: AgentProfile = {
+  schema: "openkan.agent-profile.v1",
+  id: "claude-code",
+  kind: "claude-code",
+  bin: "claude",
+  description: "Default Claude Code agent profile",
+};
+
+/** Default agents config used when none exists. */
+export const DEFAULT_AGENTS_CONFIG: AgentsConfig = {
+  schema: "openkan.agents.v1",
+  active: "claude-code",
+  profiles: [DEFAULT_AGENT_PROFILE],
+};
+
 /** Strip the id prefix from each id-suffix in the array, for logging. */
 export function suffixList<T extends { id: string }>(items: T[]): string[] {
   return items.map((i) => idSuffix(i.id) ?? i.id);
