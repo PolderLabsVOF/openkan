@@ -1821,7 +1821,7 @@
     items.push({
       label: "Copy markdown link",
       action: () =>
-        copyToClipboard(`[${task.title || task.id}](.openkan/tasks/${task.id}/task.mdx)`, "Markdown link"),
+        copyToClipboard(`[${task.title || task.id}](.ok/tasks/${task.id}/task.mdx)`, "Markdown link"),
     });
     items.push({
       label: "Copy as kanban URL",

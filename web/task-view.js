@@ -305,7 +305,7 @@
     }));
     // Copy markdown link.
     actions.append(mkIconBtn("🔗", "Copy markdown link", async () => {
-      const md = `[${task.title || task.id}](.openkan/tasks/${task.id}/task.mdx)`;
+      const md = `[${task.title || task.id}](.ok/tasks/${task.id}/task.mdx)`;
       try {
         await navigator.clipboard.writeText(md);
         window.OpenKanSettings?.showToast?.("Markdown link copied", "success");
