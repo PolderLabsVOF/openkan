@@ -1,4 +1,4 @@
 interface:
   display_name: "OpenKan Project Workflow"
   short_description: "Keep agent work synchronized in OpenKan"
-  default_prompt: "Use $openkan to manage this project task and keep its durable status updated."
+  default_prompt: "Use the OpenKan kanban board and the native Claude Code control plane to manage this project task and keep its durable status, comments, and verification evidence updated."

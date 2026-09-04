@@ -1,7 +1,7 @@
 {
   "name": "openkan",
   "version": "0.3.0",
-  "description": "Local-first MDX kanban and Bizar control plane",
+  "description": "Local-first MDX kanban with native Claude Code control plane, .ok/ planning system, and embedded chat sidebar.",
   "type": "module",
   "private": true,
   "bin": {
