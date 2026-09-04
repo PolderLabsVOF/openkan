@@ -3,9 +3,11 @@ import {
   readFileSync,
 } from "node:fs";
 import type { Server as HttpServer, IncomingMessage } from "node:http";
+import { homedir } from "node:os";
 import { resolve, join, isAbsolute } from "node:path";
-import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
+import { readSnapshot as readClaudeSnapshot, type SnapshotPayload } from "./claude-state.ts";
 
 export interface BizarConfig {
   enabled: boolean;
@@ -68,79 +70,55 @@ export function resolveBizarConfig(openkanProjectRoot: string): BizarConfig {
   };
 }
 
-function executable(config: BizarConfig): { file: string; prefix: string[] } {
-  if (config.command.endsWith(".mjs") || config.command.endsWith(".js")) {
-    return { file: process.execPath, prefix: [config.command] };
-  }
-  return { file: config.command, prefix: [] };
+/**
+ * Legacy snapshot endpoint. The Bizar CLI bridge has been removed; the
+ * legacy `/api/bizar/*` URL namespace now sources its data directly from the
+ * native Claude Code readers in `claude-state.ts`. New integrations should
+ * prefer `/api/claude/*`.
+ */
+export async function getBizarSnapshot(openkanProjectRoot: string): Promise<any> {
+  const snapshot: SnapshotPayload = await readClaudeSnapshot(homedir());
+  return {
+    version: 1,
+    projectRoot: openkanProjectRoot,
+    agents: snapshot.agents ?? [],
+    tasks: [],
+    sessions: [],
+    messages: [],
+  };
 }
 
-function bizarJson(openkanProjectRoot: string, args: string[]): any {
-  const config = resolveBizarConfig(openkanProjectRoot);
-  if (!config.enabled) throw new BizarBridgeError("Bizar integration is disabled", 503);
-  if (!existsSync(config.projectRoot)) {
-    throw new BizarBridgeError(`Bizar project root does not exist: ${config.projectRoot}`, 503);
+/**
+ * Legacy session/message/task command shim. With the Bizar CLI removed, this
+ * no longer spawns external processes. Callers receive back a local session
+ * identifier that the UI can display alongside the task; nothing actually
+ * runs off-host. Mutations (claim/heartbeat/complete/cancel) return
+ * `{deprecated:true, status:410}` so existing clients can detect the change.
+ * For new integrations use `/api/claude/*` POST handlers and the
+ * `/api/claude/events` SSE stream.
+ */
+export function executeBizarCommand(
+  _openkanProjectRoot: string,
+  command: string,
+  payload: Record<string, unknown>,
+): any {
+  if (command === "start-session") {
+    const sessionId = `ses-local-${randomUUID()}`;
+    return { session: { sessionId }, deprecated: true, successor: "/api/claude/*" };
   }
-  const command = executable(config);
-  const result = spawnSync(command.file, [...command.prefix, ...args], {
-    cwd: config.projectRoot,
-    encoding: "utf8",
-    shell: false,
-    env: { ...process.env, BIZAR_SKIP_BUILD: "1" },
-    timeout: 30_000,
-  });
-  if (result.error) {
-    throw new BizarBridgeError(`Bizar command failed: ${result.error.message}`, 502);
+  if (command === "stop-session" || command === "send-session" || command === "send-message") {
+    return { ok: true, deprecated: true, successor: "/api/claude/*" };
   }
-  if (result.status !== 0) {
-    let details: unknown = result.stderr?.trim() || result.stdout?.trim();
-    try { details = JSON.parse(result.stderr || result.stdout); } catch { /* text details */ }
-    const message = typeof details === "object" && details && "error" in details
-      ? String((details as { error: unknown }).error)
-      : `Bizar command exited ${result.status}`;
-    throw new BizarBridgeError(message, 502, details);
+  if (
+    command === "create-task" ||
+    command === "claim-task" ||
+    command === "heartbeat-task" ||
+    command === "complete-task" ||
+    command === "cancel-task"
+  ) {
+    return { ok: true, deprecated: true, status: 410, successor: "/api/claude/*" };
   }
-  try {
-    return JSON.parse(result.stdout || "{}");
-  } catch {
-    throw new BizarBridgeError("Bizar returned invalid JSON", 502, result.stdout);
-  }
-}
-
-export function getBizarSnapshot(openkanProjectRoot: string): any {
-  return bizarJson(openkanProjectRoot, ["control", "snapshot", "--json"]);
-}
-
-function requiredString(value: unknown, field: string, max = 16_384): string {
-  const text = typeof value === "string" ? value.trim() : "";
-  if (!text) throw new BizarBridgeError(`${field} is required`, 422);
-  if (Buffer.byteLength(text, "utf8") > max) {
-    throw new BizarBridgeError(`${field} is too long`, 422);
-  }
-  return text;
-}
-
-function optionalString(value: unknown, field: string, max = 16_384): string | null {
-  if (value === undefined || value === null || value === "") return null;
-  return requiredString(value, field, max);
-}
-
-function stringArray(value: unknown, field: string): string[] {
-  if (value === undefined) return [];
-  if (!Array.isArray(value)) throw new BizarBridgeError(`${field} must be an array`, 422);
-  return value.map((item) => requiredString(item, field, 512));
-}
-
-async function body(req: Request): Promise<Record<string, unknown>> {
-  try {
-    const value = await req.json();
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      throw new Error("not an object");
-    }
-    return value as Record<string, unknown>;
-  } catch {
-    throw new BizarBridgeError("Invalid JSON body", 400);
-  }
+  throw new BizarBridgeError(`Unknown Bizar command: ${command}`, 404);
 }
 
 function response(value: unknown, status = 200): Response {
@@ -160,101 +138,15 @@ function errorResponse(error: unknown): Response {
   }, bridge.status);
 }
 
-function taskCommand(action: string, id: string, payload: Record<string, unknown>): string[] {
-  const args = ["task", action, requiredString(id, "task id", 128)];
-  if (action === "create") {
-    args.push("--title", requiredString(payload.title, "title", 512));
-    for (const scope of stringArray(payload.scopes, "scopes")) args.push("--scope", scope);
-    for (const dependency of stringArray(payload.dependencies, "dependencies")) {
-      args.push("--depends-on", dependency);
-    }
-    if (payload.priority !== undefined) args.push("--priority", String(payload.priority));
-  } else if (action === "claim") {
-    args.push("--owner", requiredString(payload.owner, "owner", 128));
-    const workspace = optionalString(payload.workspace, "workspace", 4096);
-    if (workspace) args.push("--workspace", workspace);
-    if (payload.leaseMs !== undefined) args.push("--lease-ms", String(payload.leaseMs));
-  } else if (action === "heartbeat") {
-    args.push("--owner", requiredString(payload.owner, "owner", 128));
-    if (payload.leaseMs !== undefined) args.push("--lease-ms", String(payload.leaseMs));
-  } else if (action === "complete") {
-    args.push("--owner", requiredString(payload.owner, "owner", 128));
-    const evidence = optionalString(payload.evidence, "evidence");
-    if (evidence) args.push("--evidence", evidence);
-  } else if (action === "cancel") {
-    const owner = optionalString(payload.owner, "owner", 128);
-    const reason = optionalString(payload.reason, "reason");
-    if (owner) args.push("--owner", owner);
-    if (reason) args.push("--reason", reason);
-  }
-  args.push("--json");
-  return args;
+function gone(message: string): Response {
+  return response({
+    error: message,
+    deprecated: true,
+    successor: "/api/claude/*",
+  }, 410);
 }
 
-export function executeBizarCommand(
-  openkanProjectRoot: string,
-  command: string,
-  payload: Record<string, unknown>,
-): any {
-  switch (command) {
-    case "create-task":
-      return bizarJson(openkanProjectRoot, taskCommand("create", requiredString(payload.id, "id", 128), payload));
-    case "claim-task":
-    case "heartbeat-task":
-    case "complete-task":
-    case "cancel-task": {
-      const action = command.replace("-task", "");
-      return bizarJson(openkanProjectRoot, taskCommand(action, requiredString(payload.id, "id", 128), payload));
-    }
-    case "start-session": {
-      const args = [
-        "control", "session", "start",
-        "--agent", requiredString(payload.agent, "agent", 128),
-        "--prompt", requiredString(payload.prompt, "prompt"),
-      ];
-      const name = optionalString(payload.name, "name", 256);
-      if (name) args.push("--name", name);
-      args.push("--json");
-      return bizarJson(openkanProjectRoot, args);
-    }
-    case "send-session": {
-      const args = [
-        "control", "session", "send",
-        requiredString(payload.sessionId, "sessionId", 128),
-        "--text", requiredString(payload.text, "text"),
-      ];
-      const from = optionalString(payload.from, "from", 128);
-      const taskId = optionalString(payload.taskId, "taskId", 128);
-      if (from) args.push("--from", from);
-      if (taskId) args.push("--task", taskId);
-      args.push("--json");
-      return bizarJson(openkanProjectRoot, args);
-    }
-    case "stop-session":
-      return bizarJson(openkanProjectRoot, [
-        "control", "session", "stop",
-        requiredString(payload.sessionId, "sessionId", 128),
-        "--json",
-      ]);
-    case "send-message": {
-      const args = ["control", "message"];
-      const agent = optionalString(payload.agent, "agent", 128);
-      const sessionId = optionalString(payload.sessionId, "sessionId", 128);
-      if (!agent && !sessionId) throw new BizarBridgeError("agent or sessionId is required", 422);
-      if (agent) args.push("--agent", agent);
-      if (sessionId) args.push("--session", sessionId);
-      args.push("--text", requiredString(payload.text, "text"));
-      const from = optionalString(payload.from, "from", 128);
-      const taskId = optionalString(payload.taskId, "taskId", 128);
-      if (from) args.push("--from", from);
-      if (taskId) args.push("--task", taskId);
-      args.push("--json");
-      return bizarJson(openkanProjectRoot, args);
-    }
-    default:
-      throw new BizarBridgeError(`Unknown Bizar command: ${command}`, 404);
-  }
-}
+const GONE = "Bizar CLI integration removed; use /api/claude/*";
 
 export async function handleBizarRequest(
   openkanProjectRoot: string,
@@ -263,39 +155,15 @@ export async function handleBizarRequest(
 ): Promise<Response> {
   try {
     if (req.method === "GET") {
-      const snapshot = getBizarSnapshot(openkanProjectRoot);
+      const snapshot = await getBizarSnapshot(openkanProjectRoot);
       if (path === "/api/bizar/snapshot") return response(snapshot);
       if (path === "/api/bizar/agents") return response({ agents: snapshot.agents || [] });
       if (path === "/api/bizar/tasks") return response({ tasks: snapshot.tasks || [] });
       if (path === "/api/bizar/sessions") return response({ sessions: snapshot.sessions || [] });
       if (path === "/api/bizar/messages") return response({ messages: snapshot.messages || [] });
     }
-    if (req.method === "POST" && path === "/api/bizar/tasks") {
-      return response(executeBizarCommand(openkanProjectRoot, "create-task", await body(req)));
-    }
-    const task = path.match(/^\/api\/bizar\/tasks\/([^/]+)\/(claim|heartbeat|complete|cancel)$/);
-    if (req.method === "POST" && task) {
-      return response(executeBizarCommand(openkanProjectRoot, `${task[2]}-task`, {
-        ...(await body(req)),
-        id: decodeURIComponent(task[1]),
-      }));
-    }
-    if (req.method === "POST" && path === "/api/bizar/sessions") {
-      return response(executeBizarCommand(openkanProjectRoot, "start-session", await body(req)));
-    }
-    const session = path.match(/^\/api\/bizar\/sessions\/([^/]+)\/(messages|stop)$/);
-    if (req.method === "POST" && session) {
-      const payload = session[2] === "stop" ? {} : await body(req);
-      return response(executeBizarCommand(
-        openkanProjectRoot,
-        session[2] === "stop" ? "stop-session" : "send-session",
-        { ...payload, sessionId: decodeURIComponent(session[1]) },
-      ));
-    }
-    if (req.method === "POST" && path === "/api/bizar/messages") {
-      return response(executeBizarCommand(openkanProjectRoot, "send-message", await body(req)));
-    }
-    return response({ error: "Not found" }, 404);
+    if (req.method !== "POST") return response({ error: "Not found" }, 404);
+    return gone(GONE);
   } catch (error) {
     return errorResponse(error);
   }
@@ -316,9 +184,9 @@ export function attachBizarWebSocket(
     if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value));
   }
 
-  function snapshot(socket?: WebSocket) {
+  async function snapshot(socket?: WebSocket) {
     try {
-      const event = { type: "snapshot", data: getBizarSnapshot(projectRoot()) };
+      const event = { type: "snapshot", data: await getBizarSnapshot(projectRoot()) };
       if (socket) send(socket, event);
       else for (const client of wss.clients) send(client, event);
     } catch (error) {
@@ -362,12 +230,15 @@ export function attachBizarWebSocket(
         return;
       }
       try {
-        const result = executeBizarCommand(
-          projectRoot(),
-          requiredString(message.command, "command", 128),
-          message.payload && typeof message.payload === "object" ? message.payload : {},
-        );
-        send(socket, { type: "result", requestId: message.requestId, data: result });
+        // The legacy WS command channel has been superseded by the native
+        // /api/claude/events SSE stream and the /api/claude/* POST endpoints.
+        // Acknowledging receipt with a 410-styled result keeps existing clients
+        // log-parsable while signalling that no work will be performed.
+        send(socket, {
+          type: "result",
+          requestId: message.requestId,
+          data: { deprecated: true, status: 410, error: GONE, successor: "/api/claude/*" },
+        });
         snapshot();
       } catch (error) {
         send(socket, {

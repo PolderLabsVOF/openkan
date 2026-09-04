@@ -1038,7 +1038,7 @@ export async function apiStartTask(projectRoot: string, taskId: string, req: Req
 
   let knownAgents: string[] = [];
   try {
-    const snapshot = getBizarSnapshot(projectRoot);
+    const snapshot = await getBizarSnapshot(projectRoot);
     knownAgents = Array.isArray(snapshot?.agents)
       ? snapshot.agents.map((candidate: any) => candidate.id ?? candidate.name).filter(Boolean)
       : [];
