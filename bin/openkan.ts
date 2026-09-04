@@ -476,11 +476,28 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     case "config":  return cmdConfig(argv.slice(1));
     case "logs":    return cmdLogs(argv.slice(1));
     case "reset":   return cmdReset(ctx, argv.slice(1));
+    case "onboard": return cmdOnboard();
+    case "mcp":     return cmdMcp();
     default:
       console.error(`Unknown command: ${cmd}`);
       printHelp();
       process.exit(1);
   }
+}
+
+// ─── Onboard stub (M20 wires this) ──────────────────────────────────────────
+
+function cmdOnboard(): number {
+  console.log("openkan onboard: wired in M20");
+  console.log("  Hint: run 'openkan start' and use the Settings sidebar to configure agents.");
+  return 0;
+}
+
+// ─── MCP stub (M21 wires this) ───────────────────────────────────────────────
+
+function cmdMcp(): never {
+  console.error("openkan mcp: not yet wired (M21)");
+  process.exit(1);
 }
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
