@@ -654,6 +654,45 @@ export function resetActivityTail(): void {
   tailCursors.clear();
 }
 
+// ─── In-memory activity ring buffer ─────────────────────────────────────────
+
+const RING_MAX = 200;
+const ringBuffer: ActivityEvent[] = [];
+const ringListeners = new Set<(events: ActivityEvent[]) => void>();
+
+/**
+ * Append an event to the bounded ring buffer. Oldest events are evicted once
+ * the buffer exceeds `RING_MAX` entries. Listeners are notified after the
+ * write so SSE/WS subscribers can broadcast the new rows.
+ *
+ * Mirrors `recordEvent` in `kanban/agent-activity.ts`; when that file lands
+ * on this branch the orchestrator will reconcile the duplicate.
+ */
+export function recordEvent(event: ActivityEvent): void {
+  ringBuffer.push(event);
+  while (ringBuffer.length > RING_MAX) ringBuffer.shift();
+  for (const fn of ringListeners) {
+    try { fn([event]); } catch { /* ignore listener errors */ }
+  }
+}
+
+/** Read the most-recent ring buffer entries, newest first. */
+export function readEvents(limit = RING_MAX): ActivityEvent[] {
+  const out = ringBuffer.slice(-limit);
+  return out.reverse();
+}
+
+/** Subscribe to live updates; returns an unsubscribe handle. */
+export function subscribe(fn: (events: ActivityEvent[]) => void): () => boolean {
+  ringListeners.add(fn);
+  return ringListeners.delete.bind(ringListeners, fn);
+}
+
+/** Test helper: clear the entire ring buffer. */
+export function resetActivityRing(): void {
+  ringBuffer.length = 0;
+}
+
 // ─── Snapshot ────────────────────────────────────────────────────────────────
 
 function listProjectSessions(rootDir: string): Array<{ id: string; root: string; sessionCount: number }> {
@@ -691,4 +730,198 @@ export async function readSnapshot(rootDir: string): Promise<SnapshotPayload> {
     projects: listProjectSessions(rootDir),
     serverTs: new Date().toISOString(),
   };
+}
+
+// ─── HTTP request handler ───────────────────────────────────────────────────
+
+/** Allowed values for `ActivityKind`. Mirrors the union at the top of this file. */
+const ACTIVITY_KINDS: ReadonlySet<ActivityKind> = new Set<ActivityKind>([
+  "chat.turn-started",
+  "chat.turn-ended",
+  "chat.turn-aborted",
+  "chat.message-added",
+  "task.created",
+  "task.moved",
+  "task.commented",
+  "task.linked",
+  "task.deleted",
+  "agent.started",
+  "agent.ended",
+  "agent.queued",
+]);
+
+function json(value: unknown, status = 200): Response {
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function err(message: string, status = 400): Response {
+  return json({ error: message }, status);
+}
+
+function asStringBounded(value: unknown, max = 1024): string | null {
+  if (typeof value !== "string") return null;
+  if (value.length === 0 || value.length > max) return null;
+  return value;
+}
+
+const SSE_HEADERS = {
+  "Content-Type": "text/event-stream",
+  "Cache-Control": "no-cache, no-transform",
+  "Connection": "keep-alive",
+  // Disable proxy buffering so events flush promptly through localhost proxies.
+  "X-Accel-Buffering": "no",
+};
+
+/**
+ * Route dispatcher for `/api/claude/*`. Mirrors the shape of `handleBizarRequest`
+ * in `kanban/bizar.ts`. The `rootDir` argument is the user's home directory —
+ * readers always look under `<rootDir>/.claude/...`.
+ */
+export async function handleClaudeRequest(
+  rootDir: string,
+  req: Request,
+  path: string,
+): Promise<Response> {
+  const url = new URL(req.url);
+  const relayEnabled = process.env.CLAUDE_OPENKAN_RELAY === "1";
+
+  try {
+    if (req.method === "GET") {
+      if (path === "/api/claude/snapshot") {
+        const payload = await readSnapshot(rootDir);
+        return json(payload);
+      }
+      if (path === "/api/claude/agents") return json({ agents: await readAgents(rootDir) });
+      if (path === "/api/claude/skills") return json({ skills: await readSkills(rootDir) });
+      if (path === "/api/claude/commands") return json({ commands: await readCommands(rootDir) });
+      if (path === "/api/claude/hooks") return json({ hooks: await readHooks(rootDir) });
+      if (path === "/api/claude/teams") return json({ teams: await readTeams(rootDir) });
+      if (path === "/api/claude/workflows") return json({ workflows: await readWorkflows(rootDir) });
+      if (path === "/api/claude/model-router") return json(await readModelRouter(rootDir));
+      if (path === "/api/claude/activity") {
+        const since = url.searchParams.get("since");
+        const sinceMs = since ? Date.parse(since) : undefined;
+        return json({ events: await readActivityTail(rootDir, Number.isFinite(sinceMs) ? sinceMs : undefined) });
+      }
+      if (path === "/api/claude/ring") return json({ events: readEvents() });
+      if (path === "/api/claude/relay-status") {
+        return json({ enabled: relayEnabled });
+      }
+      if (path === "/api/claude/events") return handleClaudeSse(rootDir);
+      return err("Not found", 404);
+    }
+
+    if (req.method === "POST" && path === "/api/claude/events") {
+      const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+      if (!body || typeof body !== "object") return err("Invalid JSON body", 400);
+      const event = asStringBounded(body.event, 128);
+      const sessionId = asStringBounded(body.sessionId, 128);
+      const ts = asStringBounded(body.ts, 64);
+      if (!event) return err("event is required", 422);
+      if (!sessionId) return err("sessionId is required", 422);
+      if (!ts) return err("ts is required", 422);
+      const kind: ActivityKind = ACTIVITY_KINDS.has(event as ActivityKind)
+        ? event as ActivityKind
+        : "agent.queued";
+      const payload = body.payload && typeof body.payload === "object"
+        ? body.payload as Record<string, unknown>
+        : {};
+      const summary = typeof payload.summary === "string"
+        ? payload.summary
+        : event;
+      const agentId = typeof payload.agent === "string" ? payload.agent : "@user";
+      const record: ActivityEvent = {
+        id: `${ts}-${agentId}-${event}`,
+        projectId: sessionId,
+        agentId,
+        kind,
+        status: "info",
+        summary,
+        meta: { ...payload, relaySessionId: sessionId, ...(kind === "agent.queued" && event !== "agent.queued" ? { originalKind: event } : {}) },
+        ts,
+      };
+      recordEvent(record);
+      return json({ ok: true });
+    }
+
+    return err("Not found", 404);
+  } catch (e) {
+    const message = (e as Error)?.message || String(e);
+    return err(message, 500);
+  }
+}
+
+const TAIL_POLL_MS = 500;
+const HEARTBEAT_MS = 15_000;
+
+function handleClaudeSse(rootDir: string): Response {
+  const encoder = new TextEncoder();
+  // Track the high-water mark (ms) we've already emitted so we only push
+  // truly-new rows on each poll tick.
+  let lastSeenMs = Date.now();
+  let closed = false;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  let unsubscribe: (() => boolean) | null = null;
+
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const safeEnqueue = (chunk: string) => {
+        if (closed) return;
+        try { controller.enqueue(encoder.encode(chunk)); }
+        catch { closed = true; }
+      };
+      safeEnqueue(": connected\n\n");
+
+      const flush = async () => {
+        if (closed) return;
+        try {
+          const sinceMs = lastSeenMs;
+          const fresh = await readActivityTail(rootDir, sinceMs);
+          if (fresh.length > 0) {
+            lastSeenMs = Math.max(
+              sinceMs,
+              ...fresh
+                .map((e) => Date.parse(e.ts))
+                .filter((t) => Number.isFinite(t)),
+            );
+            safeEnqueue(`event: activity\ndata: ${JSON.stringify({ events: fresh })}\n\n`);
+          }
+          const ring = readEvents();
+          if (ring.length > 0) {
+            safeEnqueue(`event: ring\ndata: ${JSON.stringify({ events: ring })}\n\n`);
+          }
+        } catch { /* swallow poll errors */ }
+      };
+
+      // Push any events that arrived via the relay hook since server start.
+      unsubscribe = subscribe((events) => {
+        if (closed) return;
+        try {
+          safeEnqueue(`event: ring\ndata: ${JSON.stringify({ events })}\n\n`);
+        } catch { /* ignore */ }
+      });
+
+      // Initial flush, then poll on TAIL_POLL_MS cadence.
+      await flush();
+      pollTimer = setInterval(() => { void flush(); }, TAIL_POLL_MS);
+      pollTimer.unref?.();
+      heartbeatTimer = setInterval(() => safeEnqueue(": heartbeat\n\n"), HEARTBEAT_MS);
+      heartbeatTimer.unref?.();
+    },
+    cancel() {
+      closed = true;
+      if (pollTimer) clearInterval(pollTimer);
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      if (unsubscribe) { try { unsubscribe(); } catch { /* ignore */ } }
+      pollTimer = null;
+      heartbeatTimer = null;
+      unsubscribe = null;
+    },
+  });
+
+  return new Response(stream, { headers: SSE_HEADERS });
 }
