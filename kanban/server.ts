@@ -67,6 +67,10 @@ import {
 } from "./bizar.ts";
 import * as claudeState from "./claude-state.ts";
 import { handleClaudeRequest } from "./claude-state.ts";
+import {
+  validateAgentsConfig,
+  DEFAULT_AGENTS_CONFIG,
+} from "../ok/schemas.ts";
 import { WebSocketServer, WebSocket } from "ws";
 import { runImport } from "./import.ts";
 
@@ -1051,8 +1055,22 @@ export async function apiStartTask(projectRoot: string, taskId: string, req: Req
     return errorResponse(`Unknown agent "${body.agent}". Available: ${knownAgents.join(", ")}`, 400);
   }
 
+  // Read agents.active from .ok/openkan.json if present
+  let agentsActive: string | undefined;
+  try {
+    const agentsConfigPath = join(projectRoot, ".ok", "openkan.json");
+    if (existsSync(agentsConfigPath)) {
+      const raw = JSON.parse(readFileSync(agentsConfigPath, "utf-8")) as Record<string, unknown>;
+      const agentsBlock = raw["agents"] as Record<string, unknown> | undefined;
+      if (agentsBlock && typeof agentsBlock["active"] === "string" && agentsBlock["active"]) {
+        agentsActive = agentsBlock["active"] as string;
+      }
+    }
+  } catch { /* ignore config read errors */ }
+
   const preferred = body.agent || task.agent;
   const agent = (preferred && knownAgents.includes(preferred) ? preferred : "")
+    || (agentsActive && knownAgents.includes(agentsActive) ? agentsActive : "")
     || (knownAgents.includes("mike") ? "mike" : knownAgents[0]);
   if (!agent) return errorResponse("No Bizar agents are available", 503);
 
@@ -1465,7 +1483,7 @@ function loadConfig(): Record<string, unknown> {
   return {};
 }
 
-async function apiGetConfigSections(): Promise<Response> {
+export async function apiGetConfigSections(): Promise<Response> {
   const config = loadConfig();
 
   const sections: ConfigSection[] = [
@@ -1552,6 +1570,24 @@ async function apiGetConfigSections(): Promise<Response> {
       ],
     },
     {
+      id: "agents",
+      label: "Agents",
+      fields: [
+        {
+          key: "active",
+          label: "Active profile",
+          type: "text",
+          value: (config["agents"] as Record<string, unknown>)?.["active"] ?? "claude-code",
+        },
+        {
+          key: "profiles",
+          label: "Profiles (read-only)",
+          type: "text",
+          value: JSON.stringify((config["agents"] as Record<string, unknown>)?.["profiles"] ?? []),
+        },
+      ],
+    },
+    {
       id: "contributors",
       label: "Contributors",
       fields: [],
@@ -1561,7 +1597,7 @@ async function apiGetConfigSections(): Promise<Response> {
   return jsonResponse({ sections });
 }
 
-async function apiPatchConfigSection(_ctx: BoardContext, sectionId: string, req: Request): Promise<Response> {
+export async function apiPatchConfigSection(_ctx: BoardContext, sectionId: string, req: Request): Promise<Response> {
   interface PatchEntry { key: string; value: unknown; }
   let body: PatchEntry[];
   try { body = await req.json(); } catch { return errorResponse("Invalid JSON"); }
@@ -1602,12 +1638,24 @@ async function apiPatchConfigSection(_ctx: BoardContext, sectionId: string, req:
       case "advanced":
         (config as Record<string, unknown>)[key] = value;
         break;
+      case "agents":
+        if (!config["agents"]) (config as Record<string, unknown>)["agents"] = { active: "claude-code", profiles: [] };
+        (config["agents"] as Record<string, unknown>)[key] = value;
+        break;
       default:
         return errorResponse(`Unknown section: ${sectionId}`, 404);
     }
   }
 
   const configPath = join(KANBAN_DIR, "openkan.json");
+  // Validate agents section before persisting
+  if (sectionId === "agents") {
+    const agents = config["agents"] as Record<string, unknown> | undefined;
+    if (agents) {
+      const err = validateAgentsConfig(agents);
+      if (err) return errorResponse(`Invalid agents config at ${err.path}: ${err.reason}`, 422);
+    }
+  }
   writeFileAtomic(configPath, JSON.stringify(config, null, 2));
 
   // Return the updated section
