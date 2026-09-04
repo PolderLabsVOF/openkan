@@ -36,6 +36,7 @@ import { join, resolve } from "node:path";
 import { basename } from "node:path";
 import { randomUUID } from "node:crypto";
 import { ensureDir, writeFileAtomic } from "./io.ts";
+import { readModelRouter } from "./claude-state.ts";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -438,6 +439,52 @@ export function validateSelectors(selectors: ChatSelectors): void {
 export const ALLOWED_PERMISSION_MODES = [
   "accept-edits", "default", "plan", "bypass-permissions",
 ] as const;
+
+/** One option in the model picker UI. */
+export interface PickerModelOption {
+  id: string;
+  label: string;
+}
+
+/** Shape returned by `GET /api/chat/picker-options`. */
+export interface PickerOptions {
+  models: PickerModelOption[];
+  efforts: readonly string[];
+  permissionModes: readonly string[];
+}
+
+/**
+ * Derive a picker-style option list (id + label) from a model id. Strips a
+ * `provider/` prefix when present so `minimax/MiniMax-M3` displays as
+ * `MiniMax-M3` in the UI. Used by both the picker endpoint and tests.
+ */
+export function toPickerLabel(id: string): string {
+  const slash = id.indexOf("/");
+  return slash >= 0 ? id.slice(slash + 1) : id;
+}
+
+/**
+ * Build the picker options payload for `/api/chat/picker-options`. Pulls the
+ * model list from `readModelRouter` so the chat UI and the model's routing
+ * policy stay in sync without duplicating I/O. Tests can inject a model
+ * list via `overrides.models` to avoid filesystem fixture setup.
+ */
+export async function pickerOptions(
+  projectRoot: string,
+  overrides: { models?: string[] } = {},
+): Promise<PickerOptions> {
+  const ids = overrides.models ?? (await readModelRouter(projectRoot)).models;
+  const models: PickerModelOption[] = [];
+  for (const id of ids) {
+    if (typeof id !== "string" || !id) continue;
+    models.push({ id, label: toPickerLabel(id) });
+  }
+  return {
+    models,
+    efforts: ALLOWED_EFFORT_LEVELS,
+    permissionModes: ALLOWED_PERMISSION_MODES,
+  };
+}
 
 /** Allowed effort levels for the Claude Code CLI. */
 export const ALLOWED_EFFORT_LEVELS = ["low", "medium", "high", "max"] as const;
@@ -1107,6 +1154,13 @@ export async function handleChatRequest(
         efforts: ALLOWED_EFFORT_LEVELS,
         permissionModes: ALLOWED_PERMISSION_MODES,
       });
+    }
+
+    // GET /api/chat/picker-options — model list (sourced from the project
+    // model-router) + allowed effort + permission modes. Used by the chat
+    // sidebar's model pill popover.
+    if (req.method === "GET" && path === "/api/chat/picker-options") {
+      return jsonResponse(await pickerOptions(projectRoot));
     }
 
     // POST /api/chat/render-markdown — sanitised HTML for chat messages
