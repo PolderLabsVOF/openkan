@@ -33,6 +33,7 @@
         <button type="button" class="tab" role="tab" data-tab="docs" aria-selected="false">Docs</button>
         <button type="button" class="tab" role="tab" data-tab="bizar" aria-selected="false">Bizar</button>
         <button type="button" class="tab" role="tab" data-tab="claude" aria-selected="false">Claude</button>
+        <button type="button" class="tab" role="tab" data-tab="insights" aria-selected="false">Insights</button>
       </nav>
       <div class="topbar-right">
         <span id="status-pill" class="pill pill-disconnected" role="status" aria-live="polite">
@@ -334,6 +335,11 @@
         <div id="claude-pane-root" class="claude-pane view-root"></div>
       </section>
 
+      <!-- ─── TAB: Insights ───────────────────────────────────────────── -->
+      <section id="tab-insights" class="tab-pane" role="tabpanel" data-tab="insights" hidden>
+        <div id="insights-root" class="view-root"></div>
+      </section>
+
       <!-- ─── Add Project + Settings modals are top-level (below) ─────────
            They used to live inside <main class="dashboard">. When a task
            view opens, the dashboard gets display:none and the modals
@@ -458,6 +464,11 @@
          must load after command-palette.js but before app.js (which wires the
          Browse button in the Add Project modal). -->
     <script src="path-picker.js" defer></script>
+    <!-- charts.js / insights.js expose window.OpenKanCharts and
+         window.OpenKanInsights. They load AFTER api.js (window.OpenKanAPI)
+         and BEFORE app.js (which calls them from the tab router). -->
+    <script src="charts.js" defer></script>
+    <script src="insights.js" defer></script>
     <script src="app.js" defer></script>
   </body>
 </html>
