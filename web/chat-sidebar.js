@@ -68,6 +68,26 @@
     try { localStorage.setItem(key, value); } catch (_err) { /* ignore */ }
   }
 
+  // Session selection and chat selectors belong to a workspace, not the
+  // browser globally. The server is authoritative for transcript storage;
+  // this only remembers the last session to reopen for each project.
+  function projectStorageKey(key) {
+    return `${key}:${state.projectScope || "workspace"}`;
+  }
+
+  async function resolveProjectScope() {
+    const a = api();
+    if (!a) return "workspace";
+    try {
+      const data = await a("GET", "/api/project");
+      const active = data?.active;
+      const identity = active?.id || active?.root;
+      return identity ? encodeURIComponent(String(identity)) : "workspace";
+    } catch (_err) {
+      return "workspace";
+    }
+  }
+
   function relativeTime(iso) {
     if (!iso) return "";
     const then = new Date(iso).getTime();
@@ -160,6 +180,8 @@
     activeTab: null,
     width: 460,
     resizing: false,
+    // Set before reading session-specific localStorage values in mount().
+    projectScope: "workspace",
   };
 
   /* ----------------------------------------------------------------------
@@ -1394,7 +1416,7 @@
     }
     if (key === "model" || key === "effort" || key === "permissionMode") {
       state.selectors = { ...state.selectors, [key]: val };
-      saveJSON(STORAGE_KEYS.selectors, state.selectors);
+      saveJSON(projectStorageKey(STORAGE_KEYS.selectors), state.selectors);
     }
   }
 
@@ -1542,7 +1564,7 @@
       );
       if (result?.sessionId) {
         state.currentSessionId = result.sessionId;
-        saveString(STORAGE_KEYS.lastSession, state.currentSessionId);
+        saveString(projectStorageKey(STORAGE_KEYS.lastSession), state.currentSessionId);
         // A newly created session could not subscribe before its ID existed.
         // Subscribe as soon as the server acknowledges it, while the turn runs.
         startSessionStream();
@@ -1602,7 +1624,7 @@
 
   async function onNewSession() {
     state.currentSessionId = "";
-    saveString(STORAGE_KEYS.lastSession, "");
+    saveString(projectStorageKey(STORAGE_KEYS.lastSession), "");
     state.transcript = [];
     populateSelectors();
     stopSessionStream();
@@ -1614,7 +1636,7 @@
     await deleteSession(state.currentSessionId);
     state.currentSessionId = "";
     state.transcript = [];
-    saveString(STORAGE_KEYS.lastSession, "");
+    saveString(projectStorageKey(STORAGE_KEYS.lastSession), "");
     stopSessionStream();
     await refreshSessions();
     populateSelectors();
@@ -1624,7 +1646,7 @@
   async function onPickSession(value) {
     if (value === "__new__") return onNewSession();
     state.currentSessionId = value;
-    saveString(STORAGE_KEYS.lastSession, value);
+    saveString(projectStorageKey(STORAGE_KEYS.lastSession), value);
     const data = await fetchSession(value);
     if (data && Array.isArray(data.turns)) {
       state.transcript = data.turns;
@@ -1635,7 +1657,7 @@
         if (lastAssistant.model) state.selectors.model = lastAssistant.model;
         if (lastAssistant.effort) state.selectors.effort = lastAssistant.effort;
         if (lastAssistant.permissionMode) state.selectors.permissionMode = lastAssistant.permissionMode;
-        saveJSON(STORAGE_KEYS.selectors, state.selectors);
+        saveJSON(projectStorageKey(STORAGE_KEYS.selectors), state.selectors);
       }
       populateSelectors();
       await renderTranscript();
@@ -1845,7 +1867,7 @@
     } else {
       return;
     }
-    saveJSON(STORAGE_KEYS.selectors, state.selectors);
+    saveJSON(projectStorageKey(STORAGE_KEYS.selectors), state.selectors);
     populateSelectors();
     closePopover();
   }
@@ -2114,15 +2136,16 @@
     if (state.mounted) return;
     state.root = buildShell();
     state.mounted = true;
+    state.projectScope = await resolveProjectScope();
     // Chat mode owns the main canvas, so it must not inherit a previously
     // closed task-mode rail. `attachWorkspaceMode()` runs before mount(),
     // therefore this is the authoritative point to reconcile the state.
     state.open = document.body.classList.contains("workspace-mode-chat")
       || loadString(STORAGE_KEYS.open) === "1";
-    state.selectors = { ...DEFAULT_SELECTORS, ...(loadJSON(STORAGE_KEYS.selectors) || {}) };
+    state.selectors = { ...DEFAULT_SELECTORS, ...(loadJSON(projectStorageKey(STORAGE_KEYS.selectors)) || {}) };
     const permissionAliases = { "bypass-permissions": "bypassPermissions", "accept-edits": "acceptEdits", default: "bypassPermissions" };
     state.selectors.permissionMode = permissionAliases[state.selectors.permissionMode] || state.selectors.permissionMode || "bypassPermissions";
-    state.currentSessionId = loadString(STORAGE_KEYS.lastSession);
+    state.currentSessionId = loadString(projectStorageKey(STORAGE_KEYS.lastSession));
     state.models = await fetchModels();
     populateSelectors();
     bindEvents();
@@ -2141,7 +2164,7 @@
         state.transcript = data.turns;
       } else {
         state.currentSessionId = "";
-        saveString(STORAGE_KEYS.lastSession, "");
+        saveString(projectStorageKey(STORAGE_KEYS.lastSession), "");
       }
     }
     await renderTranscript();

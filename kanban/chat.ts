@@ -538,35 +538,66 @@ export function resolveClaudeBin(override?: string): string {
   return "claude";
 }
 
-/** Per-session child-process registry. Abort looks the session up here. */
-const runningProcs = new Map<string, ChildProcess>();
-
-/** Inspect the running-proc registry (used by tests and the API layer). */
-export function listRunningSessions(): string[] {
-  return [...runningProcs.keys()];
+/**
+ * Process and live-event identities include the project root. Session IDs are
+ * random, but making the scope explicit prevents a project switch from ever
+ * sharing an abort target or an SSE event channel with another workspace.
+ */
+function projectScope(projectRoot: string): string {
+  return resolve(projectRoot);
 }
 
-function registerProc(sessionId: string, child: ChildProcess): void {
-  const existing = runningProcs.get(sessionId);
+function scopedSessionKey(projectRoot: string, sessionId: string): string {
+  return `${projectScope(projectRoot)}\u0000${sessionId}`;
+}
+
+interface RunningProcess {
+  projectRoot: string;
+  sessionId: string;
+  child: ChildProcess;
+}
+
+/** Per-project/session child-process registry. */
+const runningProcs = new Map<string, RunningProcess>();
+
+/** Inspect the running process registry (used by tests and the API layer). */
+export function listRunningSessions(projectRoot?: string): string[] {
+  const scope = projectRoot ? projectScope(projectRoot) : null;
+  return [...runningProcs.values()]
+    .filter((entry) => !scope || entry.projectRoot === scope)
+    .map((entry) => entry.sessionId);
+}
+
+function registerProc(projectRoot: string, sessionId: string, child: ChildProcess): void {
+  const root = projectScope(projectRoot);
+  const key = scopedSessionKey(root, sessionId);
+  const existing = runningProcs.get(key)?.child;
   if (existing && !existing.killed) {
     try { existing.kill("SIGTERM"); } catch { /* ignore */ }
   }
-  runningProcs.set(sessionId, child);
+  runningProcs.set(key, { projectRoot: root, sessionId, child });
 }
 
-function clearProc(sessionId: string, child: ChildProcess): void {
-  const current = runningProcs.get(sessionId);
-  if (current === child) runningProcs.delete(sessionId);
+function clearProc(projectRoot: string, sessionId: string, child: ChildProcess): void {
+  const key = scopedSessionKey(projectRoot, sessionId);
+  if (runningProcs.get(key)?.child === child) runningProcs.delete(key);
 }
 
-/** Kill the running subprocess for `sessionId`, if any. */
-export function abortSession(sessionId: string): boolean {
-  const child = runningProcs.get(sessionId);
-  if (!child) return false;
+/**
+ * Kill the subprocess for a project/session pair. The single-argument form is
+ * retained for test/backward compatibility; HTTP calls always pass a project.
+ */
+export function abortSession(projectRootOrSessionId: string, maybeSessionId?: string): boolean {
+  const entry = maybeSessionId
+    ? runningProcs.get(scopedSessionKey(projectRootOrSessionId, maybeSessionId))
+    : [...runningProcs.values()].find((candidate) => candidate.sessionId === projectRootOrSessionId);
+  if (!entry) return false;
+  const { child } = entry;
   try { child.kill("SIGTERM"); } catch { /* ignore */ }
   // Force-kill after a grace period if it has not exited.
   setTimeout(() => {
-    if (runningProcs.get(sessionId) === child) {
+    const key = scopedSessionKey(entry.projectRoot, entry.sessionId);
+    if (runningProcs.get(key)?.child === child) {
       try { child.kill("SIGKILL"); } catch { /* ignore */ }
     }
   }, 2000).unref?.();
@@ -949,7 +980,7 @@ export async function sendTurn(
     env: opts.env ?? process.env,
     stdio: ["ignore", "pipe", "pipe"],
   });
-  registerProc(sessionId, child);
+  registerProc(projectRoot, sessionId, child);
 
   const abortHandler = () => {
     try { child.kill("SIGTERM"); } catch { /* ignore */ }
@@ -1019,7 +1050,7 @@ export async function sendTurn(
 
   clearTimeout(timeout);
   if (opts.signal) opts.signal.removeEventListener("abort", abortHandler);
-  clearProc(sessionId, child);
+  clearProc(projectRoot, sessionId, child);
 
   const assistantTs = nowIso();
   const killedBySignal = exitCode === null && exitSignal !== null;
@@ -1061,22 +1092,32 @@ const SSE_HEADERS = {
   "X-Accel-Buffering": "no",
 } as const;
 
-/** SSE channel for chat: new turn events push to subscribers as they land. */
-const chatSseControllers = new Set<ReadableStreamDefaultController<Uint8Array>>();
+/** Project-scoped SSE channels; switching workspaces must never fan out activity across projects. */
+const chatSseControllers = new Map<string, Set<ReadableStreamDefaultController<Uint8Array>>>();
 
-/** Per-session SSE channel. Maps sessionId -> controller set. */
+/** Per-project/session SSE channel. */
 const sessionChatSseControllers = new Map<string, Set<ReadableStreamDefaultController<Uint8Array>>>();
 
-function broadcastChat(event: string, data: unknown): void {
+function controllersForProject(projectRoot: string): Set<ReadableStreamDefaultController<Uint8Array>> {
+  const scope = projectScope(projectRoot);
+  let controllers = chatSseControllers.get(scope);
+  if (!controllers) {
+    controllers = new Set();
+    chatSseControllers.set(scope, controllers);
+  }
+  return controllers;
+}
+
+function broadcastChat(projectRoot: string, event: string, data: unknown): void {
   const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-  for (const ctrl of chatSseControllers) {
+  for (const ctrl of chatSseControllers.get(projectScope(projectRoot)) ?? []) {
     try { ctrl.enqueue(new TextEncoder().encode(payload)); } catch { /* ignore */ }
   }
 }
 
-/** Push an event to every subscriber of a particular session. */
-function broadcastChatSession(sessionId: string, event: string, data: unknown): void {
-  const ctrls = sessionChatSseControllers.get(sessionId);
+/** Push an event only to subscribers of this project/session pair. */
+function broadcastChatSession(projectRoot: string, sessionId: string, event: string, data: unknown): void {
+  const ctrls = sessionChatSseControllers.get(scopedSessionKey(projectRoot, sessionId));
   if (!ctrls) return;
   const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
   for (const ctrl of ctrls) {
@@ -1190,7 +1231,7 @@ export async function handleChatRequest(
       } else {
         deleteSession(projectRoot, sid);
       }
-      broadcastChat("chat.session-archived", { sessionId: sid });
+      broadcastChat(projectRoot, "chat.session-archived", { sessionId: sid });
       return jsonResponse({ ok: true, sessionId: sid, archived: true });
     }
 
@@ -1198,7 +1239,7 @@ export async function handleChatRequest(
     const abortMatch = path.match(/^\/api\/chat\/sessions\/([^/]+)\/abort$/);
     if (abortMatch && req.method === "POST") {
       const sid = decodeURIComponent(abortMatch[1]);
-      const killed = abortSession(sid);
+      const killed = abortSession(projectRoot, sid);
       return jsonResponse({ ok: true, sessionId: sid, killed });
     }
 
@@ -1212,11 +1253,12 @@ export async function handleChatRequest(
           // Subscribe to BOTH the global and per-session channel so the
           // sidebar receives `chat.turn` rollups and per-event tool/text
           // updates on the same stream.
-          chatSseControllers.add(ctrl);
-          let set = sessionChatSseControllers.get(sid);
+          controllersForProject(projectRoot).add(ctrl);
+          const sessionKey = scopedSessionKey(projectRoot, sid);
+          let set = sessionChatSseControllers.get(sessionKey);
           if (!set) {
             set = new Set();
-            sessionChatSseControllers.set(sid, set);
+            sessionChatSseControllers.set(sessionKey, set);
           }
           set.add(ctrl);
           ctrl.enqueue(encoder.encode(
@@ -1224,13 +1266,15 @@ export async function handleChatRequest(
           ));
         },
         cancel() {
-          chatSseControllers.delete(this);
-          const set = sessionChatSseControllers.get(sid);
+          const controllers = chatSseControllers.get(projectScope(projectRoot));
+          controllers?.delete(this);
+          const sessionKey = scopedSessionKey(projectRoot, sid);
+          const set = sessionChatSseControllers.get(sessionKey);
           if (set) {
             for (const c of set) {
               if (c === this) set.delete(c);
             }
-            if (set.size === 0) sessionChatSseControllers.delete(sid);
+            if (set.size === 0) sessionChatSseControllers.delete(sessionKey);
           }
         },
       });
@@ -1279,7 +1323,7 @@ export async function handleChatRequest(
         // Start immediately and return an acknowledgement. The browser can now
         // subscribe to this session before Claude's first streamed event,
         // rather than staring at an empty composer until the process exits.
-        broadcastChatSession(sessionId, "chat.status", { sessionId, phase: "thinking", label: "Thinking" });
+        broadcastChatSession(projectRoot, sessionId, "chat.status", { sessionId, phase: "thinking", label: "Thinking" });
         const running = sendTurn(projectRoot, {
           sessionId,
           message: agentMessage,
@@ -1293,7 +1337,7 @@ export async function handleChatRequest(
             // the current subagent tool are useful while work is running;
             // individual thinking/text tokens are retained nowhere in the UI.
             if (isHighSignalActivity(event)) {
-              broadcastChatSession(sessionId, "chat.activity", {
+              broadcastChatSession(projectRoot, sessionId, "chat.activity", {
                 sessionId,
                 type: event.type,
                 subtype: typeof event.raw.subtype === "string" ? event.raw.subtype : undefined,
@@ -1310,7 +1354,7 @@ export async function handleChatRequest(
               case "content_block_start": {
                 const cb = event.contentBlock;
                 if (cb?.type === "tool_use" && cb.id && event.index !== undefined) {
-                  broadcastChatSession(sessionId, "chat.tool-use", {
+                  broadcastChatSession(projectRoot, sessionId, "chat.tool-use", {
                     sessionId,
                     id: cb.id,
                     name: cb.name ?? "unknown",
@@ -1324,17 +1368,17 @@ export async function handleChatRequest(
               case "content_block_delta": {
                 const d = event.delta;
                 if (d?.type === "text_delta" && applied && "textDelta" in applied && applied.textDelta) {
-                  broadcastChatSession(sessionId, "chat.text-delta", {
+                  broadcastChatSession(projectRoot, sessionId, "chat.text-delta", {
                     sessionId,
                     text: applied.textDelta,
                   });
                 } else if ((d?.type === "thinking_delta" || d?.type === "reasoning_delta") && typeof (d.thinking ?? d.text) === "string") {
-                  broadcastChatSession(sessionId, "chat.reasoning-delta", {
+                  broadcastChatSession(projectRoot, sessionId, "chat.reasoning-delta", {
                     sessionId,
                     text: d.thinking ?? d.text,
                   });
                 } else if (d?.type === "input_json_delta" && typeof event.index === "number") {
-                  broadcastChatSession(sessionId, "chat.tool-input-delta", {
+                  broadcastChatSession(projectRoot, sessionId, "chat.tool-input-delta", {
                     sessionId,
                     index: event.index,
                     partialJson: d.partial_json ?? "",
@@ -1344,7 +1388,7 @@ export async function handleChatRequest(
               }
               case "message_delta": {
                 if (event.delta?.stop_reason) {
-                  broadcastChatSession(sessionId, "chat.message-delta", {
+                  broadcastChatSession(projectRoot, sessionId, "chat.message-delta", {
                     sessionId,
                     stopReason: event.delta.stop_reason,
                   });
@@ -1352,7 +1396,7 @@ export async function handleChatRequest(
                 break;
               }
               case "message_stop": {
-                broadcastChatSession(sessionId, "chat.message-done", {
+                broadcastChatSession(projectRoot, sessionId, "chat.message-done", {
                   sessionId,
                   stopReason: event.delta?.stop_reason ?? null,
                 });
@@ -1364,10 +1408,10 @@ export async function handleChatRequest(
           },
         });
         void running.then((result) => {
-          broadcastChat("chat.turn", { sessionId: result.sessionId, userTurn: result.userTurn, assistantTurn: result.assistantTurn });
-          broadcastChatSession(result.sessionId, "chat.turn", { sessionId: result.sessionId, userTurn: result.userTurn, assistantTurn: result.assistantTurn });
+          broadcastChat(projectRoot, "chat.turn", { sessionId: result.sessionId, userTurn: result.userTurn, assistantTurn: result.assistantTurn });
+          broadcastChatSession(projectRoot, result.sessionId, "chat.turn", { sessionId: result.sessionId, userTurn: result.userTurn, assistantTurn: result.assistantTurn });
         }).catch((error) => {
-          broadcastChatSession(sessionId, "chat.status", { sessionId, phase: "error", label: "Chat failed", error: error instanceof Error ? error.message : String(error) });
+          broadcastChatSession(projectRoot, sessionId, "chat.status", { sessionId, phase: "error", label: "Chat failed", error: error instanceof Error ? error.message : String(error) });
         });
         const userTurn = readSession(projectRoot, sessionId).at(-1);
         return jsonResponse({ sessionId, accepted: true, userTurn }, 202);
@@ -1382,10 +1426,15 @@ export async function handleChatRequest(
       const encoder = new TextEncoder();
       const stream = new ReadableStream<Uint8Array>({
         start(ctrl) {
-          chatSseControllers.add(ctrl);
+          controllersForProject(projectRoot).add(ctrl);
           ctrl.enqueue(encoder.encode("event: chat.connected\ndata: {}\n\n"));
         },
-        cancel(ctrl) { chatSseControllers.delete(ctrl); },
+        cancel(ctrl) {
+          const scope = projectScope(projectRoot);
+          const controllers = chatSseControllers.get(scope);
+          controllers?.delete(ctrl);
+          if (controllers?.size === 0) chatSseControllers.delete(scope);
+        },
       });
       return new Response(stream, { headers: SSE_HEADERS });
     }
@@ -1426,7 +1475,7 @@ export async function handleChatRequest(
 
 // Test-only export so tests can wipe the registry between runs.
 export function _resetRunningProcsForTests(): void {
-  for (const child of runningProcs.values()) {
+  for (const { child } of runningProcs.values()) {
     try { child.kill("SIGKILL"); } catch { /* ignore */ }
   }
   runningProcs.clear();

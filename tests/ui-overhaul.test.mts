@@ -252,3 +252,13 @@ test("home command center queries live workspace sources without promoting workt
   assert.match(home, /isWorktree/);
   assert.match(home, /home-network/);
 });
+
+test("scopes chat restoration state to the active project", () => {
+  const sidebar = read("web/chat-sidebar.js");
+  assert.match(sidebar, /async function resolveProjectScope\(\)/);
+  assert.match(sidebar, /GET", "\/api\/project"/);
+  assert.match(sidebar, /function projectStorageKey\(key\)/);
+  assert.match(sidebar, /state\.projectScope = await resolveProjectScope\(\)/);
+  assert.match(sidebar, /loadString\(projectStorageKey\(STORAGE_KEYS\.lastSession\)\)/);
+  assert.match(sidebar, /saveString\(projectStorageKey\(STORAGE_KEYS\.lastSession\)/);
+});

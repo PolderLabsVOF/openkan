@@ -611,3 +611,52 @@ test("handleChatRequest GET /api/chat/picker-options returns the expected shape"
     "acceptEdits", "auto", "bypassPermissions", "manual", "dontAsk", "plan",
   ]);
 });
+
+test("chat transcripts are isolated even when projects reuse a session id", async () => {
+  const first = makeRoot();
+  const second = makeRoot();
+  const sessionId = "ses-shared-id";
+  appendTurn(first, sessionId, { ts: "2026-09-04T10:00:00.000Z", role: "user", content: "first project" });
+  appendTurn(second, sessionId, { ts: "2026-09-04T10:00:01.000Z", role: "user", content: "second project" });
+
+  const [firstResponse, secondResponse] = await Promise.all([
+    handleChatRequest(first, new Request("http://l/api/chat/sessions"), "/api/chat/sessions"),
+    handleChatRequest(second, new Request("http://l/api/chat/sessions"), "/api/chat/sessions"),
+  ]);
+  const firstSessions = await firstResponse.json() as { sessions: Array<{ id: string; title: string }> };
+  const secondSessions = await secondResponse.json() as { sessions: Array<{ id: string; title: string }> };
+
+  assert.deepEqual(firstSessions.sessions, [{
+    id: sessionId, title: "first project", model: null, effort: null, permissionMode: null,
+    createdAt: "2026-09-04T10:00:00.000Z", lastActivity: "2026-09-04T10:00:00.000Z", turnCount: 1, archived: false,
+  }]);
+  assert.equal(secondSessions.sessions[0]?.title, "second project");
+  assert.equal(readSession(first, sessionId)[0]?.content, "first project");
+  assert.equal(readSession(second, sessionId)[0]?.content, "second project");
+});
+
+test("aborting a shared session id only stops the matching project process", async () => {
+  const { root: first, binDir, fake } = fakeClaudeFixture();
+  const second = makeRoot();
+  const sessionId = "ses-project-scoped";
+  const options = {
+    sessionId,
+    message: "STAY_ALIVE until aborted",
+    model: "minimax/MiniMax-M3",
+    effort: "low",
+    permissionMode: "plan",
+    claudeBin: fake,
+  };
+  const firstTurn = sendTurn(first, options);
+  const secondTurn = sendTurn(second, options);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  assert.deepEqual(listRunningSessions(first), [sessionId]);
+  assert.deepEqual(listRunningSessions(second), [sessionId]);
+  assert.equal(abortSession(first, sessionId), true);
+  assert.equal((await firstTurn).assistantTurn.status, "aborted");
+  assert.deepEqual(listRunningSessions(second), [sessionId]);
+
+  assert.equal(abortSession(second, sessionId), true);
+  assert.equal((await secondTurn).assistantTurn.status, "aborted");
+});
