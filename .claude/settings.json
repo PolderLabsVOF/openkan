@@ -1,0 +1,15 @@
+{
+  "$comment": "OpenKan Claude Code project settings. The ok-init SessionStart hook ensures every new session finds a .ok/ planning workspace ready to use.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node $CLAUDE_PROJECT_DIR/.claude/hooks/ok-init.mjs"
+          }
+        ]
+      }
+    ]
+  }
+}
