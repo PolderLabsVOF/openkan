@@ -67,6 +67,7 @@ import {
 } from "./bizar.ts";
 import * as claudeState from "./claude-state.ts";
 import { handleClaudeRequest } from "./claude-state.ts";
+import { handleChatRequest } from "./chat.ts";
 import { WebSocketServer, WebSocket } from "ws";
 import { runImport } from "./import.ts";
 
@@ -2563,6 +2564,10 @@ async function handleRequest(req: Request): Promise<Response> {
 
   if (path.startsWith("/api/claude/")) {
     return handleClaudeRequest(projectRoot, req, path);
+  }
+
+  if (path.startsWith("/api/chat/")) {
+    return handleChatRequest(projectRoot, req, path);
   }
 
   // GET /api/tasks-index
