@@ -17,16 +17,22 @@ import {
   readCommands,
   readHooks,
   readModelRouter,
+  readNativeSessions,
+  recordEvent,
+  resetActivityRing,
   readSkills,
   readTeams,
   readWorkflows,
 } from "../kanban/claude-state.ts";
 
 let tempRoot: string | null = null;
+let priorClaudeConfig: string | undefined;
 
 function makeRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "openkan-claude-state-"));
   tempRoot = root;
+  priorClaudeConfig = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = join(root, ".claude");
   return root;
 }
 
@@ -39,10 +45,14 @@ function writeFile(parts: string[], contents: string): string {
 }
 
 afterEach(() => {
+  resetActivityRing();
   if (tempRoot && existsSync(tempRoot)) {
     rmSync(tempRoot, { recursive: true, force: true });
     tempRoot = null;
   }
+  if (priorClaudeConfig === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+  else process.env.CLAUDE_CONFIG_DIR = priorClaudeConfig;
+  priorClaudeConfig = undefined;
 });
 
 test("readAgents parses frontmatter and resolves model from router tier", async () => {
@@ -201,6 +211,28 @@ test("readHooks returns empty array on missing settings.json", async () => {
   assert.deepEqual(hooks, []);
 });
 
+test("readHooks applies user, project, and settings.local.json precedence without mutating sources", async () => {
+  const root = makeRoot();
+  process.env.CLAUDE_CONFIG_DIR = join(root, "user-claude");
+  writeFile(["user-claude", "settings.json"], JSON.stringify({
+    hooks: {
+      UserPromptSubmit: [{ hooks: [{ command: "echo user" }] }],
+      PreToolUse: [{ hooks: [{ command: "echo user-tool" }] }],
+    },
+  }));
+  writeFile([".claude", "settings.json"], JSON.stringify({
+    hooks: { UserPromptSubmit: [{ hooks: [{ command: "echo project" }] }] },
+  }));
+  writeFile([".claude", "settings.local.json"], JSON.stringify({
+    hooks: { UserPromptSubmit: [{ hooks: [{ command: "echo local" }] }] },
+  }));
+
+  const hooks = await readHooks(root);
+  assert.deepEqual(hooks.filter((hook) => hook.event === "UserPromptSubmit").map((hook) => hook.command), ["echo local"]);
+  assert.deepEqual(hooks.filter((hook) => hook.event === "PreToolUse").map((hook) => hook.command), ["echo user-tool"]);
+  assert.equal(hooks.find((hook) => hook.event === "UserPromptSubmit")?.source, join(root, ".claude", "settings.local.json"));
+});
+
 test("readModelRouter returns defaults when file missing", async () => {
   const root = makeRoot();
   const router = await readModelRouter(root);
@@ -334,4 +366,33 @@ description: Not a workflow.
   const wfCmd = workflows.find((w) => w.id === "workflow-cmd");
   assert.ok(wfCmd);
   assert.deepEqual(wfCmd.phases, ["Plan", "Execute"]);
+});
+
+test("readNativeSessions exposes only the active project's parents and subagents", async () => {
+  const root = makeRoot();
+  const projectId = root.replace(/[\\/]+/g, "-");
+  writeFile([".claude", "projects", projectId, "parent-1.jsonl"], [
+    JSON.stringify({ sessionId: "parent-1", agentName: "mike", customTitle: "Plan canvas", timestamp: "2026-09-04T09:00:00.000Z" }),
+    JSON.stringify({ sessionId: "parent-1", taskId: "tsk-7", timestamp: "2026-09-04T09:01:00.000Z" }),
+  ].join("\n"));
+  writeFile([".claude", "projects", projectId, "parent-1", "subagents", "agent-child.jsonl"],
+    JSON.stringify({ sessionId: "parent-1", agentId: "child", timestamp: "2026-09-04T09:02:00.000Z" }),
+  );
+  writeFile([".claude", "projects", "-unrelated", "other.jsonl"],
+    JSON.stringify({ sessionId: "other", agentName: "nope" }),
+  );
+
+  const sessions = await readNativeSessions(root);
+  assert.equal(sessions.length, 2);
+  const parent = sessions.find((session) => session.kind === "parent");
+  const child = sessions.find((session) => session.kind === "subagent");
+  assert.deepEqual(parent && { id: parent.id, agentId: parent.agentId, taskId: parent.taskId, state: parent.state },
+    { id: "parent-1", agentId: "mike", taskId: "tsk-7", state: "settled" });
+  assert.deepEqual(child && { id: child.id, parentSessionId: child.parentSessionId, agentId: child.agentId },
+    { id: "child", parentSessionId: "parent-1", agentId: "child" });
+  recordEvent({
+    id: "relay-parent", projectId: "parent-1", agentId: "mike", kind: "agent.started",
+    status: "active", summary: "started", ts: new Date().toISOString(),
+  });
+  assert.equal((await readNativeSessions(root)).find((session) => session.id === "parent-1")?.state, "active");
 });

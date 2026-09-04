@@ -2693,7 +2693,7 @@ export async function startServer(
  * no longer need the external `bizar` CLI. SSE on `/api/claude/events` is the
  * preferred transport; this bridge exists for clients that prefer WS.
  */
-function attachClaudeWebSocket(
+export function attachClaudeWebSocket(
   server: HttpServer,
   projectRoot: () => string,
 ): { close(): void } {
@@ -2705,8 +2705,7 @@ function attachClaudeWebSocket(
 
   async function snapshot(socket: WebSocket): Promise<void> {
     try {
-      const root = homedirFromProjectRoot(projectRoot());
-      const data = await claudeState.readSnapshot(root);
+      const data = await claudeState.readSnapshot(projectRoot());
       send(socket, { type: "snapshot", data });
     } catch (error) {
       send(socket, { type: "error", error: (error as Error)?.message || String(error) });
@@ -2767,14 +2766,6 @@ function attachClaudeWebSocket(
 function isLoopback(req: IncomingMessage): boolean {
   const address = req.socket.remoteAddress || "";
   return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
-}
-
-function homedirFromProjectRoot(_projectRoot: string): string {
-  // The Claude-state readers look under <homedir>/.claude/...
-  // Today the project root IS the user's home for single-tenant installs;
-  // when multi-user support lands the project will own an explicit
-  // `claudeHome` setting that this helper resolves instead.
-  return process.env.HOME || process.env.USERPROFILE || "/";
 }
 
 async function handleRequest(req: Request): Promise<Response> {

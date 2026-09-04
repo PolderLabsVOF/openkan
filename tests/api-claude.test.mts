@@ -14,6 +14,8 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { createServer } from "node:http";
+import { WebSocket } from "ws";
 
 import {
   handleClaudeRequest,
@@ -21,12 +23,16 @@ import {
   resetActivityRing,
   resetActivityTail,
 } from "../kanban/claude-state.ts";
+import { attachClaudeWebSocket } from "../kanban/server.ts";
 
 let tempRoot: string | null = null;
+let priorClaudeConfig: string | undefined;
 
 function makeRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "openkan-api-claude-"));
   tempRoot = root;
+  priorClaudeConfig = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = join(root, ".claude");
   return root;
 }
 
@@ -51,6 +57,9 @@ afterEach(() => {
     rmSync(tempRoot, { recursive: true, force: true });
     tempRoot = null;
   }
+  if (priorClaudeConfig === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+  else process.env.CLAUDE_CONFIG_DIR = priorClaudeConfig;
+  priorClaudeConfig = undefined;
 });
 
 test("GET /api/claude/snapshot returns the full reader composition", async () => {
@@ -108,10 +117,57 @@ description: Bizar controls.
   assert.equal(Array.isArray(body.hooks), true);
   assert.equal(Array.isArray(body.teams), true);
   assert.equal(Array.isArray(body.workflows), true);
+  assert.equal(Array.isArray(body.sessions), true);
   assert.ok(body.modelRouter && typeof body.modelRouter === "object");
   assert.ok(body.serverTs);
   const agents = body.agents as Array<{ id: string; model: string | null }>;
   assert.equal(agents[0].id, "mike");
+});
+
+test("GET /api/claude/snapshot includes active-project native session relationships", async () => {
+  const root = makeRoot();
+  const projectId = root.replace(/[\\/]+/g, "-");
+  writeFixture([".claude", "projects", projectId, "parent.jsonl"],
+    JSON.stringify({ sessionId: "parent", agentName: "mike", taskId: "tsk-1", timestamp: "2026-09-04T10:00:00.000Z" }),
+  );
+  writeFixture([".claude", "projects", projectId, "parent", "subagents", "agent-child.jsonl"],
+    JSON.stringify({ agentId: "child", timestamp: "2026-09-04T10:01:00.000Z" }),
+  );
+  writeFixture([".claude", "projects", "-other-project", "other.jsonl"],
+    JSON.stringify({ sessionId: "other" }),
+  );
+
+  const res = await handleClaudeRequest(root, new Request("http://localhost/api/claude/snapshot"), "/api/claude/snapshot");
+  const body = await res.json() as { sessions: Array<{ id: string; parentSessionId: string | null; taskId: string | null; state: string }> };
+  assert.deepEqual(body.sessions.map(({ id, parentSessionId, taskId, state }) => ({ id, parentSessionId, taskId, state })), [
+    { id: "child", parentSessionId: "parent", taskId: null, state: "settled" },
+    { id: "parent", parentSessionId: null, taskId: "tsk-1", state: "settled" },
+  ]);
+});
+
+test("Claude WebSocket snapshot uses the active project root", async () => {
+  const root = makeRoot();
+  const projectId = root.replace(/[\\/]+/g, "-");
+  writeFixture([".claude", "projects", projectId, "ws-parent.jsonl"],
+    JSON.stringify({ sessionId: "ws-parent", timestamp: "2026-09-04T10:00:00.000Z" }),
+  );
+  const server = createServer((_req, res) => res.end());
+  const bridge = attachClaudeWebSocket(server, () => root);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  try {
+    const message = await new Promise<{ type: string; data: { sessions: Array<{ id: string }> } }>((resolve, reject) => {
+      const socket = new WebSocket(`ws://127.0.0.1:${address.port}/api/claude/ws`);
+      socket.once("message", (data) => { resolve(JSON.parse(data.toString())); socket.close(); });
+      socket.once("error", reject);
+    });
+    assert.equal(message.type, "snapshot");
+    assert.ok(message.data.sessions.some((session) => session.id === "ws-parent"));
+  } finally {
+    bridge.close();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
 });
 
 test("GET /api/claude/agents returns just the agents array", async () => {
@@ -205,7 +261,7 @@ test("POST /api/claude/events rejects invalid JSON", async () => {
 test("GET /api/claude/activity tails sinceMs and skips already-seen rows", async () => {
   const root = makeRoot();
   const session = "ses-tail";
-  const dir = join(root, ".claude", "projects", session, "subagents");
+  const dir = join(root, ".claude", "projects", root.replace(/[\\/]+/g, "-"), session, "subagents");
   mkdirSync(dir, { recursive: true });
   writeFileSync(
     join(dir, "agent-a.jsonl"),

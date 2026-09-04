@@ -16,21 +16,28 @@ import { tmpdir } from "node:os";
 import { readActivityTail, resetActivityTail } from "../kanban/claude-state.ts";
 
 let tempRoot: string | null = null;
+let priorClaudeConfig: string | undefined;
+
+function projectDir(): string {
+  return tempRoot!.replace(/[\\/]+/g, "-");
+}
 
 function makeRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "openkan-claude-tail-"));
   tempRoot = root;
+  priorClaudeConfig = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = join(root, ".claude");
   return root;
 }
 
 function writeRow(sessionDir: string, fileName: string, row: object): void {
-  const dir = join(tempRoot!, ".claude", "projects", sessionDir, "subagents");
+  const dir = join(tempRoot!, ".claude", "projects", projectDir(), sessionDir, "subagents");
   mkdirSync(dir, { recursive: true });
   appendFileSync(join(dir, fileName), JSON.stringify(row) + "\n");
 }
 
 function resetFile(sessionDir: string, fileName: string, rows: object[]): string {
-  const dir = join(tempRoot!, ".claude", "projects", sessionDir, "subagents");
+  const dir = join(tempRoot!, ".claude", "projects", projectDir(), sessionDir, "subagents");
   mkdirSync(dir, { recursive: true });
   const filePath = join(dir, fileName);
   writeFileSync(filePath, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
@@ -43,6 +50,9 @@ afterEach(() => {
     rmSync(tempRoot, { recursive: true, force: true });
     tempRoot = null;
   }
+  if (priorClaudeConfig === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+  else process.env.CLAUDE_CONFIG_DIR = priorClaudeConfig;
+  priorClaudeConfig = undefined;
 });
 
 test("readActivityTail returns new rows on the second call only", async () => {
@@ -63,7 +73,7 @@ test("readActivityTail returns new rows on the second call only", async () => {
 
   // Append two more rows.
   appendFileSync(
-    join(root, ".claude", "projects", session, "subagents", fileName),
+    join(root, ".claude", "projects", projectDir(), session, "subagents", fileName),
     JSON.stringify({ type: "chat.turn-ended", timestamp: "2026-09-04T10:00:02.000Z", agent: "todd" }) + "\n" +
       JSON.stringify({ type: "agent.ended", timestamp: "2026-09-04T10:00:03.000Z", agent: "todd" }) + "\n",
   );

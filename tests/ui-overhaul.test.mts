@@ -314,3 +314,63 @@ test("uses text-led priority and source metadata on task cards", () => {
   assert.match(workspace, /\.card-header/);
   assert.match(workspace, /\.card-priority\.priority-urgent/);
 });
+
+test("renders the Agents pane as a live, accessible relationship graph", () => {
+  const pane = read("web/claude-pane.js");
+  const css = read("web/style.css");
+  assert.match(pane, /async function fetchBoard\(\)/);
+  assert.match(pane, /"GET", "\/api\/board"/);
+  assert.match(pane, /state\.sessions = Array\.isArray\(snap\?\.sessions\) \? snap\.sessions : \[\]/);
+  assert.match(pane, /function scheduleGraphReconcile\(\)/);
+  assert.match(pane, /function graphModel\(\)/);
+  assert.match(pane, /const MAX_GRAPH_NODES = 72/);
+  assert.match(pane, /function selectDefaultGraph\(nodes, edges, sessionNodes, catalogAgents\)/);
+  assert.match(pane, /prioritizedSessions/);
+  assert.match(pane, /addRelated\(node, MAX_SESSION_RELATION_NODES\)/);
+  assert.match(pane, /Relationship map/);
+  assert.match(pane, /subagents: state\.sessions\.length/);
+  assert.match(pane, /add\(session\.kind === "subagent" \? "subagent" : "session"/);
+  assert.match(pane, /add\("agent"/);
+  assert.match(pane, /node\.type = "subagent"/);
+  assert.match(pane, /add\("task"/);
+  assert.match(pane, /claude-pane-graph-edge/);
+  assert.match(pane, /claude-pane-graph-fallback/);
+  assert.match(pane, /No agent relationships are available yet/);
+  assert.match(css, /\.claude-pane-graph-svg/);
+  assert.match(css, /\.claude-pane-graph-node:focus rect/);
+});
+
+test("projects graph relationships from actual snapshot and activity fields", () => {
+  const pane = read("web/claude-pane.js");
+  assert.match(pane, /session\.kind === "subagent" \? "subagent" : "session"/);
+  assert.match(pane, /WorkflowDef\.phases is a string\[\]/);
+  assert.doesNotMatch(pane, /phase\.agentId/);
+  assert.match(pane, /event\.agentId/);
+  assert.match(pane, /event\.meta\.sessionId/);
+  assert.match(pane, /if \(!state\.filter\.agentId\) \{/);
+  assert.match(pane, /return selectDefaultGraph\(nodes, edges, sessionNodes, Array\.from\(agentsByKey\.values\(\)\)\)/);
+  assert.match(pane, /const keptIds = new Set\(\[selected\.id\]\)/);
+  assert.match(pane, /edges\.filter\(\(edge\) => visibleIds\.has\(edge\.from\) && visibleIds\.has\(edge\.to\)\)/);
+});
+
+test("prioritizes NativeSession recent state and lastSeenAt", () => {
+  const source = read("web/claude-pane.js").replace(
+    "window.OpenKanClaude = { mount, unmount };",
+    "window.OpenKanClaude = { __test: { statusKind, graphRecency, compareGraphPriority } };",
+  );
+  const windowStub: Record<string, any> = {};
+  new Function("window", source)(windowStub);
+  const graph = windowStub.OpenKanClaude.__test;
+
+  assert.equal(graph.statusKind({ state: "recent", lastSeenAt: "2000-01-01T00:00:00.000Z" }), "recent");
+  assert.equal(graph.statusKind({ lastSeenAt: new Date().toISOString() }), "recent");
+  assert.equal(graph.statusKind({ state: "settled" }), "idle");
+  assert.equal(
+    graph.graphRecency({ raw: { lastSeenAt: "2026-09-04T12:00:00.000Z", updatedAt: "2026-09-04T13:00:00.000Z" } }),
+    Date.parse("2026-09-04T12:00:00.000Z"),
+  );
+  assert.ok(graph.compareGraphPriority(
+    { status: graph.statusKind({ state: "recent" }), raw: { lastSeenAt: "2026-09-04T12:00:00.000Z" } },
+    { status: graph.statusKind({ state: "settled" }), raw: { lastSeenAt: "2026-09-04T13:00:00.000Z" } },
+  ) < 0);
+});

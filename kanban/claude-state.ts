@@ -20,7 +20,8 @@ import {
   readFileSync,
   statSync,
 } from "node:fs";
-import { join, sep } from "node:path";
+import { basename, join, sep } from "node:path";
+import { homedir } from "node:os";
 import matter from "gray-matter";
 
 // ─── Public types ────────────────────────────────────────────────────────────
@@ -141,15 +142,43 @@ export interface SnapshotPayload {
   teams: TeamDef[];
   workflows: WorkflowDef[];
   projects: Array<{ id: string; root: string; sessionCount: number }>;
+  /** Read-only native Claude transcripts for this project only. */
+  sessions: NativeSession[];
   serverTs: string;
+}
+
+export interface NativeSession {
+  /** Claude's session ID (or the documented subagent file identifier). */
+  id: string;
+  kind: "parent" | "subagent";
+  parentSessionId: string | null;
+  agentId: string | null;
+  taskId: string | null;
+  title: string | null;
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
+  /** `active` requires a relay event; transcript timestamps only yield recent/settled. */
+  state: "active" | "recent" | "settled";
+  liveness: "relay" | "transcript";
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const SHARED_DIR = `${sep}_shared${sep}`;
 
-function listMarkdownFiles(rootDir: string, relPath: string): string[] {
-  const dir = join(rootDir, ".claude", relPath);
+/** Global Claude configuration plus project-local additions, with local last. */
+function claudeConfigDirs(projectRoot: string): string[] {
+  const globalDir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
+  const localDir = join(projectRoot, ".claude");
+  return [...new Set([globalDir, localDir])];
+}
+
+function claudeHomeDir(): string {
+  return process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
+}
+
+function listMarkdownFiles(claudeDir: string, relPath: string): string[] {
+  const dir = join(claudeDir, relPath);
   if (!existsSync(dir)) return [];
   const files: string[] = [];
   const walk = (current: string) => {
@@ -206,31 +235,31 @@ function parseFrontmatter(path: string): { frontmatter: Record<string, unknown>;
 
 export async function readAgents(rootDir: string): Promise<AgentDef[]> {
   const router = await readModelRouter(rootDir);
-  const agentsDir = join(rootDir, ".claude", "agents");
-  if (!existsSync(agentsDir)) return [];
-
-  const out: AgentDef[] = [];
-  const stack: string[] = [agentsDir];
-  while (stack.length) {
-    const dir = stack.pop()!;
-    let entries: string[];
-    try { entries = readdirSync(dir); } catch { continue; }
-    for (const name of entries) {
-      const full = join(dir, name);
-      let st;
-      try { st = statSync(full); } catch { continue; }
-      if (st.isDirectory()) { stack.push(full); continue; }
-      if (!st.isFile()) continue;
-      if (!name.endsWith(".md")) continue;
-      if (isSharedPath(full)) continue;
-      const { frontmatter, body } = parseFrontmatter(full);
-      const id = asString(frontmatter.name) || full.replace(agentsDir + sep, "").replace(/\.md$/, "");
-      const tools = asStringArray(frontmatter.tools);
-      const routerModel = router.tierHints[id];
-      const model = asString(frontmatter.model) || (routerModel === "default" ? null : routerModel) || null;
-      out.push({ id, path: full, frontmatter, body, tools, model });
+  const byId = new Map<string, AgentDef>();
+  for (const claudeDir of claudeConfigDirs(rootDir)) {
+    const agentsDir = join(claudeDir, "agents");
+    if (!existsSync(agentsDir)) continue;
+    const stack: string[] = [agentsDir];
+    while (stack.length) {
+      const dir = stack.pop()!;
+      let entries: string[];
+      try { entries = readdirSync(dir); } catch { continue; }
+      for (const name of entries) {
+        const full = join(dir, name);
+        let st;
+        try { st = statSync(full); } catch { continue; }
+        if (st.isDirectory()) { stack.push(full); continue; }
+        if (!st.isFile() || !name.endsWith(".md") || isSharedPath(full)) continue;
+        const { frontmatter, body } = parseFrontmatter(full);
+        const id = asString(frontmatter.name) || full.replace(agentsDir + sep, "").replace(/\.md$/, "");
+        const tools = asStringArray(frontmatter.tools);
+        const routerModel = router.tierHints[id];
+        const model = asString(frontmatter.model) || (routerModel === "default" ? null : routerModel) || null;
+        byId.set(id, { id, path: full, frontmatter, body, tools, model });
+      }
     }
   }
+  const out = [...byId.values()];
   out.sort((a, b) => a.id.localeCompare(b.id));
   return out;
 }
@@ -238,27 +267,21 @@ export async function readAgents(rootDir: string): Promise<AgentDef[]> {
 // ─── Skills ──────────────────────────────────────────────────────────────────
 
 export async function readSkills(rootDir: string): Promise<SkillDef[]> {
-  const skillsRoot = join(rootDir, ".claude", "skills");
-  if (!existsSync(skillsRoot)) return [];
-
-  const out: SkillDef[] = [];
-  let entries: string[];
-  try { entries = readdirSync(skillsRoot); } catch { return []; }
-  for (const entry of entries) {
-    const skillMd = join(skillsRoot, entry, "SKILL.md");
-    if (!existsSync(skillMd)) continue;
-    const { frontmatter, body } = parseFrontmatter(skillMd);
-    const name = asString(frontmatter.name) || entry;
-    const description = asString(frontmatter.description) || extractFirstHeading(body) || "";
-    out.push({
-      id: name,
-      path: skillMd,
-      name,
-      description,
-      frontmatter,
-      kind: frontmatter.kind ? asString(frontmatter.kind) : null,
-    });
+  const byId = new Map<string, SkillDef>();
+  for (const claudeDir of claudeConfigDirs(rootDir)) {
+    const skillsRoot = join(claudeDir, "skills");
+    let entries: string[];
+    try { entries = readdirSync(skillsRoot); } catch { continue; }
+    for (const entry of entries) {
+      const skillMd = join(skillsRoot, entry, "SKILL.md");
+      if (!existsSync(skillMd)) continue;
+      const { frontmatter, body } = parseFrontmatter(skillMd);
+      const name = asString(frontmatter.name) || entry;
+      const description = asString(frontmatter.description) || extractFirstHeading(body) || "";
+      byId.set(name, { id: name, path: skillMd, name, description, frontmatter, kind: frontmatter.kind ? asString(frontmatter.kind) : null });
+    }
   }
+  const out = [...byId.values()];
   out.sort((a, b) => a.name.localeCompare(b.name));
   return out;
 }
@@ -271,15 +294,16 @@ function extractFirstHeading(body: string): string | null {
 // ─── Commands ────────────────────────────────────────────────────────────────
 
 export async function readCommands(rootDir: string): Promise<CommandDef[]> {
-  const files = listMarkdownFiles(rootDir, "commands");
-  const out: CommandDef[] = [];
-  for (const path of files) {
-    const { frontmatter, body } = parseFrontmatter(path);
-    const id = asString(frontmatter.name) || path.replace(/^.*\/commands\//, "").replace(/\.md$/, "");
-    const description = asString(frontmatter.description) || extractFirstHeading(body) || "";
-    const workflow = frontmatter.workflow === true;
-    out.push({ id, path, description, frontmatter, workflow });
+  const byId = new Map<string, CommandDef>();
+  for (const claudeDir of claudeConfigDirs(rootDir)) {
+    for (const path of listMarkdownFiles(claudeDir, "commands")) {
+      const { frontmatter, body } = parseFrontmatter(path);
+      const id = asString(frontmatter.name) || path.replace(/^.*\/commands\//, "").replace(/\.md$/, "");
+      const description = asString(frontmatter.description) || extractFirstHeading(body) || "";
+      byId.set(id, { id, path, description, frontmatter, workflow: frontmatter.workflow === true });
+    }
   }
+  const out = [...byId.values()];
   out.sort((a, b) => a.id.localeCompare(b.id));
   return out;
 }
@@ -312,31 +336,36 @@ function parseHooksObject(hooks: unknown, source: string, out: HookDef[]): void 
 
 export async function readHooks(rootDir: string): Promise<HookDef[]> {
   const out: HookDef[] = [];
-
-  const userSettings = join(rootDir, ".claude", "settings.json");
-  if (existsSync(userSettings)) {
-    const raw = safeReadFile(userSettings);
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw) as { hooks?: unknown };
-        parseHooksObject(parsed.hooks, userSettings, out);
-      } catch { /* swallow malformed settings.json */ }
-    }
+  const globalDir = claudeHomeDir();
+  const projectDir = join(rootDir, ".claude");
+  // Claude settings precedence is user < project < project-local. Merge only
+  // the hook event map into a fresh object so source JSON is never mutated.
+  const hookSources = [
+    join(globalDir, "settings.json"),
+    join(projectDir, "settings.json"),
+    join(projectDir, "settings.local.json"),
+  ];
+  const mergedHooks: Record<string, unknown> = {};
+  const hookSourceByEvent = new Map<string, string>();
+  for (const settings of [...new Set(hookSources)]) {
+    const raw = safeReadFile(settings);
+    if (!raw) continue;
+    try {
+      const parsed = JSON.parse(raw) as { hooks?: unknown };
+      if (!parsed.hooks || typeof parsed.hooks !== "object" || Array.isArray(parsed.hooks)) continue;
+      for (const [event, entries] of Object.entries(parsed.hooks as Record<string, unknown>)) {
+        mergedHooks[event] = entries;
+        hookSourceByEvent.set(event, settings);
+      }
+    } catch { /* malformed settings are ignored */ }
+  }
+  for (const [event, entries] of Object.entries(mergedHooks)) {
+    parseHooksObject({ [event]: entries }, hookSourceByEvent.get(event) ?? "settings", out);
   }
 
-  const projectSettings = join(rootDir, ".claude", "settings.json");
-  if (projectSettings !== userSettings && existsSync(projectSettings)) {
-    const raw = safeReadFile(projectSettings);
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw) as { hooks?: unknown };
-        parseHooksObject(parsed.hooks, projectSettings, out);
-      } catch { /* swallow */ }
-    }
-  }
-
-  const hooksDir = join(rootDir, ".claude", "hooks");
-  if (existsSync(hooksDir)) {
+  for (const claudeDir of claudeConfigDirs(rootDir)) {
+    const hooksDir = join(claudeDir, "hooks");
+    if (!existsSync(hooksDir)) continue;
     let entries: string[];
     try { entries = readdirSync(hooksDir); } catch { entries = []; }
     for (const entry of entries) {
@@ -361,13 +390,14 @@ const DEFAULT_ROUTER: ModelRouterDef = {
 };
 
 export async function readModelRouter(rootDir: string): Promise<ModelRouterDef> {
-  const path = join(rootDir, ".claude", "model-router.json");
-  if (!existsSync(path)) return DEFAULT_ROUTER;
-  const raw = safeReadFile(path);
-  if (!raw) return DEFAULT_ROUTER;
-  let parsed: Record<string, unknown>;
-  try { parsed = JSON.parse(raw) as Record<string, unknown>; }
-  catch { return DEFAULT_ROUTER; }
+  let parsed: Record<string, unknown> | null = null;
+  for (const claudeDir of claudeConfigDirs(rootDir)) {
+    const raw = safeReadFile(join(claudeDir, "model-router.json"));
+    if (!raw) continue;
+    try { parsed = JSON.parse(raw) as Record<string, unknown>; }
+    catch { /* retain the last valid configuration */ }
+  }
+  if (!parsed) return DEFAULT_ROUTER;
 
   const userSelected = (parsed.userSelected && typeof parsed.userSelected === "object"
     ? parsed.userSelected as Record<string, unknown>
@@ -578,8 +608,7 @@ function mapRowToActivity(row: JsonlRow, fallbackAgent: string, sessionId: strin
 }
 
 function listSessionFiles(rootDir: string): { path: string; sessionId: string }[] {
-  const projectsDir = join(rootDir, ".claude", "projects");
-  if (!existsSync(projectsDir)) return [];
+  const projectsDir = projectTranscriptDir(rootDir);
   let dirs: string[];
   try { dirs = readdirSync(projectsDir); } catch { return []; }
   const out: { path: string; sessionId: string }[] = [];
@@ -701,6 +730,102 @@ export function resetActivityRing(): void {
 
 // ─── Snapshot ────────────────────────────────────────────────────────────────
 
+const TRANSCRIPT_RECENT_MS = 15 * 60_000;
+const MAX_TRANSCRIPT_BYTES = 8 * 1024 * 1024;
+
+function projectTranscriptDir(projectRoot: string): string {
+  // Claude Code's documented project transcript directory encodes an absolute
+  // cwd by replacing path separators with dashes.
+  const id = projectRoot.replace(/[\\/]+/g, "-");
+  return join(claudeHomeDir(), "projects", id);
+}
+
+function readTranscriptRows(path: string): Array<Record<string, unknown>> {
+  let st;
+  try { st = statSync(path); } catch { return []; }
+  if (!st.isFile() || st.size > MAX_TRANSCRIPT_BYTES) return [];
+  const raw = safeReadFile(path);
+  if (raw === null) return [];
+  const rows: Array<Record<string, unknown>> = [];
+  for (const line of raw.split("\n")) {
+    if (line.length > 128 * 1024) continue;
+    try {
+      const row = JSON.parse(line) as unknown;
+      if (row && typeof row === "object" && !Array.isArray(row)) rows.push(row as Record<string, unknown>);
+    } catch { /* partial/malformed JSONL rows are not useful for a snapshot */ }
+  }
+  return rows;
+}
+
+function rowString(row: Record<string, unknown>, ...keys: string[]): string | null {
+  for (const key of keys) if (typeof row[key] === "string" && row[key]) return row[key] as string;
+  return null;
+}
+
+function sessionState(id: string, agentId: string | null, lastSeenAt: string | null, mtimeMs: number): Pick<NativeSession, "state" | "liveness"> {
+  const events = readEvents().filter((event) =>
+    event.projectId === id || event.meta?.relaySessionId === id || (agentId !== null && event.agentId === agentId),
+  );
+  const newest = events[0]; // readEvents is newest first.
+  if (newest && (newest.kind === "agent.started" || newest.kind === "chat.turn-started")) {
+    return { state: "active", liveness: "relay" };
+  }
+  const seenMs = lastSeenAt ? Date.parse(lastSeenAt) : mtimeMs;
+  return { state: Number.isFinite(seenMs) && Date.now() - seenMs <= TRANSCRIPT_RECENT_MS ? "recent" : "settled", liveness: "transcript" };
+}
+
+/**
+ * Read parent transcripts and nested subagent transcripts for the active
+ * project. This is intentionally observational: JSONL presence/timestamps do
+ * not imply a running Claude process; only relay events can mark a session
+ * active.
+ */
+export async function readNativeSessions(projectRoot: string): Promise<NativeSession[]> {
+  const dir = projectTranscriptDir(projectRoot);
+  let entries: string[];
+  try { entries = readdirSync(dir); } catch { return []; }
+  const sessions: NativeSession[] = [];
+  const add = (path: string, kind: NativeSession["kind"], parentSessionId: string | null) => {
+    let st;
+    try { st = statSync(path); } catch { return; }
+    if (!st.isFile() || !path.endsWith(".jsonl") || st.size > MAX_TRANSCRIPT_BYTES) return;
+    const rows = readTranscriptRows(path);
+    const fallbackId = basename(path, ".jsonl").replace(/^agent-/, "");
+    const id = kind === "subagent"
+      ? fallbackId
+      : rows.map((row) => rowString(row, "sessionId")).find(Boolean) || fallbackId;
+    let agentId: string | null = null;
+    let taskId: string | null = null;
+    let title: string | null = null;
+    let firstSeenAt: string | null = null;
+    let lastSeenAt: string | null = null;
+    for (const row of rows) {
+      agentId ||= rowString(row, "agentName", "agent", "agentId", "agentSetting");
+      taskId ||= rowString(row, "taskId", "task_id");
+      title ||= rowString(row, "customTitle", "title");
+      const timestamp = rowString(row, "timestamp");
+      if (timestamp && Number.isFinite(Date.parse(timestamp))) {
+        firstSeenAt ||= timestamp;
+        lastSeenAt = timestamp;
+      }
+    }
+    const state = sessionState(id, agentId, lastSeenAt, st.mtimeMs);
+    sessions.push({ id, kind, parentSessionId, agentId, taskId, title, firstSeenAt, lastSeenAt, ...state });
+  };
+  for (const entry of entries) {
+    const path = join(dir, entry);
+    let st;
+    try { st = statSync(path); } catch { continue; }
+    if (st.isFile() && entry.endsWith(".jsonl")) add(path, "parent", null);
+    if (!st.isDirectory()) continue;
+    const subagents = join(path, "subagents");
+    let files: string[];
+    try { files = readdirSync(subagents); } catch { continue; }
+    for (const file of files) if (file.endsWith(".jsonl")) add(join(subagents, file), "subagent", entry);
+  }
+  return sessions.sort((a, b) => (b.lastSeenAt ?? "").localeCompare(a.lastSeenAt ?? "") || a.id.localeCompare(b.id));
+}
+
 function listProjectSessions(rootDir: string): Array<{ id: string; root: string; sessionCount: number }> {
   const projectsDir = join(rootDir, ".claude", "projects");
   if (!existsSync(projectsDir)) return [];
@@ -716,7 +841,7 @@ function listProjectSessions(rootDir: string): Array<{ id: string; root: string;
 }
 
 export async function readSnapshot(rootDir: string): Promise<SnapshotPayload> {
-  const [agents, skills, commands, hooks, modelRouter, teams, workflows] = await Promise.all([
+  const [agents, skills, commands, hooks, modelRouter, teams, workflows, sessions] = await Promise.all([
     readAgents(rootDir),
     readSkills(rootDir),
     readCommands(rootDir),
@@ -724,6 +849,7 @@ export async function readSnapshot(rootDir: string): Promise<SnapshotPayload> {
     readModelRouter(rootDir),
     readTeams(rootDir),
     readWorkflows(rootDir),
+    readNativeSessions(rootDir),
   ]);
   return {
     agents,
@@ -734,6 +860,7 @@ export async function readSnapshot(rootDir: string): Promise<SnapshotPayload> {
     teams,
     workflows,
     projects: listProjectSessions(rootDir),
+    sessions,
     serverTs: new Date().toISOString(),
   };
 }

@@ -12,6 +12,9 @@
    * Constants
    * -------------------------------------------------------------------- */
   const MAX_ACTIVITY = 200;       // virtual-list cap for activity footer
+  const MAX_GRAPH_NODES = 72;
+  const MAX_DEFAULT_SESSION_ROOTS = 18;
+  const MAX_SESSION_RELATION_NODES = 36;
   const POLL_INTERVAL_MS = 5000;  // polling cadence on SSE failure
   const RECONNECT_STEPS_MS = [1000, 2000, 5000];
   const TSK_REGEX = /tsk-[A-Za-z0-9_-]+/g;
@@ -57,7 +60,8 @@
     if (!record) return "idle";
     if (record.errored || record.state === "errored" || record.state === "failed") return "errored";
     if (record.active || record.state === "active" || record.state === "running") return "active";
-    const lastSeen = record.lastSeen || record.ts || record.updatedAt;
+    if (record.state === "recent") return "recent";
+    const lastSeen = record.lastSeenAt || record.lastSeen || record.ts || record.updatedAt;
     if (lastSeen) {
       const since = Date.now() - new Date(lastSeen).getTime();
       if (!Number.isNaN(since) && since >= 0 && since < 60_000) return "recent";
@@ -92,6 +96,8 @@
     snapshot: null,
     view: "subagents",
     agents: [],
+    sessions: [],
+    boardTasks: [],
     teams: [],
     workflows: [],
     skills: [],
@@ -106,6 +112,7 @@
     live: { source: "offline", reconnectAttempt: 0 },
     poll: { timer: null, inFlight: false },
     evt: null,
+    reconcileTimer: null,
   };
 
   /* ----------------------------------------------------------------------
@@ -120,6 +127,13 @@
     if (!a) return null;
     const data = await a("GET", "/api/claude/snapshot");
     return data && typeof data === "object" ? data : null;
+  }
+
+  async function fetchBoard() {
+    const a = api();
+    if (!a) return [];
+    const data = await a("GET", "/api/board");
+    return Array.isArray(data?.tasks) ? data.tasks : [];
   }
 
   async function fetchActivity(since) {
@@ -171,6 +185,7 @@
     state.activity.push(event);
     state.activity = clampActivity(state.activity);
     renderActivity({ fresh: true });
+    scheduleGraphReconcile();
   }
 
   function handleSsePayload(payload) {
@@ -279,6 +294,8 @@
   function ingestSnapshot(snap) {
     state.snapshot = snap || {};
     state.agents = Array.isArray(snap?.agents) ? snap.agents : [];
+    // sessions is newly normalized by the backend; old snapshots simply omit it.
+    state.sessions = Array.isArray(snap?.sessions) ? snap.sessions : [];
     state.teams = Array.isArray(snap?.teams) ? snap.teams : [];
     state.workflows = Array.isArray(snap?.workflows) ? snap.workflows : [];
     state.skills = Array.isArray(snap?.skills) ? snap.skills : [];
@@ -287,6 +304,19 @@
     state.modelRouter = snap?.modelRouter || null;
     state.projects = Array.isArray(snap?.projects) ? snap.projects : [];
     state.serverTs = snap?.serverTs || null;
+  }
+
+  function scheduleGraphReconcile() {
+    if (state.reconcileTimer || !state.mounted) return;
+    state.reconcileTimer = setTimeout(async () => {
+      state.reconcileTimer = null;
+      try {
+        const [snap, tasks] = await Promise.all([fetchSnapshot(), fetchBoard()]);
+        if (snap) ingestSnapshot(snap);
+        state.boardTasks = tasks;
+        if (state.view === "subagents") render();
+      } catch (_err) { /* activity remains useful when a refresh is unavailable */ }
+    }, 250);
   }
 
   /* ----------------------------------------------------------------------
@@ -318,7 +348,7 @@
 
   function renderSubnav() {
     const counts = {
-      subagents: state.agents.length,
+      subagents: state.sessions.length,
       teams: state.teams.length,
       workflows: state.workflows.length,
     };
@@ -334,7 +364,7 @@
     `;
     return `
       <nav class="claude-pane-subnav" role="tablist" aria-label="Agent sub-views">
-        ${tab("subagents", "Subagents")}
+        ${tab("subagents", "Relationship map")}
         ${tab("teams", "Teams")}
         ${tab("workflows", "Workflows")}
       </nav>
@@ -386,58 +416,190 @@
     return `<div class="claude-pane-empty"><p>${esc(message)}</p></div>`;
   }
 
-  function renderSubagents() {
-    if (!state.agents.length) return renderEmpty("No agents registered yet.");
-    const rows = state.agents.filter((a) => {
-      const id = a.id || a.name || "";
-      if (state.filter.agentId && id !== state.filter.agentId) return false;
-      if (state.filter.kind && a.kind !== state.filter.kind) return false;
+  function graphId(prefix, value) {
+    return `${prefix}:${String(value || prefix).replace(/[^A-Za-z0-9_.-]/g, "_")}`;
+  }
+
+  function graphTaskId(record) {
+    return record?.id || record?.taskId || record?.key || null;
+  }
+
+  function graphRecency(node) {
+    const value = node.raw?.lastSeenAt || node.raw?.lastSeen || node.raw?.updatedAt || node.raw?.ts || node.raw?.startedAt;
+    const time = new Date(value || 0).getTime();
+    return Number.isNaN(time) ? 0 : time;
+  }
+
+  function compareGraphPriority(a, b) {
+    const rank = { active: 0, recent: 1, idle: 2, errored: 3 };
+    return (rank[a.status] ?? 4) - (rank[b.status] ?? 4) || graphRecency(b) - graphRecency(a);
+  }
+
+  function selectDefaultGraph(nodes, edges, sessionNodes, catalogAgents) {
+    const visibleIds = new Set();
+    const related = new Map();
+    for (const edge of edges) {
+      if (!related.has(edge.from)) related.set(edge.from, []);
+      if (!related.has(edge.to)) related.set(edge.to, []);
+      related.get(edge.from).push(edge.to);
+      related.get(edge.to).push(edge.from);
+    }
+    const add = (node, limit = MAX_GRAPH_NODES) => {
+      if (!node || visibleIds.has(node.id) || visibleIds.size >= limit) return false;
+      visibleIds.add(node.id);
       return true;
-    });
-    if (!rows.length) return renderEmpty("No agents match the current filter.");
+    };
+    const addRelated = (node, limit) => {
+      for (const id of related.get(node.id) || []) {
+        add(nodesById.get(id), limit);
+      }
+    };
+    const nodesById = new Map(nodes.map((node) => [node.id, node]));
+    const prioritizedSessions = [...sessionNodes].sort(compareGraphPriority).slice(0, MAX_DEFAULT_SESSION_ROOTS);
 
-    const html = rows.map((agent) => {
-      const id = agent.id || agent.name || "agent";
-      const desc = String(agent.description || "");
-      const subTasks = desc.match(TSK_REGEX) || [];
-      const status = statusKind(agent);
-      const lastSeen = relativeTime(agent.lastSeen || agent.ts || agent.updatedAt);
-      const kind = agent.kind || "agent";
-      return `
-        <div class="claude-pane-agent-row" data-agent-id="${escAttr(id)}" role="row">
-          <div class="claude-pane-agent-name" role="cell">
-            <span class="claude-pane-status-dot claude-pane-status-${escAttr(status)}" aria-hidden="true"></span>
-            <span class="claude-pane-agent-title">${esc(agent.name || id)}</span>
-            <span class="claude-pane-agent-kind">${esc(kind)}</span>
-          </div>
-          <div class="claude-pane-agent-desc" role="cell">${esc(desc)}</div>
-          <div class="claude-pane-agent-tasks" role="cell">
-            ${subTasks.length
-              ? subTasks.map((t) => `<span class="claude-pane-task-chip">${esc(t)}</span>`).join("")
-              : '<span class="claude-pane-task-chip claude-pane-task-chip-empty">none</span>'}
-          </div>
-          <div class="claude-pane-agent-status" role="cell">
-            <span class="claude-pane-pill claude-pane-pill-${escAttr(status)}">
-              <span class="claude-pane-status-dot claude-pane-status-${escAttr(status)}" aria-hidden="true"></span>
-              <span class="claude-pane-pill-label">${esc(status)}</span>
-            </span>
-            <span class="claude-pane-agent-lastseen">${esc(lastSeen)}</span>
-          </div>
-        </div>
-      `;
+    // Show current work first, then its immediate agent, task, and parent links.
+    for (const node of prioritizedSessions) add(node, MAX_SESSION_RELATION_NODES);
+    for (const node of prioritizedSessions) addRelated(node, MAX_SESSION_RELATION_NODES);
+
+    // Reserve the remaining space for the catalog, expanding each selected
+    // agent once so its task/session relationships remain visible.
+    for (const node of [...catalogAgents].sort(compareGraphPriority)) {
+      if (visibleIds.size >= MAX_GRAPH_NODES) break;
+      if (add(node)) addRelated(node, MAX_GRAPH_NODES);
+    }
+
+    const visibleNodes = nodes.filter((node) => visibleIds.has(node.id));
+    return {
+      nodes: visibleNodes,
+      edges: edges.filter((edge) => visibleIds.has(edge.from) && visibleIds.has(edge.to)),
+    };
+  }
+
+  function graphModel() {
+    const nodes = [];
+    const edges = [];
+    const known = new Map();
+    const add = (type, raw, label, detail) => {
+      const id = graphId(type, raw?.id || raw?.sessionId || raw?.name || label);
+      if (!known.has(id)) {
+        const node = { id, type, raw, label: String(label || type), detail: String(detail || ""), status: statusKind(raw) };
+        known.set(id, node); nodes.push(node);
+      }
+      return known.get(id);
+    };
+    const link = (from, to, kind) => {
+      if (from && to && from.id !== to.id && !edges.some((edge) => edge.from === from.id && edge.to === to.id && edge.kind === kind)) {
+        edges.push({ from: from.id, to: to.id, kind });
+      }
+    };
+    const agents = state.agents.filter((agent) => !state.filter.kind || agent.kind === state.filter.kind);
+    const agentsByKey = new Map();
+    for (const agent of agents) {
+      const node = add("agent", agent, agent.name || agent.id, agent.kind || "agent");
+      agentsByKey.set(String(agent.id || agent.name), node);
+    }
+    const sessionsByKey = new Map();
+    const sessionNodes = [];
+    for (const session of state.sessions) {
+      const node = add(session.kind === "subagent" ? "subagent" : "session", session, session.title || session.name || session.id, session.state || session.kind || "session");
+      sessionsByKey.set(String(session.id || session.sessionId), node);
+      sessionNodes.push(node);
+    }
+    for (const session of state.sessions) {
+      const node = sessionsByKey.get(String(session.id || session.sessionId));
+      const parent = sessionsByKey.get(String(session.parentSessionId || session.parentId || ""));
+      if (parent) link(parent, node, "delegates");
+      const agent = agentsByKey.get(String(session.agentId || session.agent || session.owner || ""));
+      if (agent) link(agent, node, "runs");
+    }
+    for (const team of state.teams) {
+      const node = add("team", team, team.name || team.id, "team");
+      for (const member of (Array.isArray(team.members) ? team.members : [])) {
+        link(node, agentsByKey.get(String(member?.id || member?.agentId || member)), "contains");
+      }
+    }
+    for (const workflow of state.workflows) {
+      // WorkflowDef.phases is a string[] (headings), not assignment metadata.
+      // Keep the definition visible without inventing workflow-to-agent links.
+      add("workflow", workflow, workflow.name || workflow.id, workflow.source || "workflow");
+    }
+    for (const agent of agents) {
+      const node = agentsByKey.get(String(agent.id || agent.name));
+      const parent = agentsByKey.get(String(agent.parentAgentId || agent.parentId || agent.parent || ""));
+      if (parent) { node.type = "subagent"; link(parent, node, "delegates"); }
+      const session = sessionsByKey.get(String(agent.sessionId || ""));
+      if (session) link(session, node, "uses");
+    }
+    const tasksByKey = new Map();
+    for (const task of state.boardTasks) {
+      const taskId = graphTaskId(task);
+      if (!taskId) continue;
+      const node = add("task", task, task.title || task.name || taskId, task.column || task.status || "task");
+      tasksByKey.set(String(taskId), node);
+    }
+    const linkTask = (raw, node) => {
+      const ids = [raw?.taskId, raw?.task?.id, ...(String(raw?.description || raw?.message || raw?.summary || "").match(TSK_REGEX) || [])];
+      for (const taskId of ids) link(node, tasksByKey.get(String(taskId)), "works-on");
+    };
+    for (const agent of agents) linkTask(agent, agentsByKey.get(String(agent.id || agent.name)));
+    for (const session of state.sessions) linkTask(session, sessionsByKey.get(String(session.id || session.sessionId)));
+    for (const event of state.activity) {
+      const actor = agentsByKey.get(String(event.agentId || ""));
+      const sessionId = event.meta && typeof event.meta === "object" ? event.meta.sessionId : null;
+      const session = sessionsByKey.get(String(sessionId || ""));
+      linkTask(event, actor || session);
+      if (actor && session) link(session, actor, "uses");
+    }
+    if (!state.filter.agentId) {
+      return selectDefaultGraph(nodes, edges, sessionNodes, Array.from(agentsByKey.values()));
+    }
+
+    // Project the graph from the selected agent: only it, directly related
+    // sessions/subagents/tasks/teams, and edges whose endpoints survive.
+    const selected = agentsByKey.get(String(state.filter.agentId));
+    if (!selected) return { nodes: [], edges: [] };
+    const keptIds = new Set([selected.id]);
+    for (const edge of edges) {
+      if (edge.from === selected.id) keptIds.add(edge.to);
+      if (edge.to === selected.id) keptIds.add(edge.from);
+    }
+    const visibleNodes = nodes.filter((node) => keptIds.has(node.id)).slice(0, MAX_GRAPH_NODES);
+    const visibleIds = new Set(visibleNodes.map((node) => node.id));
+    return {
+      nodes: visibleNodes,
+      edges: edges.filter((edge) => visibleIds.has(edge.from) && visibleIds.has(edge.to)),
+    };
+  }
+
+  function renderGraph() {
+    const graph = graphModel();
+    if (!graph.nodes.length) return `<section class="claude-pane-empty claude-pane-graph-empty"><strong>No agent relationships are available yet.</strong><p>Start an agent session or assign a board task; live activity will appear here as sessions, agents, and task links arrive.</p></section>`;
+    const lanes = { session: 0, team: 0, workflow: 0, agent: 1, subagent: 1, task: 2 };
+    const groups = [[], [], []];
+    graph.nodes.forEach((node) => groups[lanes[node.type] ?? 1].push(node));
+    const height = Math.max(330, ...groups.map((group) => group.length * 74 + 42));
+    const width = 900;
+    const positions = new Map();
+    groups.forEach((group, lane) => group.forEach((node, index) => positions.set(node.id, { x: 50 + lane * 300, y: 34 + index * 74 })));
+    const edgeHtml = graph.edges.filter((edge) => positions.has(edge.from) && positions.has(edge.to)).map((edge) => {
+      const a = positions.get(edge.from), b = positions.get(edge.to);
+      return `<path class="claude-pane-graph-edge claude-pane-graph-edge--${escAttr(edge.kind)}" data-graph-edge="${escAttr(edge.kind)}" d="M ${a.x + 196} ${a.y + 25} C ${a.x + 245} ${a.y + 25}, ${b.x - 45} ${b.y + 25}, ${b.x} ${b.y + 25}" />`;
     }).join("");
+    const nodeHtml = graph.nodes.map((node) => {
+      const pos = positions.get(node.id);
+      return `<g class="claude-pane-graph-node claude-pane-graph-node--${escAttr(node.type)} claude-pane-graph-node--${escAttr(node.status)}" data-graph-node="${escAttr(node.id)}" tabindex="0" role="listitem" aria-label="${escAttr(`${node.type}: ${node.label}. ${node.detail}. ${node.status}`)}" transform="translate(${pos.x} ${pos.y})"><rect width="196" height="50" rx="8"/><circle cx="15" cy="16" r="4"/><text x="27" y="20">${esc(node.label).slice(0, 26)}</text><text class="claude-pane-graph-node-detail" x="12" y="39">${esc(node.detail).slice(0, 31)}</text></g>`;
+    }).join("");
+    const list = graph.nodes.map((node) => `<li><strong>${esc(node.label)}</strong><span>${esc(node.type)} · ${esc(node.detail || node.status)}</span></li>`).join("");
+    const relationships = graph.edges.map((edge) => {
+      const from = graph.nodes.find((node) => node.id === edge.from);
+      const to = graph.nodes.find((node) => node.id === edge.to);
+      return from && to ? `<li>${esc(from.label)} <span>${esc(edge.kind)}</span> ${esc(to.label)}</li>` : "";
+    }).join("") || "<li>No inferred connections yet.</li>";
+    return `<section class="claude-pane-graph" aria-labelledby="claude-pane-graph-title"><header class="claude-pane-graph-header"><div><h3 id="claude-pane-graph-title">Agent relationship map</h3><p>Sessions delegate to agents and subagents; links to current board work are inferred from task IDs and live activity.</p></div><span>${graph.nodes.length} nodes · ${graph.edges.length} links</span></header><div class="claude-pane-graph-viewport"><svg class="claude-pane-graph-svg" viewBox="0 0 ${width} ${height}" role="list" aria-label="Agent relationship graph"><title>Agent relationship graph</title><g class="claude-pane-graph-lanes"><text x="50" y="18">Sessions</text><text x="350" y="18">Agents</text><text x="650" y="18">Board tasks</text></g>${edgeHtml}${nodeHtml}</svg></div><details class="claude-pane-graph-fallback"><summary>Accessible relationship list (${graph.nodes.length})</summary><h4>Nodes</h4><ul>${list}</ul><h4>Connections</h4><ul>${relationships}</ul></details></section>`;
+  }
 
-    return `
-      <div class="claude-pane-agent-grid" role="grid" aria-label="Subagents">
-        <div class="claude-pane-agent-row claude-pane-agent-row-head" role="row">
-          <div role="columnheader" class="claude-pane-agent-name">Name</div>
-          <div role="columnheader" class="claude-pane-agent-desc">Description</div>
-          <div role="columnheader" class="claude-pane-agent-tasks">Tasks</div>
-          <div role="columnheader" class="claude-pane-agent-status">Status</div>
-        </div>
-        ${html}
-      </div>
-    `;
+  function renderSubagents() {
+    return renderGraph();
   }
 
   function renderTeams() {
@@ -603,6 +765,7 @@
         try {
           const snap = await fetchSnapshot();
           if (snap) ingestSnapshot(snap);
+          try { state.boardTasks = await fetchBoard(); } catch (_err) { /* retain previous board */ }
           render();
         } catch (_err) {
           /* status pill already reflects connectivity */
@@ -627,6 +790,7 @@
       snap = null;
     }
     ingestSnapshot(snap || {});
+    try { state.boardTasks = await fetchBoard(); } catch (_err) { state.boardTasks = []; }
     // Seed activity via REST so the footer isn't blank before SSE connects.
     try {
       const events = await fetchActivity(undefined);
@@ -645,6 +809,7 @@
     state.mounted = false;
     stopEventSource();
     stopPolling();
+    if (state.reconcileTimer) { clearTimeout(state.reconcileTimer); state.reconcileTimer = null; }
     if (state.root) {
       try { state.root.innerHTML = ""; } catch (_err) { /* ignore */ }
     }
