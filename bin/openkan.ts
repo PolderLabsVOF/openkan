@@ -19,6 +19,7 @@ const __dirname = dirname(__filename);
 const OPENKAN_ROOT = resolve(__dirname, "..");
 const OPENKAN_WEB = join(OPENKAN_ROOT, "web");
 import { removeDir, ensureDir } from "../kanban/io.ts";
+import { runImport } from "../kanban/import.ts";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -121,6 +122,45 @@ async function cmdInit(): Promise<void> {
   }
 
   console.log("Initialized .ok/ directory.");
+}
+
+// ─── Subcommand: import ───────────────────────────────────────────────────────
+
+async function cmdImport(ctx: BoardContext, argv: string[]): Promise<void> {
+  const args = parseArgs(argv);
+  const pathFlag = args.flags["path"] as string | undefined;
+  const includeFlag = args.flags["include"] as string | undefined;
+  const excludeFlag = args.flags["exclude"] as string | undefined;
+
+  // ctx.directory must be set
+  if (!ctx.directory) {
+    console.error("openkan import: no project directory set — run 'openkan start' first or set --path");
+    process.exit(1);
+  }
+
+  const targetDir = pathFlag ?? ctx.directory;
+  const importCtx = { ...ctx, directory: targetDir };
+
+  const include = includeFlag ? includeFlag.split(",").map((s) => s.trim()) : undefined;
+  const exclude = excludeFlag ? excludeFlag.split(",").map((s) => s.trim()) : undefined;
+
+  const result = await runImport(importCtx, { include, exclude });
+
+  if (result.imported.length === 0) {
+    console.log("No unchecked checkboxes found.");
+    return;
+  }
+
+  console.log(`imported ${result.imported.length} tasks`);
+  const board = await getBoard();
+  for (const id of result.imported) {
+    const task = board.tasks.find((t) => t.id === id);
+    if (task && task.source) {
+      console.log(`  created ${id} at ${task.source.path}:${task.source.line}`);
+    } else {
+      console.log(`  created ${id}`);
+    }
+  }
 }
 
 // ─── Subcommand: start ───────────────────────────────────────────────────────
@@ -380,6 +420,7 @@ function printHelp(cmd?: string): void {
   const msgs: Record<string, string> = {
     init: "init                             Create .ok/ directory (idempotent)",
     start: "start [--port N] [--host H] [--no-open] [--no-auto-detect] [--foreground] [--project /abs/path]  Start the server",
+    import: "import [--path DIR] [--include PATTERN] [--exclude PATTERN]  Import checkboxes as tasks",
     stop: "stop                             Stop the running server",
     status: "status                          Show server status, port, pid, uptime",
     open: "open                             Open the kanban UI in browser",
@@ -426,8 +467,9 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   }
 
   switch (cmd) {
-    case "init":   return cmdInit();
+    case "init":    return cmdInit();
     case "start":   return cmdStart(ctx, argv.slice(1));
+    case "import":  return cmdImport(ctx, argv.slice(1));
     case "stop":    return cmdStop(ctx);
     case "status":  return cmdStatus(ctx);
     case "open":    return cmdOpen(ctx);

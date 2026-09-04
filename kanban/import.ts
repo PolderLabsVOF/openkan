@@ -4,6 +4,12 @@
 import { readdirSync, readFileSync, statSync } from "fs";
 import { join, relative } from "path";
 import { createHash } from "node:crypto";
+import { withWrite, getBoard, taskArtifacts } from "./board.ts";
+import { extractMetadata } from "./tags.ts";
+import { writeTaskMdx, writeBoardMdx } from "./mdx.ts";
+import { ensureDir } from "./io.ts";
+import { recordEvent } from "./changelog.ts";
+import type { BoardContext } from "./board.ts";
 
 /** Compute a short SHA-256 hex digest (first 16 chars) of file content. */
 export function computeSourceHash(content: string): string {
@@ -214,4 +220,131 @@ export function slugFromRaw(raw: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 32) || "untitled";
+}
+
+// ─── Import core ───────────────────────────────────────────────────────────────
+
+export interface RunImportOptions {
+  include?: string[];
+  exclude?: string[];
+  defaultColumn?: string;
+}
+
+export interface ImportResult {
+  imported: string[]; // IDs of created tasks
+}
+
+/**
+ * Core import engine: scans for unchecked checkboxes, creates one Backlog task
+ * per hit, and writes MDX artifacts. Uses withWrite so it's safe under
+ * concurrent writers.
+ */
+export async function runImport(
+  ctx: BoardContext,
+  opts: RunImportOptions = {},
+): Promise<ImportResult> {
+  const { include = ["docs/**", "*.md", "*.mdx"], exclude = [] } = opts;
+  const kanbanDir = ctx.directory;
+
+  // Compose scanFiles + parseCheckboxes to get all checkbox hits
+  const { files } = await scanFiles({ root: kanbanDir, include, exclude });
+  const allHits: CheckboxHit[] = [];
+  for (const file of files) {
+    const relPath = relative(kanbanDir, file).replace(/\\/g, "/");
+    const content = readFileSync(file, "utf-8");
+    const hits = parseCheckboxes(content, relPath);
+    allHits.push(...hits);
+  }
+  const uncheckedHits = allHits.filter((h) => !h.done);
+
+  if (uncheckedHits.length === 0) {
+    return { imported: [] };
+  }
+
+  const now = new Date().toISOString();
+  const createdIds: string[] = [];
+
+  await withWrite(async (board) => {
+    const colTasks = board.tasks.filter((t) => t.column === "backlog");
+    let order = colTasks.length;
+
+    for (const hit of uncheckedHits) {
+      const id = stableImportId(hit);
+      const title = hit.raw || "Untitled import";
+      const description = "";
+
+      const derived = extractMetadata({ title, description });
+
+      // Read full file content for sourceHash
+      let sourceHash = "";
+      try {
+        const fileContent = readFileSync(join(kanbanDir, hit.path), "utf-8");
+        sourceHash = computeSourceHash(fileContent);
+      } catch {
+        // non-fatal: file may have been deleted between scan and now
+      }
+
+      const arts = taskArtifacts(id);
+
+      const task = {
+        id,
+        title,
+        description,
+        column: "backlog" as const,
+        order: order++,
+        sessionId: null,
+        agent: "",
+        model: null,
+        status: "idle" as const,
+        state: "idle" as const,
+        lastError: null,
+        createdAt: now,
+        updatedAt: now,
+        artifact: arts.mdxPath,
+        sessionArtifact: null,
+        pendingInputs: [],
+        artifacts: arts,
+        tags: derived.tags,
+        category: derived.category,
+        priority: derived.priority,
+        effort: derived.effort,
+        archived: false,
+        assignees: ["user"],
+        images: [],
+        parentId: null,
+        subtaskIds: [],
+        source: { path: hit.path, line: hit.line, slug: slugFromRaw(hit.raw) },
+        sourceHash,
+      };
+
+      board.tasks.push(task);
+      createdIds.push(id);
+    }
+  });
+
+  // Write MDX artifacts for each created task
+  const board = await getBoard();
+  for (const id of createdIds) {
+    const task = board.tasks.find((t) => t.id === id);
+    if (!task) continue;
+    const taskDir = join(kanbanDir, "tasks", id);
+    ensureDir(taskDir);
+    await writeTaskMdx(task, kanbanDir, board);
+  }
+
+  // Write board MDX and record events
+  await writeBoardMdx(board, kanbanDir);
+  for (const id of createdIds) {
+    const task = board.tasks.find((t) => t.id === id);
+    if (task) {
+      recordEvent(kanbanDir, "task.created", {
+        taskId: id,
+        author: "user",
+        summary: `imported '${task.title}'`,
+        payload: { column: task.column },
+      });
+    }
+  }
+
+  return { imported: createdIds };
 }
