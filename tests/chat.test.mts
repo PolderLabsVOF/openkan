@@ -515,3 +515,26 @@ test("handleChatRequest render-markdown returns sanitised HTML", async () => {
   // <script> is sanitised away.
   assert.ok(!html.toLowerCase().includes("<script>"));
 });
+
+test("handleChatRequest GET /api/chat/picker-options returns the expected shape", async () => {
+  const root = makeRoot();
+  const res = await handleChatRequest(
+    root,
+    new Request("http://l/api/chat/picker-options"),
+    "/api/chat/picker-options",
+  );
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get("Content-Type") ?? "", /application\/json/);
+  const body = await res.json() as {
+    models: Array<{ id: string; label: string }>;
+    efforts: string[];
+    permissionModes: string[];
+  };
+  // Router falls back to a default empty list when model-router.json is
+  // absent; the frontend cares about the shape, not the count.
+  assert.ok(Array.isArray(body.models));
+  assert.deepEqual(body.efforts, ["low", "medium", "high", "max"]);
+  assert.deepEqual(body.permissionModes, [
+    "accept-edits", "default", "plan", "bypass-permissions",
+  ]);
+});
