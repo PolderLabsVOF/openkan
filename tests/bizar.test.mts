@@ -7,6 +7,7 @@ import {
   readFileSync,
   rmSync,
   writeFileSync,
+  chmodSync,
 } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -35,6 +36,7 @@ function fixture() {
   mkdirSync(join(root, ".ok"), { recursive: true });
   const log = join(root, "bizar-args.jsonl");
   const fake = join(root, "bizar");
+  writeFileSync(log, "");
   writeFileSync(fake, `#!/usr/bin/env node
 const fs = require("node:fs");
 const args = process.argv.slice(2);
