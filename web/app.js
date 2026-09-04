@@ -3224,7 +3224,7 @@
 
   // ---------- Tab router ----------
   function activateTab(name, opts = {}) {
-    const valid = ["tasks", "changelog", "contributors", "docs", "bizar", "claude"];
+    const valid = ["tasks", "changelog", "contributors", "docs", "bizar", "claude", "insights"];
     if (!valid.includes(name)) name = "tasks";
     for (const btn of document.querySelectorAll(".tab")) {
       const isActive = btn.dataset.tab === name;
@@ -3266,6 +3266,9 @@
     } else if (name === "claude") {
       const root = document.getElementById("claude-pane-root");
       if (root && window.OpenKanClaude) window.OpenKanClaude.mount(root);
+    } else if (name === "insights") {
+      const root = document.getElementById("insights-root");
+      if (root && window.OpenKanInsights) window.OpenKanInsights.mount(root);
     } else if (name === "tasks") {
       // Unmount non-active views to free any subscriptions.
       window.OpenKanChangelog?.unmount?.();
@@ -3273,6 +3276,7 @@
       window.OpenKanDocs?.unmount?.();
       window.OpenKanBizar?.unmount?.();
       window.OpenKanClaude?.unmount?.();
+      window.OpenKanInsights?.unmount?.();
     }
   }
 
@@ -3853,6 +3857,11 @@
     // Activate the tab from the hash, defaulting to "tasks".
     const hash = readHashFilter();
     activateTab(hash?.tab || "tasks", { fromHash: true });
+
+    // Mount the chat sidebar (right-rail chat orchestrator). chat-sidebar.js
+    // wires its own topbar toggle button; this call ensures the DOM shell
+    // exists so the toggle can flip its open/closed state.
+    try { window.OpenKanChatSidebar?.mount?.(document.body); } catch { /* ignore */ }
 
     try {
       applySnapshot(await api("GET", "/api/board"));

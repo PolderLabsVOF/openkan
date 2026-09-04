@@ -1,5 +1,7 @@
 # OpenKan
 
+![OpenKan banner](./web/brand/banner.svg)
+
 Local-first project management for people and coding agents.
 
 OpenKan is a five-column MDX kanban with rich task workspaces, project

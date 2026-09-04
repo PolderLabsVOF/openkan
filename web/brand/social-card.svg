@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="OpenKan — local-first kanban for people and coding agents">
+  <title>OpenKan</title>
+  <desc>Social card with K mark and OpenKan wordmark; tagline below; column silhouettes on the right; coral accent line.</desc>
+  <!-- Background -->
+  <rect width="1200" height="630" fill="#0d1117"/>
+  <!-- K mark 96x96 at x=120, y=240 (scaled 3x from 32x32) -->
+  <g transform="translate(120, 240) scale(3)">
+    <rect x="5" y="0" width="4" height="32" rx="0.5" fill="#e6ebf3"/>
+    <polygon points="9,16 21,0 25,0 13,16" fill="#e6ebf3"/>
+    <polygon points="13,16 25,32 21,32 9,16" fill="#e6ebf3"/>
+  </g>
+  <!-- "OpenKan" at 96px -->
+  <text x="240" y="345" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'SF Pro Text', 'Inter', 'Roboto', 'Helvetica Neue', Arial, sans-serif" font-size="96" font-weight="600" letter-spacing="-0.01em" fill="#e6ebf3">OpenKan</text>
+  <!-- Tagline at 28px -->
+  <text x="120" y="400" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'SF Pro Text', 'Inter', 'Roboto', 'Helvetica Neue', Arial, sans-serif" font-size="28" font-weight="400" fill="#aeb6c4">Local-first kanban for people and coding agents.</text>
+  <!-- Column silhouettes, right-anchored at x=720; 5 rects of 48 wide, spaced 12 -->
+  <g transform="translate(720, 150)">
+    <rect x="0"   y="240" width="48" height="120" rx="4" fill="rgba(255,107,91,0.12)" stroke="#FF6B5B" stroke-width="1"/>
+    <rect x="60"  y="180" width="48" height="180" rx="4" fill="rgba(255,107,91,0.12)" stroke="#FF6B5B" stroke-width="1"/>
+    <rect x="120" y="120" width="48" height="240" rx="4" fill="rgba(255,107,91,0.12)" stroke="#FF6B5B" stroke-width="1"/>
+    <rect x="180" y="60"  width="48" height="300" rx="4" fill="rgba(255,107,91,0.12)" stroke="#FF6B5B" stroke-width="1"/>
+    <rect x="240" y="0"   width="48" height="360" rx="4" fill="rgba(255,107,91,0.12)" stroke="#FF6B5B" stroke-width="1"/>
+  </g>
+  <!-- Coral accent line below tagline -->
+  <rect x="120" y="476" width="960" height="3" fill="#FF6B5B"/>
+</svg>

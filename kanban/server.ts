@@ -38,6 +38,7 @@ import { renderMdx, stripMdxFrontmatter } from "./mdx-render.ts";
 import { buildPreview } from "./tsx-sandbox.ts";
 import { writeFileAtomic, ensureDir, removeDir } from "./io.ts";
 import { recordEvent, readEvents, readSummary, type ChangelogKind } from "./changelog.ts";
+import { computeVelocity } from "./insights.ts";
 import { listContributors, attributeCommitsToTasks, isGitRepo, type GitCommit } from "./git.ts";
 import { archiveTask, restoreTask } from "./archive.ts";
 import {
@@ -67,6 +68,7 @@ import {
 } from "./bizar.ts";
 import * as claudeState from "./claude-state.ts";
 import { handleClaudeRequest } from "./claude-state.ts";
+import { handleChatRequest } from "./chat.ts";
 import { WebSocketServer, WebSocket } from "ws";
 import { runImport } from "./import.ts";
 
@@ -358,6 +360,7 @@ function serveStatic(root: string, urlPath: string): { body: Buffer; contentType
   const ctMap: Record<string, string> = {
     ".html": "text/html", ".css": "text/css", ".js": "application/javascript",
     ".json": "application/json", ".md": "text/markdown",
+    ".svg": "image/svg+xml",
   };
   return { body: readFileSync(filePath), contentType: ctMap[ext] ?? "application/octet-stream" };
 }
@@ -1216,6 +1219,25 @@ async function apiGetChangelogSummary(req: Request): Promise<Response> {
   const days = parseInt(url.searchParams.get("days") ?? "30", 10);
   const summary = readSummary(KANBAN_DIR, { days });
   return jsonResponse(summary);
+}
+
+async function apiGetInsightsVelocity(req: Request): Promise<Response> {
+  const url = new URL(req.url);
+  const rawDays = parseInt(url.searchParams.get("days") ?? "30", 10);
+  const days = Math.max(1, Math.min(365, isFinite(rawDays) ? rawDays : 30));
+  const buckets = computeVelocity(KANBAN_DIR, days);
+  return jsonResponse({
+    days: buckets.days,
+    columns: {
+      backlog: buckets.backlog,
+      todo: buckets.todo,
+      doing: buckets.doing,
+      review: buckets.review,
+      done: buckets.done,
+    },
+    windowDays: buckets.windowDays,
+    generatedAt: buckets.generatedAt,
+  });
 }
 
 // ─── Contributors & git attribution ────────────────────────────────────────
@@ -2545,8 +2567,10 @@ async function handleRequest(req: Request): Promise<Response> {
   }
 
   // Static: any file under webRoot with an allowed extension. webRoot
-  // defaults to `<project>/web`; the caller can override.
-  if (path === "/" || /\.(html|css|js|json|md|txt)$/.test(path)) {
+  // defaults to `<project>/web`; the caller can override. The whitelist
+  // includes svg so the brand assets (logo, favicon, banners, empty-state
+  // illustrations) can be served directly.
+  if (path === "/" || /\.(html|css|js|json|md|txt|svg)$/.test(path)) {
     const root = webRoot ?? join(KANBAN_DIR, "..", "web");
     const pathForStatic = path === "/" ? "/index.html" : path;
     const sf = serveStatic(root, pathForStatic);
@@ -2565,6 +2589,10 @@ async function handleRequest(req: Request): Promise<Response> {
     return handleClaudeRequest(projectRoot, req, path);
   }
 
+  if (path.startsWith("/api/chat/")) {
+    return handleChatRequest(projectRoot, req, path);
+  }
+
   // GET /api/tasks-index
   if (path === "/api/tasks-index" && req.method === "GET") return apiGetTasksIndex(req);
 
@@ -2576,6 +2604,9 @@ async function handleRequest(req: Request): Promise<Response> {
 
   // GET /api/changelog/summary
   if (path === "/api/changelog/summary" && req.method === "GET") return apiGetChangelogSummary(req);
+
+  // GET /api/insights/velocity
+  if (path === "/api/insights/velocity" && req.method === "GET") return apiGetInsightsVelocity(req);
 
   // GET /api/contributors
   if (path === "/api/contributors" && req.method === "GET") return apiGetContributors(req);
