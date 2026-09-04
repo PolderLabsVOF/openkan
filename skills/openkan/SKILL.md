@@ -8,6 +8,17 @@ description: Use OpenKan as the durable project control plane. Always use this s
 Treat OpenKan as the source of truth for project work. Keep it synchronized
 while working; do not reconstruct task state only at the end.
 
+OpenKan is a local-first MDX kanban with two sibling surfaces:
+
+- **The board** (this skill) — five-column kanban, MDX task workspaces,
+  comments, structured questions, archives, changelog.
+- **The planning system** — durable tasks, plans, and PRDs that share the
+  same `.ok/` directory but are managed with the `ok` CLI. See the
+  `ok-planning` skill for that surface.
+
+Use both as appropriate. The board owns visible work and acceptance evidence;
+the planning system owns long-horizon scope. They never conflict.
+
 ## Begin every non-trivial task
 
 1. Find the project root by walking upward for `.ok/`.
@@ -22,81 +33,21 @@ while working; do not reconstruct task state only at the end.
 4. Reuse the matching active task. Otherwise create a focused task with a
    concrete outcome and acceptance criteria.
 5. Move the selected task to `doing` before changing project files.
-6. Read its complete workspace with `GET /api/tasks/<id>`.
 
-Do not create OpenKan tasks for greetings, one-line explanations, or other
-work that makes no project change.
+For long-horizon work (multi-session PRDs, multi-week scope), also load the
+`ok-planning` skill and claim or create a planning task alongside the board
+task. Reference the planning ID in the board task description.
 
-## Keep work synchronized
+## While you work
 
-- Keep one primary task active per agent unless the user explicitly requests
-  parallel work.
-- Update the task title, description, column, priority, agent, and assignees
-  when reality changes.
-- Record plan changes, decisions, blockers, progress, and validation evidence
-  in `.ok/tasks/<task-id>/task.mdx`.
-- Prefer HTTP API mutations while the server is running. This preserves atomic
-  writes and sends live updates to browsers and collaborating agents.
-- Re-read the task before major transitions. Another agent may have updated it.
-- Use comments for review feedback and durable handoffs. Set authors to
-  `agent:<name>` for agent-written comments.
-- Use structured input requests only when missing information truly blocks
-  progress. Continue safe work while non-blocking questions are pending.
-- Never edit `.ok/board.json`, comments indexes, input indexes, Bizar
-  databases, or session transcripts directly.
-
-## Task lifecycle
-
-Create:
-
-```sh
-curl -fsS -X POST http://127.0.0.1:7777/api/tasks \
-  -H 'content-type: application/json' \
-  -d '{
-    "title": "Implement focused outcome",
-    "description": "Goal, constraints, and acceptance criteria",
-    "column": "todo",
-    "priority": "high",
-    "assignee": "agent:NAME"
-  }'
-```
-
-Read and claim:
-
-```sh
-curl -fsS http://127.0.0.1:7777/api/tasks/TASK_ID
-curl -fsS -X PATCH http://127.0.0.1:7777/api/tasks/TASK_ID \
-  -H 'content-type: application/json' \
-  -d '{"column":"doing","assignees":["agent:NAME"]}'
-```
-
-Move to review only after implementation and targeted validation:
-
-```sh
-curl -fsS -X PATCH http://127.0.0.1:7777/api/tasks/TASK_ID \
-  -H 'content-type: application/json' \
-  -d '{"column":"review"}'
-```
-
-Move to done only when the requested outcome is verified and the task
-workspace includes concise evidence:
-
-```sh
-curl -fsS -X PATCH http://127.0.0.1:7777/api/tasks/TASK_ID \
-  -H 'content-type: application/json' \
-  -d '{"column":"done","state":"done"}'
-```
-
-If work fails or becomes blocked, keep the task out of `done`, record the exact
-blocker, and leave a concrete next action.
-
-## Collaboration
-
-Before editing shared areas, inspect tasks in `doing` and `review` to avoid
-overlapping ownership. Split independent scopes into subtasks and identify the
-owned files in each task description.
-
-Add a handoff or review comment:
+- Keep task status honest. Move it to `doing` when you start editing files,
+  to `review` when validation passes, and only to `done` once the acceptance
+  criteria are actually met.
+- Append every meaningful change to the task workspace as comments.
+- When you discover follow-up work, add a subtask rather than expanding
+  scope on the parent.
+- When you need a decision, use a `choice` input so the answer is recorded
+  and reviewable, not buried in a chat reply.
 
 ```sh
 curl -fsS -X POST http://127.0.0.1:7777/api/tasks/TASK_ID/comments \
@@ -108,6 +59,90 @@ curl -fsS -X POST http://127.0.0.1:7777/api/tasks/TASK_ID/comments \
     "author": "agent:NAME"
   }'
 ```
+
+## Native Claude Code control plane
+
+OpenKan reads your local Claude Code install directly. It exposes agents,
+skills, commands, hooks, teams, and workflows as a management surface.
+
+```sh
+curl -fsS http://127.0.0.1:7777/api/claude/snapshot
+curl -fsS http://127.0.0.1:7777/api/claude/agents
+curl -fsS http://127.0.0.1:7777/api/claude/workflows
+```
+
+Live updates stream over WebSocket and SSE — no polling required:
+
+```text
+ws://127.0.0.1:7777/api/claude/ws     WebSocket
+GET  /api/claude/events               SSE
+```
+
+When you start or stop a Claude session, the dashboard reflects it within a
+second. Use the Claude endpoints to discover what is running before you
+start a new agent; it is wasteful to spawn a duplicate when one is already
+active on the same task.
+
+## Chat sidebar (in development)
+
+The right-side chat rail drives Claude Code directly from the dashboard.
+Backend routes (subject to change while the feature is in development):
+
+```text
+POST /api/chat/send                    send a turn; spawns `claude -p`
+GET  /api/chat/sessions                list sessions + archived
+GET  /api/chat/sessions/<sid>          full transcript
+POST /api/chat/sessions/<sid>/abort    kill running subprocess
+```
+
+Sessions persist as JSONL under `.ok/chat/` (gitignored). Reopening a
+session restores the full transcript plus the model / effort / permissions
+that were selected at send time.
+
+Prefer the chat sidebar for one-off orchestration — quick questions, plan
+reviews, commit messages. Prefer the planning skill + a board task for
+multi-step work that needs an audit trail.
+
+## M1 checkbox import
+
+Scanning a directory or file for Markdown checkboxes and converting them
+into tracked board tasks is a first-class operation. Use it when the user
+has existing TODO lists they want tracked.
+
+```sh
+openkan import --path notes.md
+openkan import --include "**/*.md"
+```
+
+Or over HTTP:
+
+```sh
+curl -fsS -X POST http://127.0.0.1:7777/api/import \
+  -H 'content-type: application/json' \
+  -d '{"path":"notes.md","include":"**/*.md"}'
+```
+
+Imported tasks keep a `source.path` and `source.line` reference so the
+dashboard can deep-link back to the original file.
+
+## Insights
+
+The Insights tab shows a 30-day stacked-bar chart of column flow sourced
+from `.ok/changelog.jsonl`. Useful for spotting velocity trends and
+bottleneck columns before committing to a sprint plan.
+
+```sh
+curl -fsS "http://127.0.0.1:7777/api/insights/velocity?days=30"
+```
+
+Returns zero-filled arrays when the changelog is empty; do not treat that
+as an error.
+
+## Collaboration
+
+Before editing shared areas, inspect tasks in `doing` and `review` to avoid
+overlapping ownership. Split independent scopes into subtasks and identify
+the owned files in each task description.
 
 Ask a blocking choice:
 
@@ -124,12 +159,12 @@ curl -fsS -X POST http://127.0.0.1:7777/api/tasks/TASK_ID/ask \
   }'
 ```
 
-For Bizar sessions, agents, messages, and durable coordination, read
-`references/api.md` before invoking the control-plane endpoints.
+For Claude control-plane endpoints (snapshot, agents, workflows, sessions,
+chat, insights), see `references/api.md` before invoking them.
 
 ## Finish
 
-1. Run the project’s required validation.
+1. Run the project's required validation.
 2. Append the commands and outcomes to the task workspace.
 3. Re-read the task and board for concurrent changes.
 4. Move the task to `review` or `done` based on actual evidence.

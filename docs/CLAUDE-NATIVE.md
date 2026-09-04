@@ -1,5 +1,7 @@
 # Claude Code native mode
 
+![Claude-native banner](./web/brand/banner-docs.svg)
+
 OpenKan now visualizes **native Claude Code** state — sessions, prompts,
 tool calls, subagent activity, and stop signals — without depending on
 the `bizar` CLI.

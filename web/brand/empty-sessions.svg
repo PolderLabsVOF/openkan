@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" width="320" height="200" role="img" aria-label="No sessions yet">
+  <title>No sessions</title>
+  <desc>Three thin column bars with a hovering card and a downward arrow; session-row glyph at the bottom.</desc>
+  <!-- Three thin column bars at the bottom -->
+  <rect x="64"  y="88" width="18" height="96" rx="4" fill="#e6ebf3" fill-opacity="0.18" stroke="#748098" stroke-width="1"/>
+  <rect x="124" y="88" width="18" height="96" rx="4" fill="#e6ebf3" fill-opacity="0.18" stroke="#748098" stroke-width="1"/>
+  <rect x="184" y="88" width="18" height="96" rx="4" fill="#e6ebf3" fill-opacity="0.18" stroke="#748098" stroke-width="1"/>
+  <!-- Task-card outline hovering above the middle bar -->
+  <rect x="128" y="44" width="64" height="40" rx="6" fill="#1f242c" stroke="#748098" stroke-width="1"/>
+  <rect x="140" y="60" width="40" height="4" rx="2" fill="#748098"/>
+  <!-- Downward arrow from the card to the middle column -->
+  <path d="M160 96 L160 116 M156 112 L160 116 L164 112" stroke="#FF6B5B" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Caption glyph: a dot + two short lines (a session row) -->
+  <circle cx="128" cy="174" r="3" fill="#748098"/>
+  <rect x="138" y="171" width="60" height="4" rx="2" fill="#748098"/>
+  <rect x="138" y="180" width="40" height="4" rx="2" fill="#748098"/>
+</svg>
