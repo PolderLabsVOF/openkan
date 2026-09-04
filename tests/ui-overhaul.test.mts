@@ -257,6 +257,26 @@ test("gives long Docs documents an explicit scroll owner", () => {
   assert.match(css, /\.docs-file-list \{ min-height: 0; flex: 1 1 auto; \}/);
 });
 
+test("renders Docs navigation as a persistent expandable folder tree", () => {
+  const docs = read("web/docs-view.js");
+  const css = read("web/style.css");
+  assert.match(docs, /function visibleTree/);
+  assert.match(docs, /docs-tree-directory/);
+  assert.match(docs, /data-doc-directory/);
+  assert.match(docs, /expandedDirs:new Set\(\)/);
+  assert.match(docs, /openParentDirectories\(path\)/);
+  assert.match(css, /\.docs-tree-directory-summary/);
+  assert.match(css, /\.docs-tree-children/);
+  assert.match(css, /\.docs-tree-file\.active/);
+});
+
+test("uses scoped custom scrollbars for Docs panes", () => {
+  const css = read("web/style.css");
+  assert.match(css, /\.docs-file-list,\n\.docs-stage,\n\.docs-source-panel textarea/);
+  assert.match(css, /\.docs-stage::\-webkit-scrollbar/);
+  assert.match(css, /\.docs-file-list::\-webkit-scrollbar-thumb/);
+});
+
 test("home command center queries live workspace sources without promoting worktrees", () => {
   const home = read("web/home-view.js");
   assert.match(home, /\/api\/projects/);

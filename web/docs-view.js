@@ -5,6 +5,7 @@
   let state = null;
   let renderTimer = 0;
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" })[c]);
+  const DOC_FILE_PATTERN = /\.(md|mdx|txt)$/i;
   const flatten = (entries, out = []) => { for (const entry of entries || []) entry.isDir ? flatten(entry.children, out) : out.push(entry); return out; };
   const safePath = (value = "") => String(value).trim().replace(/^\/+/, "").replace(/\.\.+/g, "");
   const askPath = (value = "") => safePath(prompt("Document path relative to docs/", value) || "");
@@ -14,17 +15,55 @@
   function sourceToolbar() {
     return `<div class="docs-source-tools" aria-label="Markdown formatting"><button data-doc-format="h2" title="Heading">H2</button><button data-doc-format="bold" title="Bold"><b>B</b></button><button data-doc-format="italic" title="Italic"><i>I</i></button><button data-doc-format="ul" title="Bulleted list">• List</button><button data-doc-format="ol" title="Numbered list">1. List</button><button data-doc-format="link" title="Link">↗</button><button data-doc-format="code" title="Code">&lt;/&gt;</button></div>`;
   }
-  function docTree(files) {
-    return files.map((file) => `<button class="docs-file${file.path === state.path ? " active" : ""}" data-doc-path="${esc(file.path)}" title="${esc(file.path)}"><span>${esc(file.path.includes("/") ? file.path.slice(0, file.path.lastIndexOf("/")) : "root")}</span><strong>${esc(fileName(file.path))}</strong></button>`).join("") || `<div class="docs-empty-tree">No documents yet.<br>Create your first workspace note.</div>`;
+  function visibleTree(entries, query = "") {
+    return (entries || []).flatMap((entry) => {
+      if (entry.isDir) {
+        const children = visibleTree(entry.children, query);
+        return children.length ? [{ ...entry, children }] : [];
+      }
+      return DOC_FILE_PATTERN.test(entry.path) && (!query || entry.path.toLowerCase().includes(query)) ? [entry] : [];
+    });
+  }
+  function directoryCount(entries) {
+    return (entries || []).reduce((count, entry) => count + (entry.isDir ? directoryCount(entry.children) : 1), 0);
+  }
+  function openParentDirectories(path) {
+    const parts = String(path || "").split("/").filter(Boolean);
+    parts.pop();
+    let current = "";
+    for (const part of parts) { current = current ? `${current}/${part}` : part; state.expandedDirs.add(current); }
+  }
+  function docTree(entries, depth = 0) {
+    return entries.map((entry) => {
+      if (!entry.isDir) {
+        const extension = entry.name.includes(".") ? entry.name.split(".").pop().toUpperCase() : "TEXT";
+        return `<button class="docs-tree-file${entry.path === state.path ? " active" : ""}" data-doc-path="${esc(entry.path)}" title="${esc(entry.path)}"><strong>${esc(entry.name)}</strong><span>${extension}</span></button>`;
+      }
+      const open = state.docFilter || state.expandedDirs.has(entry.path) || state.path.startsWith(`${entry.path}/`);
+      const children = docTree(entry.children || [], depth + 1);
+      return `<details class="docs-tree-directory" data-doc-directory="${esc(entry.path)}" ${open ? "open" : ""}><summary class="docs-tree-directory-summary"><span class="docs-tree-directory-name">${esc(entry.name)}</span><small>${directoryCount(entry.children)}</small></summary><div class="docs-tree-children" style="--docs-tree-depth:${depth + 1}">${children}</div></details>`;
+    }).join("");
+  }
+  function renderTree() {
+    const list = state?.root?.querySelector("[data-doc-list]");
+    if (!list) return;
+    const query = String(state.docFilter || "").trim().toLowerCase();
+    const tree = visibleTree(state.entries, query);
+    list.innerHTML = docTree(tree) || `<div class="docs-empty-tree">${query ? "No documents match this filter." : "No documents yet.<br>Create your first workspace note."}</div>`;
+    list.querySelectorAll("[data-doc-path]").forEach((button) => button.addEventListener("click", () => load(button.dataset.docPath)));
+    list.querySelectorAll("[data-doc-directory]").forEach((directory) => directory.addEventListener("toggle", () => {
+      if (directory.open) state.expandedDirs.add(directory.dataset.docDirectory);
+      else state.expandedDirs.delete(directory.dataset.docDirectory);
+    }));
   }
   function render() {
     if (!state?.root) return;
-    const files = flatten(state.entries).filter((entry) => /\.(md|mdx|txt)$/i.test(entry.path));
+    const files = flatten(state.entries).filter((entry) => DOC_FILE_PATTERN.test(entry.path));
     const status = state.dirty ? "Unsaved draft" : state.path ? `Saved ${relativeTime(state.mtime)}` : "New draft";
     state.root.innerHTML = `<section class="docs-shell">
       <header class="docs-commandbar"><div><span class="workspace-eyebrow">Knowledge workspace</span><h2>Docs that stay readable while you write.</h2><p>MDX renders as the document itself. Open source only when you need to shape it.</p></div><div class="docs-command-actions"><button data-doc-action="new">New document</button><button class="docs-agent-button" data-doc-action="generate">Generate with agent</button></div></header>
       <div class="docs-workspace docs-workspace--${state.sourceOpen ? "source-open" : "preview-only"}">
-        <aside class="docs-sidebar"><div class="docs-sidebar-head"><div><span>docs/</span><small>${files.length} files</small></div><button data-doc-action="new" aria-label="New document">+</button></div><div class="docs-sidebar-search"><input type="search" placeholder="Filter documents" aria-label="Filter documents" data-doc-filter></div><div class="docs-file-list" data-doc-list>${docTree(files)}</div></aside>
+        <aside class="docs-sidebar"><div class="docs-sidebar-head"><div><span>docs/</span><small>${files.length} documents · folders preserved</small></div><button data-doc-action="new" aria-label="New document">+</button></div><div class="docs-sidebar-search"><input type="search" value="${esc(state.docFilter || "")}" placeholder="Filter documents" aria-label="Filter documents" data-doc-filter></div><div class="docs-file-list docs-folder-tree" data-doc-list></div></aside>
         <main class="docs-stage"><header class="docs-filebar"><div class="docs-file-ident"><span class="docs-file-icon">⌁</span><span><strong>${esc(fileName(state.path))}</strong><small>${esc(state.path || "Choose a path before saving")} · ${status}</small></span></div><div class="docs-file-actions"><button data-doc-action="source" aria-pressed="${state.sourceOpen}">${state.sourceOpen ? "Hide source" : "Edit source"}</button><button data-doc-action="save" ${state.path ? "" : "disabled"}>Save</button><button data-doc-action="more" aria-label="More document actions">•••</button></div></header>
           <div class="docs-preview-toolbar"><span><i></i> Preview</span><button data-doc-action="focus-preview">Reading view</button><button data-doc-action="help">MDX help</button></div>
           <article class="docs-rendered docs-mdx-preview" tabindex="0" data-doc-preview>${state.html || `<section class="docs-preview-empty"><h3>Start a durable note.</h3><p>Create a document or choose one from the library. MDX previews here exactly as it will be read.</p><button data-doc-action="new">New document</button></section>`}</article>
@@ -35,7 +74,7 @@
   }
   function wire() {
     const root = state.root;
-    root.querySelectorAll("[data-doc-path]").forEach((button) => button.addEventListener("click", () => load(button.dataset.docPath)));
+    renderTree();
     root.querySelectorAll("[data-doc-action]").forEach((button) => button.addEventListener("click", () => action(button.dataset.docAction)));
     root.querySelectorAll("[data-doc-format]").forEach((button) => button.addEventListener("click", () => applyFormat(button.dataset.docFormat)));
     root.querySelector("#docs-editor-input")?.addEventListener("input", (event) => {
@@ -45,8 +84,8 @@
       schedulePreview();
     });
     root.querySelector("[data-doc-filter]")?.addEventListener("input", (event) => {
-      const query = event.target.value.trim().toLowerCase();
-      root.querySelectorAll("[data-doc-path]").forEach((item) => { item.hidden = Boolean(query) && !item.dataset.docPath.toLowerCase().includes(query); });
+      state.docFilter = event.target.value;
+      renderTree();
     });
     root.addEventListener("contextmenu", contextMenu);
     document.addEventListener("click", dismissMenu, { once: true });
@@ -54,13 +93,14 @@
   async function load(path) {
     if (!path || !state) return;
     const doc = await api("GET", `/api/docs/${encodeURI(path)}?raw=0`);
+    openParentDirectories(path);
     Object.assign(state, { path, content: doc.raw || "", html: doc.html || doc.rendered || "", mtime: doc.mtime || "", dirty: false, sourceOpen: false });
     render();
   }
   async function refresh({ loadInitial = false } = {}) {
     const docs = await api("GET", "/api/docs");
     state.entries = docs.entries || [];
-    const files = flatten(state.entries).filter((entry) => /\.(md|mdx|txt)$/i.test(entry.path));
+    const files = flatten(state.entries).filter((entry) => DOC_FILE_PATTERN.test(entry.path));
     if (loadInitial && files.length) return load(state.initialDoc && files.some((file) => file.path === state.initialDoc) ? state.initialDoc : files[0].path);
     render();
   }
@@ -124,5 +164,5 @@
   function dismissMenu(event) { if (!event?.target?.closest?.("#docs-context-menu")) { const menu = state?.root?.querySelector("#docs-context-menu"); if (menu) menu.hidden = true; } }
   function openMoreMenu() { const trigger = state.root.querySelector('[data-doc-action="more"]'); const box = trigger.getBoundingClientRect(); const menu = menuAt(`<button data-doc-menu="rename">Rename document</button><button data-doc-menu="delete" class="danger">Delete document</button>`, box.left, box.bottom + 6); menu.onclick = async (event) => { const actionName = event.target.dataset.docMenu; menu.hidden = true; if (actionName === "delete" && state.path && confirm(`Delete ${state.path}?`)) { await api("DELETE", `/api/docs/${encodeURI(state.path)}`); Object.assign(state, { path:"", content:"", html:"", dirty:false }); await refresh({ loadInitial:true }); } if (actionName === "rename" && state.path) { const next = askPath(state.path); if (!next || next === state.path) return; await api("PUT", `/api/docs/${encodeURI(next)}`, { content: state.content }); await api("DELETE", `/api/docs/${encodeURI(state.path)}`); state.path = next; await refresh(); } }; }
   function contextMenu(event) { const file = event.target.closest("[data-doc-path]"); const editor = event.target.closest("#docs-editor-input"); if (!file && !editor) return; event.preventDefault(); const menu = file ? menuAt(`<button data-doc-menu="open">Open</button><button data-doc-menu="rename">Rename</button><button data-doc-menu="delete" class="danger">Delete</button>`, event.clientX, event.clientY) : menuAt(`<button data-doc-format="h2">Heading</button><button data-doc-format="bold">Bold</button><button data-doc-format="italic">Italic</button><button data-doc-format="ul">Bulleted list</button><button data-doc-format="link">Link</button>`, event.clientX, event.clientY); menu.onclick = async (actionEvent) => { menu.hidden = true; const format = actionEvent.target.dataset.docFormat; if (format) return applyFormat(format); const menuAction = actionEvent.target.dataset.docMenu, path = file?.dataset.docPath; if (menuAction === "open") return load(path); if (menuAction === "delete" && confirm(`Delete ${path}?`)) { await api("DELETE", `/api/docs/${encodeURI(path)}`); return refresh({ loadInitial: path === state.path }); } if (menuAction === "rename") { const next = askPath(path); if (!next || next === path) return; const doc = await api("GET", `/api/docs/${encodeURI(path)}?raw=0`); await api("PUT", `/api/docs/${encodeURI(next)}`, { content: doc.raw || "" }); await api("DELETE", `/api/docs/${encodeURI(path)}`); if (path === state.path) state.path = next; return refresh(); } }; }
-  window.OpenKanDocs = { async mount(root, options = {}) { if (state?.root === root) return; state = { root, entries: [], path:"", content:"", html:"", mtime:"", dirty:false, sourceOpen:false, initialDoc:options.initialDoc || "" }; await refresh({ loadInitial:true }); }, unmount() { clearTimeout(renderTimer); state = null; } };
+  window.OpenKanDocs = { async mount(root, options = {}) { if (state?.root === root) return; state = { root, entries: [], path:"", content:"", html:"", mtime:"", dirty:false, sourceOpen:false, docFilter:"", expandedDirs:new Set(), initialDoc:options.initialDoc || "" }; await refresh({ loadInitial:true }); }, unmount() { clearTimeout(renderTimer); state = null; } };
 })();

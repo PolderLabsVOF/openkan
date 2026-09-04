@@ -8240,6 +8240,101 @@ body.workspace-mode-chat { padding-left: 0; }
 .docs-filebar { top: 0; background: var(--bg-elev); }
 .docs-preview-toolbar { top: 58px; }
 .docs-source-panel textarea { min-height: 0; }
+
+/* Docs navigation mirrors the actual docs/ filesystem. Directory rows own
+   expansion; documents stay compact and the active document is unambiguous. */
+.docs-folder-tree {
+  display: block;
+  padding: 2px 4px 18px;
+}
+.docs-tree-directory {
+  margin: 1px 0;
+}
+.docs-tree-directory-summary {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: 7px;
+  color: var(--ink-70);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 720;
+  list-style: none;
+  user-select: none;
+}
+.docs-tree-directory-summary::-webkit-details-marker { display: none; }
+.docs-tree-directory-summary::before {
+  content: "›";
+  position: absolute;
+  margin-left: -1px;
+  color: var(--ink-50);
+  font-size: 15px;
+  line-height: 1;
+  transition: transform .16s ease;
+}
+.docs-tree-directory[open] > .docs-tree-directory-summary::before { transform: rotate(90deg); }
+.docs-tree-directory-summary:hover { background: var(--bg-elev-2); color: var(--ink-100); }
+.docs-tree-directory-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.docs-tree-directory-name { min-width: 0; padding-left: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.docs-tree-directory-summary small { color: var(--ink-50); font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.docs-tree-children {
+  display: grid;
+  gap: 1px;
+  margin: 1px 0 3px 13px;
+  padding-left: 7px;
+  border-left: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+}
+.docs-tree-file {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 31px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-60);
+  cursor: pointer;
+  text-align: left;
+}
+.docs-tree-file strong { min-width: 0; overflow: hidden; font-size: 11px; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
+.docs-tree-file span { color: var(--ink-50); font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .04em; }
+.docs-tree-file:hover { border-color: color-mix(in srgb, var(--border) 72%, transparent); background: var(--bg-elev-2); color: var(--ink-90); }
+.docs-tree-file.active { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: color-mix(in srgb, var(--accent) 11%, var(--bg-elev)); color: var(--ink-100); }
+.docs-tree-file.active strong { font-weight: 720; }
+.docs-tree-file.active span { color: var(--accent); }
+
+/* Local scrollbars make each Docs pane discoverable without changing the app
+   shell's scrolling contract. They are deliberately restrained in both themes. */
+.docs-file-list,
+.docs-stage,
+.docs-source-panel textarea,
+.docs-mdx-preview pre {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ink-50) 55%, transparent) transparent;
+}
+.docs-file-list::-webkit-scrollbar,
+.docs-stage::-webkit-scrollbar,
+.docs-source-panel textarea::-webkit-scrollbar,
+.docs-mdx-preview pre::-webkit-scrollbar { width: 9px; height: 9px; }
+.docs-file-list::-webkit-scrollbar-track,
+.docs-stage::-webkit-scrollbar-track,
+.docs-source-panel textarea::-webkit-scrollbar-track,
+.docs-mdx-preview pre::-webkit-scrollbar-track { background: transparent; }
+.docs-file-list::-webkit-scrollbar-thumb,
+.docs-stage::-webkit-scrollbar-thumb,
+.docs-source-panel textarea::-webkit-scrollbar-thumb,
+.docs-mdx-preview pre::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 999px; background: color-mix(in srgb, var(--ink-50) 58%, transparent); background-clip: padding-box; }
+.docs-file-list::-webkit-scrollbar-thumb:hover,
+.docs-stage::-webkit-scrollbar-thumb:hover,
+.docs-source-panel textarea::-webkit-scrollbar-thumb:hover,
+.docs-mdx-preview pre::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--ink-70) 74%, transparent); }
 /* Medium screens keep every primary destination reachable without a scrolling
    tab strip. The brand project picker remains the single project control. */
 @media (max-width: 1400px) and (min-width: 901px) {
