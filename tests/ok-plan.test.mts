@@ -52,7 +52,7 @@ describe("ok plan", () => {
   after(() => { rmSync(root, { recursive: true, force: true }); });
 
   it("plan add creates a draft plan", async () => {
-    const { code, stdout } = await runOk(root, () => runPlan(["add", "M1: schemas", "--summary", "ship", "--acceptance", "tests green", "docs merged"]));
+    const { code, stdout } = await runOk(root, () => runPlan(["add", "M1: schemas", "--summary", "ship", "--acceptance", "tests green,docs merged"]));
     assert.strictEqual(code, 0);
     const id = extractId(stdout);
     const plan = await readPlan(paths(root), id);

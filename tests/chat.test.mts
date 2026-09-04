@@ -277,6 +277,28 @@ test("sendTurn spawns claude -p with selectors and persists both turns", async (
   }
 });
 
+test("sendTurn keeps task context compact in the persisted user turn", async () => {
+  const { root, binDir } = fakeClaudeFixture();
+  const prevPath = process.env.PATH;
+  process.env.PATH = binDir + ":" + prevPath;
+  try {
+    const result = await sendTurn(root, {
+      sessionId: "ses-task-reference",
+      message: "Please review this task.\n\nReferenced OpenKan tasks (use these as project context):\n- tsk-123456: A very long task title",
+      displayMessage: "Please review this task.",
+      taskMentions: [{ id: "tsk-123456", title: "A very long task title" }],
+      model: "minimax/MiniMax-M3",
+      effort: "high",
+      permissionMode: "acceptEdits",
+    });
+    assert.equal(result.userTurn.content, "Please review this task.");
+    assert.deepEqual(result.userTurn.taskMentions, [{ id: "tsk-123456", title: "A very long task title" }]);
+    assert.ok(result.assistantTurn.content.includes("Referenced OpenKan tasks"));
+  } finally {
+    process.env.PATH = prevPath;
+  }
+});
+
 test("abortSession kills the running subprocess for a session", async () => {
   const { root, binDir } = fakeClaudeFixture();
   const prevPath = process.env.PATH;

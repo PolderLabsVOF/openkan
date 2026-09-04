@@ -112,6 +112,34 @@ describe("CLI", () => {
     });
   });
 
+  describe("agent bridge", () => {
+    it("prints a complete machine-readable capability map", () => {
+      const dir = tmpDir();
+      try {
+        runOk("init", dir);
+        const capabilities = JSON.parse(runOk("agent capabilities", dir));
+        assert.ok(capabilities.board.some((entry) => entry.includes("/api/tasks")));
+        assert.ok(capabilities.docs.some((entry) => entry.includes("/api/docs")));
+        assert.ok(capabilities.agents.some((entry) => entry.includes("/api/claude")));
+        assert.ok(capabilities.chat.some((entry) => entry.includes("/api/chat")));
+      } finally {
+        rmTmp(dir);
+      }
+    });
+
+    it("documents the generic API bridge in help output", () => {
+      const out = runOk("--help", tmpdir());
+      assert.ok(out.includes("api <path>"));
+      assert.ok(out.includes("agent capabilities|context|call|start|abort"));
+    });
+
+    it("prints subcommand help without treating it as a failed agent action", () => {
+      const out = runOk("agent --help", tmpdir());
+      assert.ok(out.includes("Usage: openkan agent"));
+      assert.ok(out.includes("capabilities"));
+    });
+  });
+
   describe("help", () => {
     it("prints usage for --help", () => {
       const out = runOk("--help", tmpdir());

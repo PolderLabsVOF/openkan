@@ -1,40 +1,128 @@
-// OpenKan Docs — editable Markdown workspace with live preview and agent generation.
+// OpenKan Docs — preview-first MDX workspace with an always-available source editor.
 (() => {
   "use strict";
   const { api } = window.OpenKanAPI;
   let state = null;
+  let renderTimer = 0;
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" })[c]);
-  const flatten = (entries, out = []) => { for (const e of entries || []) e.isDir ? flatten(e.children, out) : out.push(e); return out; };
-  const askPath = (value = "") => prompt("Document path relative to docs/", value)?.trim().replace(/^\/+/, "").replace(/\.\./g, "");
-  const toolbar = () => `<header class="docs-workspace-head"><div><span class="workspace-eyebrow">Knowledge workspace</span><h2>Docs</h2><p>Write in Markdown, inspect the live document, or ask your configured agent to draft a guide.</p></div><div class="docs-actions"><button data-doc-action="new">New document</button><button data-doc-action="generate">Generate with agent</button><button data-doc-action="help">Formatting help</button></div></header>`;
-  const formatBar = () => `<div class="docs-format-bar" aria-label="Formatting"><button data-doc-format="bold" title="Bold"><b>B</b></button><button data-doc-format="italic" title="Italic"><i>I</i></button><button data-doc-format="h2" title="Heading">H2</button><button data-doc-format="ul" title="Bulleted list">• List</button><button data-doc-format="ol" title="Numbered list">1. List</button><button data-doc-format="link" title="Link">↗</button><button data-doc-format="code" title="Code">&lt;/&gt;</button></div>`;
+  const flatten = (entries, out = []) => { for (const entry of entries || []) entry.isDir ? flatten(entry.children, out) : out.push(entry); return out; };
+  const safePath = (value = "") => String(value).trim().replace(/^\/+/, "").replace(/\.\.+/g, "");
+  const askPath = (value = "") => safePath(prompt("Document path relative to docs/", value) || "");
+  const fileName = (path) => path ? path.split("/").pop() : "Untitled document";
+  const relativeTime = (iso) => iso ? new Intl.DateTimeFormat(undefined, { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" }).format(new Date(iso)) : "";
+
+  function sourceToolbar() {
+    return `<div class="docs-source-tools" aria-label="Markdown formatting"><button data-doc-format="h2" title="Heading">H2</button><button data-doc-format="bold" title="Bold"><b>B</b></button><button data-doc-format="italic" title="Italic"><i>I</i></button><button data-doc-format="ul" title="Bulleted list">• List</button><button data-doc-format="ol" title="Numbered list">1. List</button><button data-doc-format="link" title="Link">↗</button><button data-doc-format="code" title="Code">&lt;/&gt;</button></div>`;
+  }
+  function docTree(files) {
+    return files.map((file) => `<button class="docs-file${file.path === state.path ? " active" : ""}" data-doc-path="${esc(file.path)}" title="${esc(file.path)}"><span>${esc(file.path.includes("/") ? file.path.slice(0, file.path.lastIndexOf("/")) : "root")}</span><strong>${esc(fileName(file.path))}</strong></button>`).join("") || `<div class="docs-empty-tree">No documents yet.<br>Create your first workspace note.</div>`;
+  }
   function render() {
+    if (!state?.root) return;
+    const files = flatten(state.entries).filter((entry) => /\.(md|mdx|txt)$/i.test(entry.path));
+    const status = state.dirty ? "Unsaved draft" : state.path ? `Saved ${relativeTime(state.mtime)}` : "New draft";
+    state.root.innerHTML = `<section class="docs-shell">
+      <header class="docs-commandbar"><div><span class="workspace-eyebrow">Knowledge workspace</span><h2>Docs that stay readable while you write.</h2><p>MDX renders as the document itself. Open source only when you need to shape it.</p></div><div class="docs-command-actions"><button data-doc-action="new">New document</button><button class="docs-agent-button" data-doc-action="generate">Generate with agent</button></div></header>
+      <div class="docs-workspace docs-workspace--${state.sourceOpen ? "source-open" : "preview-only"}">
+        <aside class="docs-sidebar"><div class="docs-sidebar-head"><div><span>docs/</span><small>${files.length} files</small></div><button data-doc-action="new" aria-label="New document">+</button></div><div class="docs-sidebar-search"><input type="search" placeholder="Filter documents" aria-label="Filter documents" data-doc-filter></div><div class="docs-file-list" data-doc-list>${docTree(files)}</div></aside>
+        <main class="docs-stage"><header class="docs-filebar"><div class="docs-file-ident"><span class="docs-file-icon">⌁</span><span><strong>${esc(fileName(state.path))}</strong><small>${esc(state.path || "Choose a path before saving")} · ${status}</small></span></div><div class="docs-file-actions"><button data-doc-action="source" aria-pressed="${state.sourceOpen}">${state.sourceOpen ? "Hide source" : "Edit source"}</button><button data-doc-action="save" ${state.path ? "" : "disabled"}>Save</button><button data-doc-action="more" aria-label="More document actions">•••</button></div></header>
+          <div class="docs-preview-toolbar"><span><i></i> Preview</span><button data-doc-action="focus-preview">Reading view</button><button data-doc-action="help">MDX help</button></div>
+          <article class="docs-rendered docs-mdx-preview" tabindex="0" data-doc-preview>${state.html || `<section class="docs-preview-empty"><h3>Start a durable note.</h3><p>Create a document or choose one from the library. MDX previews here exactly as it will be read.</p><button data-doc-action="new">New document</button></section>`}</article>
+        </main>
+        <aside class="docs-source-panel" aria-label="Markdown source"><header><div><span>Source</span><small>MDX / Markdown</small></div><button data-doc-action="source" aria-label="Close source">×</button></header>${sourceToolbar()}<textarea id="docs-editor-input" spellcheck="true" placeholder="# Start writing…">${esc(state.content)}</textarea><footer><span>${state.content.length.toLocaleString()} characters</span><button data-doc-action="render">Refresh preview</button></footer></aside>
+      </div><div id="docs-context-menu" class="docs-context-menu" hidden></div></section>`;
+    wire();
+  }
+  function wire() {
+    const root = state.root;
+    root.querySelectorAll("[data-doc-path]").forEach((button) => button.addEventListener("click", () => load(button.dataset.docPath)));
+    root.querySelectorAll("[data-doc-action]").forEach((button) => button.addEventListener("click", () => action(button.dataset.docAction)));
+    root.querySelectorAll("[data-doc-format]").forEach((button) => button.addEventListener("click", () => applyFormat(button.dataset.docFormat)));
+    root.querySelector("#docs-editor-input")?.addEventListener("input", (event) => {
+      state.content = event.target.value; state.dirty = true;
+      const status = root.querySelector(".docs-file-ident small");
+      if (status) status.textContent = `${state.path || "Choose a path before saving"} · Unsaved draft`;
+      schedulePreview();
+    });
+    root.querySelector("[data-doc-filter]")?.addEventListener("input", (event) => {
+      const query = event.target.value.trim().toLowerCase();
+      root.querySelectorAll("[data-doc-path]").forEach((item) => { item.hidden = Boolean(query) && !item.dataset.docPath.toLowerCase().includes(query); });
+    });
+    root.addEventListener("contextmenu", contextMenu);
+    document.addEventListener("click", dismissMenu, { once: true });
+  }
+  async function load(path) {
+    if (!path || !state) return;
+    const doc = await api("GET", `/api/docs/${encodeURI(path)}?raw=0`);
+    Object.assign(state, { path, content: doc.raw || "", html: doc.html || doc.rendered || "", mtime: doc.mtime || "", dirty: false, sourceOpen: false });
+    render();
+  }
+  async function refresh({ loadInitial = false } = {}) {
+    const docs = await api("GET", "/api/docs");
+    state.entries = docs.entries || [];
+    const files = flatten(state.entries).filter((entry) => /\.(md|mdx|txt)$/i.test(entry.path));
+    if (loadInitial && files.length) return load(state.initialDoc && files.some((file) => file.path === state.initialDoc) ? state.initialDoc : files[0].path);
+    render();
+  }
+  async function renderPreview() {
     if (!state) return;
-    const files = flatten(state.entries);
-    const editor = state.preview
-      ? `<article class="docs-rendered docs-preview-editable" contenteditable="true" spellcheck="true" data-doc-preview aria-label="Editable document preview">${state.html || "<p>Nothing to preview.</p>"}</article>`
-      : `<textarea id="docs-editor-input" spellcheck="true" placeholder="# Start writing…">${esc(state.content)}</textarea>`;
-    state.root.innerHTML = `${toolbar()}<div class="docs-workspace"><aside class="docs-sidebar"><div class="docs-sidebar-title"><span>docs/</span><button data-doc-action="new" title="New document">+</button></div><p class="docs-sidebar-hint">Right-click a document for actions.</p><div class="docs-file-list">${files.map((f) => `<button class="${f.path === state.path ? "active" : ""}" data-doc-path="${esc(f.path)}">${esc(f.path)}</button>`).join("") || "<p>No documents yet.</p>"}</div></aside><main class="docs-editor"><header><div><strong>${esc(state.path || "Untitled document")}</strong><span>${state.dirty ? "Unsaved changes" : "Saved"}</span></div><div><button data-doc-action="preview">${state.preview ? "Markdown source" : "Live preview"}</button><button data-doc-action="save" ${state.path ? "" : "disabled"}>Save</button><button data-doc-action="delete" ${state.path ? "" : "disabled"}>Delete</button></div></header>${state.preview ? formatBar() : ""}${editor}</main></div><div id="docs-context-menu" class="docs-context-menu" hidden></div>`;
-    state.root.querySelectorAll("[data-doc-path]").forEach((b) => b.onclick = () => load(b.dataset.docPath));
-    state.root.querySelectorAll("[data-doc-action]").forEach((b) => b.onclick = () => action(b.dataset.docAction));
-    state.root.querySelector("#docs-editor-input")?.addEventListener("input", (e) => { state.content = e.target.value; state.dirty = true; state.root.querySelector(".docs-editor header span").textContent = "Unsaved changes"; });
-    state.root.querySelector("[data-doc-preview]")?.addEventListener("input", (e) => { state.content = e.currentTarget.innerHTML; state.dirty = true; state.root.querySelector(".docs-editor header span").textContent = "Unsaved changes"; });
-    state.root.querySelectorAll("[data-doc-format]").forEach((b) => b.onclick = () => applyFormat(b.dataset.docFormat));
-    state.root.oncontextmenu = contextMenu;
+    const rendered = await api("POST", "/api/docs/render", { content: state.content });
+    state.html = rendered.html || rendered.rendered || "";
   }
-  async function renderPreview() { state.html = await api("POST", "/api/chat/render-markdown", { markdown: state.content }); }
-  async function load(path) { const d = await api("GET", `/api/docs/${encodeURI(path)}?raw=0`); Object.assign(state, { path, content: d.raw || "", html: d.html || "", dirty: false, preview: false }); render(); }
-  async function refresh() { const d = await api("GET", "/api/docs"); state.entries = d.entries || []; render(); }
-  async function save() { if (!state.path) return; const d = await api("PUT", `/api/docs/${encodeURI(state.path)}`, { content: state.content }); state.html = d.html || state.html; state.dirty = false; await refresh(); }
+  function schedulePreview() {
+    clearTimeout(renderTimer);
+    renderTimer = setTimeout(async () => {
+      try { await renderPreview(); } catch { return; }
+      if (!state?.root) return;
+      const preview = state.root.querySelector("[data-doc-preview]");
+      if (preview) preview.innerHTML = state.html;
+    }, 480);
+  }
+  async function save() {
+    if (!state.path) return;
+    await renderPreview();
+    const doc = await api("PUT", `/api/docs/${encodeURI(state.path)}`, { content: state.content });
+    Object.assign(state, { html: doc.html || doc.rendered || state.html, mtime: doc.mtime || new Date().toISOString(), dirty: false });
+    await refresh();
+  }
+  function insertAtSelection(before, after = "", placeholder = "text") {
+    const textarea = state.root.querySelector("#docs-editor-input");
+    if (!textarea) { state.sourceOpen = true; render(); requestAnimationFrame(() => insertAtSelection(before, after, placeholder)); return; }
+    const start = textarea.selectionStart, end = textarea.selectionEnd;
+    const chosen = textarea.value.slice(start, end) || placeholder;
+    const output = `${textarea.value.slice(0, start)}${before}${chosen}${after}${textarea.value.slice(end)}`;
+    textarea.value = output; textarea.focus(); textarea.setSelectionRange(start + before.length, start + before.length + chosen.length);
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  function applyFormat(kind) {
+    if (kind === "h2") return insertAtSelection("## ", "", "Heading");
+    if (kind === "bold") return insertAtSelection("**", "**", "bold text");
+    if (kind === "italic") return insertAtSelection("*", "*", "emphasis");
+    if (kind === "ul") return insertAtSelection("- ", "", "List item");
+    if (kind === "ol") return insertAtSelection("1. ", "", "List item");
+    if (kind === "code") return insertAtSelection("`", "`", "code");
+    if (kind === "link") { const url = prompt("Link URL", "https://"); if (url) insertAtSelection("[", `](${url})`, "link text"); }
+  }
   async function action(name) {
-    if (name === "new") { const path = askPath("notes/new-document.md"); if (!path) return; Object.assign(state, { path, content: "# New document\n\n", html: "", dirty: true, preview: false }); render(); return; }
+    if (name === "new") { const path = askPath("notes/new-document.mdx"); if (!path) return; Object.assign(state, { path, content: "# New document\n\n", html: "<h1>New document</h1>", mtime: "", dirty: true, sourceOpen: true }); return render(); }
+    if (name === "source") { state.sourceOpen = !state.sourceOpen; return render(); }
     if (name === "save") return save();
-    if (name === "preview") { state.preview = !state.preview; if (state.preview) await renderPreview(); render(); return; }
-    if (name === "delete" && state.path && confirm(`Delete ${state.path}?`)) { await api("DELETE", `/api/docs/${encodeURI(state.path)}`); Object.assign(state, { path:"", content:"", html:"", dirty:false }); return refresh(); }
-    if (name === "generate") { const path = askPath(state.path || "guides/new-guide.md"); if (!path) return; const promptText = prompt("What should the configured agent write?", "Create a practical, complete guide."); if (!promptText) return; const model = prompt("Model (leave default to use workspace routing)", "default") || "default"; const effort = prompt("Reasoning effort: low, medium, high, or max", "high") || "high"; state.root.classList.add("is-generating"); try { const d = await api("POST", "/api/docs/generate", { path, prompt: promptText, model, effort, permissionMode: "bypassPermissions" }); Object.assign(state, { path, content:d.raw || "", html:d.html || "", dirty:false }); await refresh(); } finally { state.root.classList.remove("is-generating"); } return; }
-    if (name === "help") alert("Markdown and preview editing\n\n# Heading\n**bold**  *italic*  `code`\n- bullet\n1. numbered\n[link](https://example.com)\n\nIn Live preview, select text and use the floating toolbar or right-click for formatting.");
+    if (name === "render") { await renderPreview(); return render(); }
+    if (name === "focus-preview") { state.sourceOpen = false; render(); state.root.querySelector("[data-doc-preview]")?.focus(); return; }
+    if (name === "more") return openMoreMenu();
+    if (name === "help") return showHelp();
+    if (name === "generate") return generate();
   }
-  function applyFormat(kind) { const preview = state.root.querySelector("[data-doc-preview]"); if (!preview) return; preview.focus(); const commands = { bold:"bold", italic:"italic", ul:"insertUnorderedList", ol:"insertOrderedList", code:"formatBlock" }; if (kind === "h2") document.execCommand("formatBlock", false, "h2"); else if (kind === "link") { const url = prompt("Link URL"); if (url) document.execCommand("createLink", false, url); } else if (kind === "code") document.execCommand("formatBlock", false, "pre"); else document.execCommand(commands[kind], false); preview.dispatchEvent(new InputEvent("input", { bubbles:true, inputType:"format" })); }
-  function contextMenu(e) { const file = e.target.closest("[data-doc-path]"); const preview = e.target.closest("[data-doc-preview]"); if (!file && !preview) return; e.preventDefault(); const menu = state.root.querySelector("#docs-context-menu"); menu.hidden = false; menu.style.cssText = `left:${e.clientX}px;top:${e.clientY}px`; if (preview) { menu.innerHTML = `<button data-format="bold">Bold</button><button data-format="italic">Italic</button><button data-format="h2">Heading</button><button data-format="ul">Bulleted list</button><button data-format="link">Link</button>`; menu.onclick = (ev) => { menu.hidden = true; applyFormat(ev.target.dataset.format); }; return; } const path = file.dataset.docPath; menu.innerHTML = `<button data-menu="open">Open</button><button data-menu="rename">Rename</button><button data-menu="delete">Delete</button>`; menu.onclick = async (ev) => { const type = ev.target.dataset.menu; menu.hidden = true; if (type === "open") load(path); if (type === "delete" && confirm(`Delete ${path}?`)) { await api("DELETE", `/api/docs/${encodeURI(path)}`); await refresh(); } if (type === "rename") { const next = askPath(path); if (next) { const d = await api("GET", `/api/docs/${encodeURI(path)}?raw=1`); await api("PUT", `/api/docs/${encodeURI(next)}`, { content:d }); await api("DELETE", `/api/docs/${encodeURI(path)}`); await refresh(); } } }; }
-  window.OpenKanDocs = { async mount(root) { state = { root, entries:[], path:"", content:"", html:"", dirty:false, preview:false }; await refresh(); }, unmount() { state = null; } };
+  function showHelp() { alert("OpenKan MDX\n\n# Heading\n**bold** · *italic* · `code`\n- bullet\n1. numbered\n[link](https://example.com)\n\nUse the source panel for exact MDX. The Preview stays rendered through OpenKan's MDX pipeline, including headings, tables, code, quotes, lists, and supported MDX blocks."); }
+  async function generate() {
+    const path = askPath(state.path || "guides/new-guide.mdx"); if (!path) return;
+    const promptText = prompt("What should the configured agent write?", "Create a practical, complete guide."); if (!promptText) return;
+    state.root.classList.add("is-generating");
+    try { const doc = await api("POST", "/api/docs/generate", { path, prompt: promptText, model: "default", effort: "high", permissionMode: "bypassPermissions" }); Object.assign(state, { path, content: doc.raw || "", html: doc.html || doc.rendered || "", mtime: doc.mtime || "", dirty: false, sourceOpen: false }); await refresh(); } finally { state?.root?.classList.remove("is-generating"); }
+  }
+  function menuAt(html, x, y) { const menu = state.root.querySelector("#docs-context-menu"); menu.innerHTML = html; menu.hidden = false; menu.style.left = `${x}px`; menu.style.top = `${y}px`; return menu; }
+  function dismissMenu(event) { if (!event?.target?.closest?.("#docs-context-menu")) { const menu = state?.root?.querySelector("#docs-context-menu"); if (menu) menu.hidden = true; } }
+  function openMoreMenu() { const trigger = state.root.querySelector('[data-doc-action="more"]'); const box = trigger.getBoundingClientRect(); const menu = menuAt(`<button data-doc-menu="rename">Rename document</button><button data-doc-menu="delete" class="danger">Delete document</button>`, box.left, box.bottom + 6); menu.onclick = async (event) => { const actionName = event.target.dataset.docMenu; menu.hidden = true; if (actionName === "delete" && state.path && confirm(`Delete ${state.path}?`)) { await api("DELETE", `/api/docs/${encodeURI(state.path)}`); Object.assign(state, { path:"", content:"", html:"", dirty:false }); await refresh({ loadInitial:true }); } if (actionName === "rename" && state.path) { const next = askPath(state.path); if (!next || next === state.path) return; await api("PUT", `/api/docs/${encodeURI(next)}`, { content: state.content }); await api("DELETE", `/api/docs/${encodeURI(state.path)}`); state.path = next; await refresh(); } }; }
+  function contextMenu(event) { const file = event.target.closest("[data-doc-path]"); const editor = event.target.closest("#docs-editor-input"); if (!file && !editor) return; event.preventDefault(); const menu = file ? menuAt(`<button data-doc-menu="open">Open</button><button data-doc-menu="rename">Rename</button><button data-doc-menu="delete" class="danger">Delete</button>`, event.clientX, event.clientY) : menuAt(`<button data-doc-format="h2">Heading</button><button data-doc-format="bold">Bold</button><button data-doc-format="italic">Italic</button><button data-doc-format="ul">Bulleted list</button><button data-doc-format="link">Link</button>`, event.clientX, event.clientY); menu.onclick = async (actionEvent) => { menu.hidden = true; const format = actionEvent.target.dataset.docFormat; if (format) return applyFormat(format); const menuAction = actionEvent.target.dataset.docMenu, path = file?.dataset.docPath; if (menuAction === "open") return load(path); if (menuAction === "delete" && confirm(`Delete ${path}?`)) { await api("DELETE", `/api/docs/${encodeURI(path)}`); return refresh({ loadInitial: path === state.path }); } if (menuAction === "rename") { const next = askPath(path); if (!next || next === path) return; const doc = await api("GET", `/api/docs/${encodeURI(path)}?raw=0`); await api("PUT", `/api/docs/${encodeURI(next)}`, { content: doc.raw || "" }); await api("DELETE", `/api/docs/${encodeURI(path)}`); if (path === state.path) state.path = next; return refresh(); } }; }
+  window.OpenKanDocs = { async mount(root, options = {}) { if (state?.root === root) return; state = { root, entries: [], path:"", content:"", html:"", mtime:"", dirty:false, sourceOpen:false, initialDoc:options.initialDoc || "" }; await refresh({ loadInitial:true }); }, unmount() { clearTimeout(renderTimer); state = null; } };
 })();

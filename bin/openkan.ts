@@ -41,6 +41,21 @@ const DEFAULT_CONFIG: Config = {
   sandbox: { tsxMaxBytes: 32768 },
 };
 
+
+// Agent-facing REST capability map. `openkan api` exposes this entire surface
+// without requiring a different shell script for each dashboard feature.
+const AGENT_CAPABILITIES = Object.freeze({
+  board: ["GET /api/board", "GET /api/tasks-index", "GET /api/tasks/:id", "POST /api/tasks", "PATCH /api/tasks/:id", "DELETE /api/tasks/:id", "POST /api/tasks/bulk", "POST /api/organize", "POST /api/import"],
+  taskContext: ["GET|POST /api/tasks/:id/comments", "POST /api/tasks/:id/ask", "POST /api/tasks/:id/respond", "GET /api/tasks/:id/subtasks", "GET|POST /api/tasks/:id/images", "POST /api/tasks/:id/start", "POST /api/tasks/:id/abort"],
+  planning: ["ok task|plan|prd …", "GET /api/goals", "PATCH /api/goals/:prdId/:goalId"],
+  docs: ["GET /api/docs", "GET|PUT|DELETE /api/docs/:path", "POST /api/docs/render", "POST /api/docs/generate"],
+  chat: ["POST /api/chat/send", "GET /api/chat/sessions", "GET /api/chat/sessions/:id", "POST /api/chat/sessions/:id/abort"],
+  agents: ["GET /api/claude/snapshot", "GET /api/claude/agents|skills|commands|hooks|teams|workflows", "GET /api/claude/activity", "GET /api/claude/model-router"],
+  projects: ["GET|POST /api/projects", "PATCH /api/projects/:id/active", "POST /api/projects/auto-detect", "DELETE /api/projects/:id"],
+  insight: ["GET /api/search", "GET /api/tags", "GET /api/changelog", "GET /api/changelog/summary", "GET /api/insights/velocity", "GET /api/contributors"],
+  config: ["GET|PATCH /api/settings", "GET /api/config-sections", "PATCH /api/config-sections/:sectionId", "openkan config list|get|set"],
+});
+
 function configPath(): string {
   return join(process.cwd(), ".ok", "openkan.json");
 }
@@ -374,6 +389,110 @@ async function cmdLogs(argv: string[]): Promise<void> {
   }
 }
 
+// ─── Agent API bridge ─────────────────────────────────────────────────────────
+
+function apiBaseUrl(args: ParsedArgs): string {
+  const cfg = loadConfig();
+  const host = String(args.flags.host ?? cfg.host);
+  const port = Number.parseInt(String(args.flags.port ?? cfg.port), 10);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("--port must be a valid TCP port");
+  if (!/^(127\.0\.0\.1|localhost|::1)$/.test(host)) throw new Error("openkan api only permits a loopback --host");
+  return `http://${host.includes(":") ? `[${host}]` : host}:${port}`;
+}
+
+function parseJsonInput(args: ParsedArgs): unknown | undefined {
+  const raw = args.flags.data;
+  const file = args.flags["data-file"];
+  if (raw !== undefined && file !== undefined) throw new Error("Use either --data or --data-file, not both");
+  const value = file !== undefined ? readFileSync(resolve(String(file)), "utf-8") : raw;
+  if (value === undefined || value === true) return undefined;
+  try { return JSON.parse(String(value)); }
+  catch { throw new Error("--data must be valid JSON"); }
+}
+
+function printApiResult(status: number, statusText: string, body: string, jsonOnly: boolean): void {
+  let rendered = body;
+  try { rendered = JSON.stringify(JSON.parse(body), null, 2); } catch { /* keep text response */ }
+  if (!jsonOnly) process.stderr.write(`openkan api: ${status} ${statusText}\n`);
+  process.stdout.write(`${rendered}${rendered.endsWith("\n") ? "" : "\n"}`);
+}
+
+async function cmdApi(argv: string[]): Promise<void> {
+  const args = parseArgs(["api", ...argv]);
+  const path = args.positionals[0];
+  if (!path) throw new Error("Usage: openkan api <path> [--method GET] [--data JSON|--data-file file] [--json]");
+  if (!path.startsWith("/api/")) throw new Error("API path must begin with /api/");
+  if (path.includes("..") || /\s/.test(path)) throw new Error("API path must be a clean relative API path");
+  const method = String(args.flags.method ?? (args.flags.data !== undefined || args.flags["data-file"] !== undefined ? "POST" : "GET")).toUpperCase();
+  if (!/^(GET|POST|PATCH|PUT|DELETE)$/.test(method)) throw new Error("--method must be GET, POST, PATCH, PUT, or DELETE");
+  const payload = parseJsonInput(args);
+  const headers: Record<string, string> = { Accept: "application/json" };
+  const init: RequestInit = { method, headers };
+  if (payload !== undefined) {
+    headers["content-type"] = "application/json";
+    init.body = JSON.stringify(payload);
+  }
+  const response = await fetch(`${apiBaseUrl(args)}${path}`, init);
+  const body = await response.text();
+  printApiResult(response.status, response.statusText, body, args.flags.json === true || args.flags.json === "true");
+  if (!response.ok) process.exitCode = 1;
+}
+
+async function cmdAgentContext(argv: string[]): Promise<void> {
+  const args = parseArgs(["context", ...argv]);
+  const endpoints = {
+    project: "/api/project", board: "/api/board", tasks: "/api/tasks-index", goals: "/api/goals",
+    docs: "/api/docs", projects: "/api/projects", agents: "/api/claude/agents", workflows: "/api/claude/workflows",
+    chatSessions: "/api/chat/sessions", settings: "/api/config-sections", tags: "/api/tags",
+  } as const;
+  const base = apiBaseUrl(args);
+  const entries = await Promise.all(Object.entries(endpoints).map(async ([name, path]) => {
+    try {
+      const response = await fetch(`${base}${path}`, { headers: { Accept: "application/json" } });
+      const raw = await response.text();
+      let value: unknown = raw;
+      try { value = JSON.parse(raw); } catch { /* retain raw body */ }
+      return [name, response.ok ? value : { error: `HTTP ${response.status}`, body: value }] as const;
+    } catch (error) {
+      return [name, { error: error instanceof Error ? error.message : String(error) }] as const;
+    }
+  }));
+  const context = Object.fromEntries(entries);
+  process.stdout.write(`${JSON.stringify({ generatedAt: new Date().toISOString(), capabilities: AGENT_CAPABILITIES, context }, null, 2)}\n`);
+}
+
+async function cmdAgent(argv: string[]): Promise<void> {
+  const sub = argv[0] ?? "capabilities";
+  if (sub === "-h" || sub === "--help" || sub === "help") {
+    process.stdout.write("Usage: openkan agent capabilities|context|call|start|abort\n\n  capabilities              Print the supported local API groups\n  context [--json]          Snapshot active workspace context\n  call /api/path [flags]    Call a loopback OpenKan API route\n  start <task-id> [flags]   Start the configured agent for a task\n  abort <task-id> [flags]   Abort a running task agent\n");
+    return;
+  }
+  if (sub === "capabilities") {
+    process.stdout.write(`${JSON.stringify(AGENT_CAPABILITIES, null, 2)}\n`);
+    return;
+  }
+  if (sub === "context") return cmdAgentContext(argv.slice(1));
+  if (sub === "call") return cmdApi(argv.slice(1));
+  if (sub === "start") {
+    const taskId = argv[1];
+    if (!taskId) throw new Error("Usage: openkan agent start <task-id> [--agent id] [--model id]");
+    const args = parseArgs(["start", ...argv.slice(2)]);
+    const data: Record<string, string> = {};
+    if (typeof args.flags.agent === "string") data.agent = args.flags.agent;
+    if (typeof args.flags.model === "string") data.model = args.flags.model;
+    const requestArgs = [`/api/tasks/${encodeURIComponent(taskId)}/start`, "--method", "POST", "--data", JSON.stringify(data)];
+    if (args.flags.port !== undefined) requestArgs.push("--port", String(args.flags.port));
+    if (args.flags.host !== undefined) requestArgs.push("--host", String(args.flags.host));
+    return cmdApi(requestArgs);
+  }
+  if (sub === "abort") {
+    const taskId = argv[1];
+    if (!taskId) throw new Error("Usage: openkan agent abort <task-id>");
+    return cmdApi([`/api/tasks/${encodeURIComponent(taskId)}/abort`, "--method", "POST", ...argv.slice(2)]);
+  }
+  throw new Error("Usage: openkan agent capabilities|context|call|start|abort …");
+}
+
 // ─── Subcommand: reset ───────────────────────────────────────────────────────
 
 async function cmdReset(ctx: BoardContext, argv: string[]): Promise<void> {
@@ -426,6 +545,8 @@ function printHelp(cmd?: string): void {
     open: "open                             Open the kanban UI in browser",
     config: "config list|get <key>|set <key> <value>  Manage config",
     logs: "logs [--tail N] [--follow]       Print server logs",
+    api: "api <path> [--method M] [--data JSON|--data-file FILE]  Call any local OpenKan REST feature",
+    agent: "agent capabilities|context|call|start|abort  Agent-first command/control bridge",
     reset: "reset [--hard]                  Reset .ok/ (--hard also wipes tasks/sessions)",
   };
   if (cmd && msgs[cmd]) {
@@ -475,6 +596,8 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     case "open":    return cmdOpen(ctx);
     case "config":  return cmdConfig(argv.slice(1));
     case "logs":    return cmdLogs(argv.slice(1));
+    case "api":     return cmdApi(argv.slice(1));
+    case "agent":   return cmdAgent(argv.slice(1));
     case "reset":   return cmdReset(ctx, argv.slice(1));
     case "onboard": return cmdOnboard();
     case "mcp":     return cmdMcp();

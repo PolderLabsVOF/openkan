@@ -63,6 +63,8 @@ export interface ChatTurn {
   durationMs?: number;
   /** Provider-visible reasoning summary, when the selected CLI exposes one. */
   reasoning?: string;
+  /** Task references carried with a user turn without polluting the message text. */
+  taskMentions?: ChatTaskMention[];
 }
 
 /** Persisted shape of a single tool-use block. */
@@ -109,10 +111,20 @@ export interface ChatSelectors {
   permissionMode: string;
 }
 
+export interface ChatTaskMention {
+  id: string;
+  title: string;
+}
+
 /** Input to sendTurn. */
 export interface SendTurnOptions extends ChatSelectors {
   sessionId?: string;
+  /** Full private prompt sent to Claude Code. */
   message: string;
+  /** Message text rendered and persisted in the user-facing transcript. */
+  displayMessage?: string;
+  /** Compact task context rendered as a banner rather than prompt text. */
+  taskMentions?: ChatTaskMention[];
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   claudeBin?: string;
@@ -801,7 +813,8 @@ export async function sendTurn(
   const userTurn: ChatTurn = {
     ts,
     role: "user",
-    content: opts.message,
+    content: opts.displayMessage ?? opts.message,
+    taskMentions: opts.taskMentions,
     model: opts.model,
     effort: opts.effort,
     permissionMode: opts.permissionMode,
@@ -1108,7 +1121,21 @@ export async function handleChatRequest(
       const body = await readJsonBody(req);
       if (!body) return errResponse("Invalid JSON body", 400);
       const message = typeof body.message === "string" ? body.message.trim() : "";
-      if (!message) return errResponse("message is required", 422);
+      const taskMentions: ChatTaskMention[] = Array.isArray(body.taskMentions)
+        ? body.taskMentions
+          .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+          .map((item) => ({
+            id: typeof item.id === "string" ? item.id.trim() : "",
+            title: typeof item.title === "string" ? item.title.trim() : "",
+          }))
+          .filter((item) => item.id.length > 0)
+          .slice(0, 12)
+        : [];
+      if (!message && taskMentions.length === 0) return errResponse("message or task reference is required", 422);
+      const taskContext = taskMentions.length
+        ? `\n\nReferenced OpenKan tasks (use these as project context):\n${taskMentions.map((task) => `- ${task.id}: ${task.title || "Untitled task"}`).join("\n")}`
+        : "";
+      const agentMessage = `${message || "Please help with the referenced task."}${taskContext}`;
       const legacyPermissionModes: Record<string, string> = {
         "accept-edits": "acceptEdits", default: "auto", "bypass-permissions": "bypassPermissions",
       };
@@ -1134,7 +1161,9 @@ export async function handleChatRequest(
         broadcastChatSession(sessionId, "chat.status", { sessionId, phase: "thinking", label: "Thinking" });
         const running = sendTurn(projectRoot, {
           sessionId,
-          message,
+          message: agentMessage,
+          displayMessage: message,
+          taskMentions,
           model: selectors.model,
           effort: selectors.effort,
           permissionMode: selectors.permissionMode,

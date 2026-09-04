@@ -34,19 +34,18 @@
           <span class="brand-project-caret" aria-hidden="true">▾</span>
         </button>
       </div>
+      <button id="home-page-btn" class="topbar-home" type="button" aria-label="Open workspace overview">
+        <span aria-hidden="true">⌂</span><span>Overview</span>
+      </button>
       <div class="workspace-mode" role="group" aria-label="Workspace mode">
         <button type="button" data-workspace-mode="tasks" class="active">Tasks</button>
         <button type="button" data-workspace-mode="chat">Chat</button>
       </div>
       <nav class="topbar-tabs" role="tablist" aria-label="Dashboard sections">
-        <button type="button" class="tab" role="tab" data-tab="home" aria-selected="false">Home</button>
         <button type="button" class="tab" role="tab" data-tab="tasks" aria-selected="true">Tasks</button>
-        <button type="button" class="tab" role="tab" data-tab="changelog" aria-selected="false">Changelog</button>
-        <button type="button" class="tab" role="tab" data-tab="contributors" aria-selected="false">Contributors</button>
         <button type="button" class="tab" role="tab" data-tab="docs" aria-selected="false">Docs</button>
         <button type="button" class="tab" role="tab" data-tab="goals" aria-selected="false">Goals</button>
         <button type="button" class="tab" role="tab" data-tab="agents" aria-selected="false">Agents</button>
-        <button type="button" class="tab" role="tab" data-tab="insights" aria-selected="false">Insights</button>
       </nav>
       <div class="topbar-right">
         <span id="status-pill" class="pill pill-disconnected" role="status" aria-live="polite">
@@ -69,6 +68,18 @@
             <span class="project-switcher-caret" aria-hidden="true">▾</span>
           </button>
           <div id="project-switcher-popover" class="project-switcher-popover" role="menu" hidden></div>
+        </div>
+        <div class="workspace-more">
+          <button id="workspace-more-btn" class="btn-icon" type="button" aria-label="More workspace pages" aria-haspopup="menu" aria-expanded="false" title="More workspace pages">•••</button>
+          <div id="workspace-more-menu" class="workspace-more-menu" role="menu" hidden>
+            <span class="workspace-more-label">Workspace mode</span>
+            <button type="button" role="menuitem" data-workspace-mode="tasks">Task mode</button>
+            <button type="button" role="menuitem" data-workspace-mode="chat">Chat mode</button>
+            <span class="workspace-more-separator"></span>
+            <button type="button" role="menuitem" data-workspace-page="changelog">Changelog</button>
+            <button type="button" role="menuitem" data-workspace-page="insights">Insights</button>
+            <button type="button" role="menuitem" data-workspace-page="contributors">Contributors</button>
+          </div>
         </div>
         <button id="settings-btn" class="btn-icon" type="button" aria-label="Settings" title="Settings">⚙</button>
         <button id="chat-sidebar-toggle-btn" class="btn-icon" type="button"
@@ -440,6 +451,9 @@
          app.js (which calls OpenKanClaude.mount(...) when the Claude tab
          is activated) but AFTER api.js (so window.OpenKanAPI.api exists). -->
     <script src="claude-pane.js" defer></script>
+    <!-- GSAP powers the concise, status-specific chat work indicators. -->
+    <script src="vendor/gsap.min.js" defer></script>
+    <script src="chat-status-motion.js" defer></script>
     <!-- chat-sidebar.js exposes window.OpenKanChatSidebar. It depends on
          claude-pane.js (for the activity footer) and api.js (for fetch +
          storage). Loaded before app.js so the toggle button can wire up.

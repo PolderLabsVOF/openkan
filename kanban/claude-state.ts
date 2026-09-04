@@ -151,15 +151,21 @@ const SHARED_DIR = `${sep}_shared${sep}`;
 function listMarkdownFiles(rootDir: string, relPath: string): string[] {
   const dir = join(rootDir, ".claude", relPath);
   if (!existsSync(dir)) return [];
-  let entries: string[];
-  try {
-    entries = readdirSync(dir);
-  } catch {
-    return [];
-  }
-  return entries
-    .filter((name) => name.endsWith(".md") || name.endsWith(".mdx"))
-    .map((name) => join(dir, name));
+  const files: string[] = [];
+  const walk = (current: string) => {
+    try {
+      for (const entry of readdirSync(current, { withFileTypes: true })) {
+        // Shared prompt fragments are reusable source material, not invocable
+        // commands. Keep them out of every command catalogue.
+        if (entry.name === "_shared") continue;
+        const path = join(current, entry.name);
+        if (entry.isDirectory()) { walk(path); continue; }
+        if (entry.isFile() && (entry.name.endsWith(".md") || entry.name.endsWith(".mdx"))) files.push(path);
+      }
+    } catch { /* unreadable command folders are absent from the catalogue */ }
+  };
+  walk(dir);
+  return files.sort();
 }
 
 function safeReadFile(path: string): string | null {

@@ -1371,3 +1371,12 @@ body.workspace-mode-chat { padding-left: 0; }
     transform: none;
   }
 }
+
+/* Keep the deliberately small primary nav fully visible when a chat rail
+   narrows the application shell. Less-frequent destinations live in More. */
+@media (max-width: 1400px) and (min-width: 901px) {
+  .workspace-mode { display: none; }
+  .topbar-tabs { gap: 2px; height: 40px; padding: 4px; overflow: visible; }
+  .topbar-tabs .tab,
+  .topbar-tabs .tab:hover { height: 30px; padding: 0 5px; font-size: 10.5px; }
+}

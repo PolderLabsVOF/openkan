@@ -2077,6 +2077,14 @@ async function apiDeleteDoc(relPath: string): Promise<Response> {
   rmSync(target); return jsonResponse({ ok: true, path: relPath });
 }
 
+async function apiRenderDoc(req: Request): Promise<Response> {
+  let body: { content?: unknown };
+  try { body = await req.json(); } catch { return errorResponse("Invalid JSON"); }
+  if (typeof body.content !== "string") return errorResponse("content is required", 422);
+  const rendered = await renderMdx(body.content);
+  return jsonResponse({ html: rendered.html, rendered: rendered.html, blocks: rendered.blocks });
+}
+
 async function apiGenerateDoc(req: Request): Promise<Response> {
   const root = getActiveProjectRoot(); let body: { path?: unknown; prompt?: unknown; model?: unknown; effort?: unknown; permissionMode?: unknown };
   try { body = await req.json(); } catch { return errorResponse("Invalid JSON"); }
@@ -2904,6 +2912,7 @@ async function handleRequest(req: Request): Promise<Response> {
 
   // Docs workspace CRUD + configured-agent generation.
   if (path === "/api/docs/generate" && req.method === "POST") return apiGenerateDoc(req);
+  if (path === "/api/docs/render" && req.method === "POST") return apiRenderDoc(req);
   const docListMatch = path.match(/^\/api\/docs\/?$/);
   if (docListMatch && req.method === "GET") return apiGetDocs();
   const docFileMatch = path.match(/^\/api\/docs\/(.+)$/);

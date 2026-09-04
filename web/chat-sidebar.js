@@ -147,6 +147,10 @@
     liveBubble: null,
     liveChips: null,
     liveActivity: [],
+    // Task references staged in the composer by board drag-and-drop.
+    taskMentions: new Map(),
+    // Completion marks are allowed one entrance only; rendered history stays still.
+    completedMotionTs: new Set(),
     // Cached `/api/chat/picker-options` payload (model list + efforts + perms).
     pickerOptions: null,
     // Currently-open popover id (or null). Only one popover at a time.
@@ -293,6 +297,7 @@
 
       <footer class="chat-sidebar__composer chat-sidebar-composer">
         <div class="chat-sidebar__composer-surface">
+          <div class="chat-sidebar__mention-tray" id="chat-sidebar-mention-tray" hidden aria-live="polite" aria-label="Task references"></div>
           <textarea id="chat-sidebar-input" class="chat-sidebar__composer-input"
                     rows="1" placeholder="Message OpenKan" aria-label="Message OpenKan"></textarea>
           <div class="chat-sidebar__composer-footer">
@@ -433,7 +438,8 @@
         <div class="chat-bubble-row chat-bubble-row-user">
           <div class="chat-bubble chat-bubble-user" data-ts="${esc(turn.ts || "")}" data-status="${esc(status)}">
             ${bubbleMetaHTML(turn)}
-            <div class="chat-bubble-body">${esc(turn.content || "")}</div>
+            ${taskReferenceBannersHTML(turn)}
+            ${turn.content ? `<div class="chat-bubble-body">${esc(turn.content)}</div>` : ""}
           </div>
           ${errorLine}
         </div>
@@ -465,6 +471,16 @@
         </div>
       </div>
     `;
+  }
+
+  function taskReferenceBannersHTML(turn) {
+    const tasks = Array.isArray(turn.taskMentions) ? turn.taskMentions : [];
+    if (!tasks.length) return "";
+    return `<div class="chat-task-reference-banners" aria-label="Referenced tasks">${tasks.map((task) => {
+      const id = typeof task?.id === "string" ? task.id : "task";
+      const title = typeof task?.title === "string" ? task.title : "";
+      return `<span class="chat-task-reference-banner" title="${esc(title || id)}"><span aria-hidden="true">↗</span> Task #${esc(id.replace(/^tsk-/, "").slice(0, 6))}</span>`;
+    }).join("")}</div>`;
   }
 
   function chipHTML(tool) {
@@ -499,7 +515,8 @@
     const reasoningDetail = reasoning
       ? `<div class="chat-reasoning-output"><strong>Reasoning summary</strong><pre>${esc(reasoning)}</pre></div>`
       : `<span class="chat-reasoning-unavailable">No provider-visible reasoning summary was emitted for this turn.</span>`;
-    return `<details class="chat-activity-summary"><summary><span class="chat-activity-sprite" aria-hidden="true"></span>${bits.join(" · ")}</summary><div class="chat-activity-details"><strong>Activity details</strong><span>${tools.length ? "Open each tool below to inspect its input and result." : "No tools were used."}</span>${reasoningDetail}</div></details>`;
+    const completion = window.OpenKanChatMotion?.render?.({ phase: "complete", label: "Completed" }) || "";
+    return `<details class="chat-activity-summary"><summary><span class="chat-activity-completion" data-chat-completion="${esc(turn.ts || "")}">${completion}</span>${bits.join(" · ")}</summary><div class="chat-activity-details"><strong>Activity details</strong><span>${tools.length ? "Open each tool below to inspect its input and result." : "No tools were used."}</span>${reasoningDetail}</div></details>`;
   }
 
   function chipsHTML(turn) {
@@ -513,7 +530,7 @@
   /* ----------------------------------------------------------------------
    * Transcript rendering
    * -------------------------------------------------------------------- */
-  async function renderTranscript() {
+  async function renderTranscript({ completionTs = "" } = {}) {
     const node = state.root?.querySelector("#chat-sidebar-transcript");
     if (!node) return;
     syncHeroState();
@@ -532,6 +549,9 @@
       parts.push(bubbleHTML(turn));
     }
     const wasNearBottom = node.scrollHeight - node.scrollTop - node.clientHeight < 80;
+    // Rendering replaces the transcript DOM. Stop any former terminal cue
+    // first so an orphaned GSAP timeline cannot survive the replacement.
+    node.querySelectorAll("[data-chat-status-motion]").forEach((motion) => window.OpenKanChatMotion?.stop?.(motion));
     node.innerHTML = parts.join("");
     if (wasNearBottom) {
       node.scrollTop = node.scrollHeight;
@@ -552,6 +572,16 @@
       el.textContent = turn.content || "(No text returned)";
       const html = await renderMarkdown(turn.content || "");
       el.innerHTML = html || esc(turn.content || "(No text returned)");
+    }
+    // A completed mark plays only for the newly-finished assistant turn.
+    // Historical turns render in their settled state instead of re-running.
+    if (completionTs && !state.completedMotionTs.has(completionTs)) {
+      const completion = [...node.querySelectorAll("[data-chat-completion]")]
+        .find((mark) => mark.dataset.chatCompletion === completionTs);
+      if (completion) {
+        state.completedMotionTs.add(completionTs);
+        window.OpenKanChatMotion?.animate?.(completion);
+      }
     }
   }
 
@@ -577,12 +607,14 @@
               if (userTurn?.messageId && t.messageId === userTurn.messageId) return false;
               return !(t.ts === userTurn?.ts && t.role === "user" && t.content === userTurn.content);
             });
-            appendTurnIfNew(userTurn);
-            appendTurnIfNew(assistantTurn);
+            const userAdded = appendTurnIfNew(userTurn);
+            const assistantAdded = appendTurnIfNew(assistantTurn);
             state.inFlight = false;
             removeStreamingIndicator();
             updateAbortButton();
-            void renderTranscript();
+            // Both the project and session SSE streams may report this rollup.
+            // Re-render only when it changed the canonical transcript.
+            if (userAdded || assistantAdded) void renderTranscript({ completionTs: assistantAdded ? (assistantTurn?.ts || "") : "" });
             removeStreamingIndicator();
             stopSessionStream();
             hideNewMessagesPill();
@@ -757,7 +789,14 @@
     if (!node) { node = document.createElement("details"); node.className = "chat-live-activity"; node.open = true; transcript.appendChild(node); }
     const events = (state.liveActivity || []).filter(isImportantActivity);
     if (events.length === 0) { node?.remove(); return; }
-    node.innerHTML = `<summary><span class="chat-working-loader-wrap"><img class="chat-working-loader" src="brand/infinity-loader-animated.svg" width="52" height="28" alt="" /></span>Important agent activity <span>${events.length}</span></summary><div class="chat-live-activity-list">${events.map((event) => `<details><summary>${esc(activityLabel(event))}</summary><pre>${esc(JSON.stringify(event.raw || {}, null, 2))}</pre></details>`).join("")}</div>`;
+    const latest = events.at(-1);
+    const motion = window.OpenKanChatMotion?.render?.({
+      phase: latest?.type,
+      label: activityLabel(latest),
+      name: latest?.raw?.content_block?.name || latest?.raw?.tool_name,
+    }) || "";
+    node.innerHTML = `<summary><span class="chat-live-activity-motion">${motion}</span>Important agent activity <span>${events.length}</span></summary><div class="chat-live-activity-list">${events.map((event) => `<details><summary>${esc(activityLabel(event))}</summary><pre>${esc(JSON.stringify(event.raw || {}, null, 2))}</pre></details>`).join("")}</div>`;
+    window.OpenKanChatMotion?.animateWithin?.(node);
     maybeAutoScroll(transcript);
   }
 
@@ -794,14 +833,19 @@
       transcript.appendChild(node);
     }
     const label = status.label || (status.phase === "tool" ? "Using a tool" : "Thinking");
-    node.innerHTML = `<img class="chat-working-loader" src="brand/infinity-loader-animated.svg" width="52" height="28" alt="" aria-hidden="true" /><span>${esc(label)}</span>`;
+    const motion = window.OpenKanChatMotion?.render?.(status) || "";
+    node.innerHTML = `${motion}<span>${esc(label)}</span>`;
+    window.OpenKanChatMotion?.animateWithin?.(node);
     maybeAutoScroll(transcript);
   }
   function ensureStreamingIndicator() { updateLiveStatus({ phase: "thinking", label: "Writing response" }); }
   function removeStreamingIndicator() {
     const transcript = state.root?.querySelector("#chat-sidebar-transcript");
     const node = transcript?.querySelector(":scope > .chat-bubble-streaming-indicator");
-    if (node) node.remove();
+    if (node) {
+      node.querySelectorAll?.("[data-chat-status-motion]").forEach((motion) => window.OpenKanChatMotion?.stop?.(motion));
+      node.remove();
+    }
   }
 
   function maybeAutoScroll(node) {
@@ -831,10 +875,10 @@
       return t.ts === turn.ts && t.role === turn.role
         && (t.content || "") === (turn.content || "");
     });
-    if (!dup) {
-      state.transcript.push(turn);
-      syncHeroState();
-    }
+    if (dup) return false;
+    state.transcript.push(turn);
+    syncHeroState();
+    return true;
   }
   function stopLive() {
     if (state.sse) {
@@ -884,6 +928,84 @@
   }
 
   /* ----------------------------------------------------------------------
+   * Task references from board drag-and-drop
+   * -------------------------------------------------------------------- */
+  function normaliseDroppedTask(value) {
+    const candidate = value?.task || value;
+    if (!candidate || typeof candidate.id !== "string" || !candidate.id.trim()) return null;
+    return {
+      id: candidate.id.trim(),
+      title: typeof candidate.title === "string" ? candidate.title.trim() : "Untitled task",
+      column: typeof candidate.column === "string" ? candidate.column : "",
+    };
+  }
+
+  function readDraggedTask(event) {
+    const transfer = event?.dataTransfer;
+    const types = Array.from(transfer?.types || []);
+    for (const type of ["application/x-openkan-task", "text/x-openkan-task", "application/json"]) {
+      if (types.length && !types.includes(type)) continue;
+      try {
+        const parsed = JSON.parse(transfer?.getData(type) || "");
+        const task = normaliseDroppedTask(parsed);
+        if (task) return task;
+      } catch (_err) { /* try the next portable representation */ }
+    }
+    return normaliseDroppedTask(window.OpenKanActiveTaskDrag);
+  }
+
+  function taskMentionToken(taskId) { return `@task(${taskId})`; }
+
+  function renderTaskMentionTray() {
+    const tray = state.root?.querySelector("#chat-sidebar-mention-tray");
+    const input = state.root?.querySelector("#chat-sidebar-input");
+    if (!tray || !input) return;
+    const active = [...state.taskMentions.values()];
+    tray.hidden = active.length === 0;
+    tray.replaceChildren();
+    for (const task of active) {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "chat-sidebar__mention-chip";
+      chip.dataset.chatRemoveMention = task.id;
+      chip.title = `Remove task reference: ${task.title}`;
+      chip.setAttribute("aria-label", `Remove task reference: ${task.title}`);
+      const prefix = document.createElement("span");
+      prefix.className = "chat-sidebar__mention-chip-prefix";
+      prefix.textContent = "Task";
+      const title = document.createElement("span");
+      title.className = "chat-sidebar__mention-chip-title";
+      title.textContent = `#${task.id.replace(/^tsk-/, "").slice(0, 6)}`;
+      const remove = document.createElement("span");
+      remove.className = "chat-sidebar__mention-chip-remove";
+      remove.setAttribute("aria-hidden", "true");
+      remove.textContent = "×";
+      chip.append(prefix, title, remove);
+      tray.append(chip);
+    }
+  }
+
+  function insertTaskMention(task) {
+    const input = state.root?.querySelector("#chat-sidebar-input");
+    if (!input || !task?.id) return;
+    // References belong to the compact tray. Keeping the composer text
+    // untouched means a drop never injects a long, surprising prompt line.
+    state.taskMentions.set(task.id, task);
+    renderTaskMentionTray();
+    input.focus();
+    state.root?.classList.add("chat-sidebar--task-dropped");
+    setTimeout(() => state.root?.classList.remove("chat-sidebar--task-dropped"), 520);
+  }
+
+  function removeTaskMention(taskId) {
+    const input = state.root?.querySelector("#chat-sidebar-input");
+    if (!input || !taskId) return;
+    state.taskMentions.delete(taskId);
+    renderTaskMentionTray();
+    input.focus();
+  }
+
+  /* ----------------------------------------------------------------------
    * Event handlers
    * -------------------------------------------------------------------- */
   function bindEvents() {
@@ -907,32 +1029,29 @@
       if (!state.scrolledUp) hideNewMessagesPill();
     });
 
-    // Dropping a board card into chat mentions it without moving it.
+    // A board card is copied into chat as a reference. We deliberately
+    // support custom, JSON, and in-page payloads: browser engines vary in
+    // which drag MIME types are readable before the final drop event.
     state.root.addEventListener("dragenter", (e) => {
-      if (e.dataTransfer?.types?.includes("application/x-openkan-task")) state.root.classList.add("chat-sidebar--task-drop");
+      if (readDraggedTask(e)) state.root.classList.add("chat-sidebar--task-drop");
     });
     state.root.addEventListener("dragleave", (e) => {
       if (!state.root.contains(e.relatedTarget)) state.root.classList.remove("chat-sidebar--task-drop");
     });
     state.root.addEventListener("dragover", (e) => {
-      if (e.dataTransfer?.types?.includes("application/x-openkan-task")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }
+      if (readDraggedTask(e)) {
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+        state.root.classList.add("chat-sidebar--task-drop");
+      }
     });
     state.root.addEventListener("drop", (e) => {
-      const raw = e.dataTransfer?.getData("application/x-openkan-task");
-      if (!raw) return;
+      const task = readDraggedTask(e);
+      if (!task) return;
       e.preventDefault();
+      e.stopPropagation();
       state.root.classList.remove("chat-sidebar--task-drop");
-      try {
-        const task = JSON.parse(raw);
-        const input = state.root.querySelector("#chat-sidebar-input");
-        if (!input || !task?.id) return;
-        const mention = `@task(${task.id}) ${task.title || ""}`.trim();
-        input.value = `${input.value ? `${input.value}
-` : ""}${mention}`;
-        input.focus(); autoResize();
-        state.root.classList.add("chat-sidebar--task-dropped");
-        setTimeout(() => state.root?.classList.remove("chat-sidebar--task-dropped"), 520);
-      } catch (_err) { /* invalid external drop */ }
+      insertTaskMention(task);
     });
     // Drag-drop: dropped files are routed through the M1 import endpoint.
     state.root.addEventListener("dragover", (e) => { e.preventDefault(); });
@@ -987,6 +1106,8 @@
     if (copy) { copyToClipboard(copy.getAttribute("data-chat-copy")); return; }
     const retry = t.closest("[data-chat-retry]");
     if (retry) { void retryLastTurn(); return; }
+    const mention = t.closest("[data-chat-remove-mention]");
+    if (mention) { removeTaskMention(mention.getAttribute("data-chat-remove-mention")); return; }
     const prompt = t.closest("[data-chat-prompt]");
     if (prompt) {
       const input = state.root.querySelector("#chat-sidebar-input");
@@ -1086,6 +1207,7 @@
   function onInput(_e) {
     if (!state.root) return;
     autoResize();
+    renderTaskMentionTray();
   }
 
   function autoResize() {
@@ -1147,11 +1269,14 @@
     const input = state.root.querySelector("#chat-sidebar-input");
     if (!input) return;
     const message = (input.value || "").trim();
-    if (!message || state.inFlight) return;
+    const taskMentions = [...state.taskMentions.values()];
+    if ((!message && taskMentions.length === 0) || state.inFlight) return;
 
     state.inFlight = true;
     updateAbortButton();
     input.value = "";
+    state.taskMentions.clear();
+    renderTaskMentionTray();
     autoResize();
 
     // Optimistic local-only user turn so the UI shows it immediately.
@@ -1161,6 +1286,7 @@
     state.transcript.push({
       role: "user",
       content: message,
+      taskMentions,
       ts: localTs,
       model: state.selectors.model,
       effort: state.selectors.effort,
@@ -1181,6 +1307,7 @@
         {
           sessionId: state.currentSessionId || undefined,
           message,
+          taskMentions,
           model: state.selectors.model,
           effort: state.selectors.effort,
           permissionMode: state.selectors.permissionMode,
@@ -1816,6 +1943,7 @@
     state.mounted = false;
     state.open = false;
     state.transcript = [];
+    state.taskMentions.clear();
     state.renderedCache.clear();
     state.pickerOptions = null;
     state.popoverId = null;

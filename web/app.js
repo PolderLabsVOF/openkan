@@ -842,6 +842,11 @@
       "aria-label": `${t.title || "(untitled)"}, ${columnTitle}, status ${state}${t.archived ? ", archived" : ""}`,
       "aria-pressed": selectedIds.has(t.id) ? "true" : "false",
     });
+    // A tiny deterministic stagger gives neighboring cards their own tactile
+    // hover cadence without making repeated renders visually random.
+    const motionSeed = [...String(t.id)].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+    card.style.setProperty("--card-lift-delay", `${motionSeed % 4 * 14}ms`);
+    card.style.setProperty("--card-hover-tilt", `${((motionSeed % 3) - 1) * 0.18}deg`);
     const pri = makeCardPriority(t);
     if (pri) card.append(pri);
     const titleEl = el("div", "card-title", { text: t.title || "(untitled)" });
@@ -964,13 +969,19 @@
       // Compose the dragged id list: this card + any selected ones.
       const dragged = new Set([t.id, ...selectedIds]);
       dragState.draggedIds = [...dragged];
-      e.dataTransfer.effectAllowed = "move";
+      // Board columns move cards; chat copies a task reference. Advertise both
+      // outcomes so browsers accept the chat's copy drop effect.
+      e.dataTransfer.effectAllowed = "copyMove";
+      const chatTask = { type: "openkan-task", id: t.id, title: t.title, column: t.column };
       try {
         e.dataTransfer.setData("text/plain", dragState.draggedIds.join(","));
-        // Chat consumes this structured payload as a mention and never moves
-        // the board card, so its original column/order remains untouched.
-        e.dataTransfer.setData("application/x-openkan-task", JSON.stringify({ id: t.id, title: t.title, column: t.column }));
+        e.dataTransfer.setData("application/x-openkan-task", JSON.stringify(chatTask));
+        e.dataTransfer.setData("text/x-openkan-task", JSON.stringify(chatTask));
+        e.dataTransfer.setData("application/json", JSON.stringify(chatTask));
       } catch {}
+      // A same-document fallback for engines that hide custom MIME data until
+      // drop. It is cleared by the normal drag teardown path.
+      window.OpenKanActiveTaskDrag = chatTask;
       card.classList.add("dragging");
       // Show ghost preview — custom positioned div.
       dragState.ghost = buildGhost(t, dragState.draggedIds);
@@ -2170,6 +2181,7 @@
     }
     dragState.draggedIds = [];
     dragState.activeColumn = null;
+    delete window.OpenKanActiveTaskDrag;
     document.querySelectorAll(".column.drag-over").forEach((c) => c.classList.remove("drag-over"));
     document.querySelectorAll(".drop-indicator").forEach((d) => d.remove());
   }
@@ -3247,6 +3259,10 @@
       btn.classList.toggle("active", isActive);
       btn.setAttribute("aria-selected", isActive ? "true" : "false");
     }
+    const homeButton = document.getElementById("home-page-btn");
+    homeButton?.classList.toggle("active", name === "home");
+    homeButton?.setAttribute("aria-current", name === "home" ? "page" : "false");
+    document.body.classList.toggle("workspace-home", name === "home");
     for (const pane of document.querySelectorAll(".tab-pane")) {
       const isActive = pane.dataset.tab === name;
       pane.hidden = !isActive;
@@ -3315,14 +3331,26 @@
   }
 
   function attachTabRouter() {
-    document.querySelectorAll(".tab").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        if (window.OpenKanTaskView?.getCurrentTaskId?.()) {
-          window.OpenKanTaskView.close();
-        }
-        activateTab(btn.dataset.tab || "tasks");
-      });
+    const closeTaskAndActivate = (name) => {
+      if (window.OpenKanTaskView?.getCurrentTaskId?.()) window.OpenKanTaskView.close();
+      activateTab(name);
+    };
+    document.querySelectorAll(".tab").forEach((btn) => btn.addEventListener("click", () => closeTaskAndActivate(btn.dataset.tab || "tasks")));
+    document.getElementById("home-page-btn")?.addEventListener("click", () => closeTaskAndActivate("home"));
+
+    const moreButton = document.getElementById("workspace-more-btn");
+    const moreMenu = document.getElementById("workspace-more-menu");
+    const closeMore = () => { if (!moreMenu || !moreButton) return; moreMenu.hidden = true; moreButton.setAttribute("aria-expanded", "false"); };
+    moreButton?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (!moreMenu) return;
+      moreMenu.hidden = !moreMenu.hidden;
+      moreButton.setAttribute("aria-expanded", moreMenu.hidden ? "false" : "true");
     });
+    moreMenu?.querySelectorAll("[data-workspace-page]").forEach((button) => button.addEventListener("click", () => { closeMore(); closeTaskAndActivate(button.dataset.workspacePage || "tasks"); }));
+    moreMenu?.querySelectorAll("[data-workspace-mode]").forEach((button) => button.addEventListener("click", () => closeMore()));
+    document.addEventListener("click", (event) => { if (!event.target.closest(".workspace-more")) closeMore(); });
+    document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeMore(); });
   }
 
   function attachFilterDisclosure() {

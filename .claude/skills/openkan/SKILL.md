@@ -209,3 +209,28 @@ chat, insights), see `references/api.md` before invoking them.
 
 Never report completion while OpenKan still shows the work as stale,
 unverified, or in progress.
+
+## Agent command bridge
+
+Every local dashboard capability is available to agents without inventing
+one-off curl scripts:
+
+```sh
+openkan agent capabilities                 # endpoint map for every feature
+openkan agent context                      # board + goals + docs + agents + projects snapshot
+openkan api /api/tasks-index               # any read endpoint
+openkan api /api/tasks/TASK_ID --method PATCH --data '{"priority":"p1"}'
+openkan agent start TASK_ID --agent claude-code --model default
+openkan agent abort TASK_ID
+```
+
+The bridge allows only loopback hosts and supports `GET`, `POST`, `PATCH`,
+`PUT`, and `DELETE`. Read the feature contract in `references/api.md` and use
+`references/agent-workflows.md` for the preferred surface by operation. It is
+a command transport, not a second state store: durable planning remains in
+`.ok/` via `ok`.
+
+Project commands are installed under `commands/openkan/` for board, agents,
+docs, goals, chat, and projects. They are intentionally thin routers around
+this skill, the `ok` CLI, and the API bridge so every agent sees the same
+workflow and safety rules.

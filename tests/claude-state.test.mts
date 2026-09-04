@@ -140,9 +140,23 @@ description: Run a workflow.
 # Workflow
 `,
   );
+  writeFile(
+    [".claude", "commands", "openkan", "docs.md"],
+    `---
+description: Edit OpenKan docs.
+---
+
+# Docs
+`,
+  );
+  writeFile(
+    [".claude", "commands", "_shared", "fragment.md"],
+    "# Shared fragment",
+  );
 
   const commands = await readCommands(root);
-  assert.equal(commands.length, 2);
+  assert.equal(commands.length, 3);
+  assert.ok(commands.some((command) => command.id === "openkan/docs"));
   const workflow = commands.find((c) => c.id === "workflow-cmd");
   assert.ok(workflow);
   assert.equal(workflow.workflow, true);
