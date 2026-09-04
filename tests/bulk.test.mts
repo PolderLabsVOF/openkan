@@ -14,7 +14,7 @@ describe("applyBulk", () => {
   let tmp: string;
 
   async function setupBoard() {
-    mkdirSync(join(tmp, ".openkan", "tasks"), { recursive: true });
+    mkdirSync(join(tmp, ".ok", "tasks"), { recursive: true });
     const ctx = {
       directory: tmp,
       client: null as any,
@@ -36,8 +36,8 @@ describe("applyBulk", () => {
     // Write MDX files for each task
     const board = await getBoard();
     for (const t of tasks) {
-      mkdirSync(join(tmp, ".openkan", "tasks", t.id), { recursive: true });
-      await writeTaskMdx(t, join(tmp, ".openkan"), board);
+      mkdirSync(join(tmp, ".ok", "tasks", t.id), { recursive: true });
+      await writeTaskMdx(t, join(tmp, ".ok"), board);
     }
 
     return ctx;
@@ -97,7 +97,7 @@ describe("applyBulk", () => {
   it("bulk delete removes the task and its per-task dir", async () => {
     await setupBoard();
     const board = await getBoard();
-    const taskDir = join(tmp, ".openkan", "tasks", "tsk-b2");
+    const taskDir = join(tmp, ".ok", "tasks", "tsk-b2");
 
     const result = await applyBulk(board, { kind: "delete", taskIds: ["tsk-b2"] });
     assert.strictEqual(result.summary.deleted, 1);
@@ -113,7 +113,7 @@ describe("applyBulk", () => {
 
     await applyBulk(board, { kind: "move", taskIds: ["tsk-b1", "tsk-b2", "tsk-b3"], column: "review" });
 
-    const { events } = readEvents(join(tmp, ".openkan"));
+    const { events } = readEvents(join(tmp, ".ok"));
     const bulkEvents = events.filter(e => e.kind === "kanban.bulk");
     assert.strictEqual(bulkEvents.length, 1, "should be exactly one kanban.bulk event");
     const payload = bulkEvents[0].payload as { applied: any[] };

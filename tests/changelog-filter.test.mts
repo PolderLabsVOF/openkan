@@ -13,7 +13,7 @@ describe("changelog — completedOnly filter", () => {
   let tmp: string;
 
   async function setupBoard() {
-    mkdirSync(join(tmp, ".openkan", "tasks"), { recursive: true });
+    mkdirSync(join(tmp, ".ok", "tasks"), { recursive: true });
     const ctx = { directory: tmp, client: null as any, log: async () => {} };
     await initBoard(ctx);
     setProjectRoot(tmp);
@@ -103,10 +103,10 @@ describe("changelog — completedOnly filter", () => {
     const ctx = await setupBoard();
 
     // Record events for both tasks
-    recordEvent(join(tmp, ".openkan"), "task.updated", { taskId: "tsk-done1", author: "user", summary: "done task updated", payload: {} });
-    recordEvent(join(tmp, ".openkan"), "task.updated", { taskId: "tsk-todo1", author: "user", summary: "todo task updated", payload: {} });
-    recordEvent(join(tmp, ".openkan"), "task.archived", { taskId: "tsk-done1", author: "user", summary: "archived done task", payload: {} });
-    recordEvent(join(tmp, ".openkan"), "kanban.organized", { author: "user", summary: "organized", payload: {} });
+    recordEvent(join(tmp, ".ok"), "task.updated", { taskId: "tsk-done1", author: "user", summary: "done task updated", payload: {} });
+    recordEvent(join(tmp, ".ok"), "task.updated", { taskId: "tsk-todo1", author: "user", summary: "todo task updated", payload: {} });
+    recordEvent(join(tmp, ".ok"), "task.archived", { taskId: "tsk-done1", author: "user", summary: "archived done task", payload: {} });
+    recordEvent(join(tmp, ".ok"), "kanban.organized", { author: "user", summary: "organized", payload: {} });
 
     const req = new Request("http://localhost/api/changelog?completedOnly=true", { method: "GET" });
     const res = await apiGetChangelog(req);
@@ -126,8 +126,8 @@ describe("changelog — completedOnly filter", () => {
   it("default behavior (no completedOnly) returns all events", async () => {
     const ctx = await setupBoard();
 
-    recordEvent(join(tmp, ".openkan"), "task.updated", { taskId: "tsk-done1", author: "user", summary: "done task updated", payload: {} });
-    recordEvent(join(tmp, ".openkan"), "task.updated", { taskId: "tsk-todo1", author: "user", summary: "todo task updated", payload: {} });
+    recordEvent(join(tmp, ".ok"), "task.updated", { taskId: "tsk-done1", author: "user", summary: "done task updated", payload: {} });
+    recordEvent(join(tmp, ".ok"), "task.updated", { taskId: "tsk-todo1", author: "user", summary: "todo task updated", payload: {} });
 
     const req = new Request("http://localhost/api/changelog", { method: "GET" });
     const res = await apiGetChangelog(req);
@@ -142,7 +142,7 @@ describe("changelog — completedOnly filter", () => {
   it("completedOnly=false same as default", async () => {
     const ctx = await setupBoard();
 
-    recordEvent(join(tmp, ".openkan"), "task.updated", { taskId: "tsk-todo1", author: "user", summary: "todo updated", payload: {} });
+    recordEvent(join(tmp, ".ok"), "task.updated", { taskId: "tsk-todo1", author: "user", summary: "todo updated", payload: {} });
 
     const req = new Request("http://localhost/api/changelog?completedOnly=false", { method: "GET" });
     const res = await apiGetChangelog(req);
@@ -153,7 +153,7 @@ describe("changelog — completedOnly filter", () => {
 
   it("task.deleted is always included via terminal kinds", async () => {
     const ctx = await setupBoard();
-    recordEvent(join(tmp, ".openkan"), "task.deleted", { taskId: "tsk-todo1", author: "user", summary: "deleted todo task", payload: {} });
+    recordEvent(join(tmp, ".ok"), "task.deleted", { taskId: "tsk-todo1", author: "user", summary: "deleted todo task", payload: {} });
 
     const req = new Request("http://localhost/api/changelog?completedOnly=true", { method: "GET" });
     const res = await apiGetChangelog(req);
@@ -164,7 +164,7 @@ describe("changelog — completedOnly filter", () => {
 
   it("agent.ended is included via terminal kinds", async () => {
     const ctx = await setupBoard();
-    recordEvent(join(tmp, ".openkan"), "agent.ended", { taskId: "tsk-todo1", author: "agent", summary: "agent ended", payload: {} });
+    recordEvent(join(tmp, ".ok"), "agent.ended", { taskId: "tsk-todo1", author: "agent", summary: "agent ended", payload: {} });
 
     const req = new Request("http://localhost/api/changelog?completedOnly=true", { method: "GET" });
     const res = await apiGetChangelog(req);

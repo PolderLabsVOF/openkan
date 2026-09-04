@@ -12,14 +12,14 @@ describe("drift detection", () => {
   describe("sourcePathOfTask", () => {
     it("returns absolute path for a task with a source", () => {
       const task = { source: { path: "docs/roadmap.mdx", line: 42, slug: "docs/roadmap.mdx" } };
-      const kanbanDir = "/proj/.openkan";
+      const kanbanDir = "/proj/.ok";
       const result = sourcePathOfTask(task as any, kanbanDir);
       assert.strictEqual(result, "/proj/docs/roadmap.mdx");
     });
 
     it("returns null for a task without a source", () => {
       const task = {};
-      const result = sourcePathOfTask(task as any, "/proj/.openkan");
+      const result = sourcePathOfTask(task as any, "/proj/.ok");
       assert.strictEqual(result, null);
     });
   });
@@ -31,7 +31,7 @@ describe("drift detection", () => {
 
     beforeEach(() => {
       tmp = join(tmpdir(), `drift-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-      kanbanDir = join(tmp, ".openkan");
+      kanbanDir = join(tmp, ".ok");
       mkdirSync(kanbanDir, { recursive: true });
       sourceFile = join(tmp, "docs", "roadmap.mdx");
       mkdirSync(join(tmp, "docs"), { recursive: true });

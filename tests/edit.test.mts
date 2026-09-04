@@ -15,7 +15,7 @@ describe("PATCH /api/tasks/:id — edit support", () => {
   let taskId: string;
 
   async function setupBoard() {
-    mkdirSync(join(tmp, ".openkan", "tasks"), { recursive: true });
+    mkdirSync(join(tmp, ".ok", "tasks"), { recursive: true });
     const ctx = { directory: tmp, client: null as any, log: async () => {} };
     await initBoard(ctx);
     setProjectRoot(tmp);
@@ -108,7 +108,7 @@ describe("PATCH /api/tasks/:id — edit support", () => {
     assert.strictEqual(json.description, "New description content");
 
     // Verify MDX file was updated on disk
-    const mdxPath = join(tmp, ".openkan", "tasks", taskId, "task.mdx");
+    const mdxPath = join(tmp, ".ok", "tasks", taskId, "task.mdx");
     const content = readFileSync(mdxPath, "utf-8");
     assert.ok(content.includes("New description content"), "MDX should contain new description");
   });
@@ -138,7 +138,7 @@ describe("PATCH /api/tasks/:id — edit support", () => {
       body: JSON.stringify({ title: "Edited Title" }),
     });
     await apiUpdateTask(ctx as any, taskId, req);
-    const { events } = readEvents(join(tmp, ".openkan"));
+    const { events } = readEvents(join(tmp, ".ok"));
     const editEvent = events.find(e => e.kind === "task.updated" && e.taskId === taskId);
     assert.ok(editEvent, "task.updated event should be recorded");
     assert.ok(editEvent.summary.includes("edited"), `expected "edited" in summary, got "${editEvent.summary}"`);

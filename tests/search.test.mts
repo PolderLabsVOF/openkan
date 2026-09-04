@@ -13,7 +13,7 @@ describe("search", () => {
   let tmp: string;
 
   async function setupBoard() {
-    mkdirSync(join(tmp, ".openkan", "tasks"), { recursive: true });
+    mkdirSync(join(tmp, ".ok", "tasks"), { recursive: true });
     const ctx = {
       directory: tmp,
       client: null as any,
@@ -65,9 +65,9 @@ describe("search", () => {
 
     // Write the task MDX for content search tests
     const board = await import("../kanban/board.ts").then(m => m.getBoard());
-    const taskDir = join(tmp, ".openkan", "tasks", id);
+    const taskDir = join(tmp, ".ok", "tasks", id);
     mkdirSync(taskDir, { recursive: true });
-    await writeTaskMdx(task, join(tmp, ".openkan"), board);
+    await writeTaskMdx(task, join(tmp, ".ok"), board);
 
     return task;
   }
@@ -86,7 +86,7 @@ describe("search", () => {
     await createTask("tsk-1", { title: "Fix login bug" });
     await createTask("tsk-2", { title: "Add signup flow" });
 
-    const result = await search({ kanbanDir: join(tmp, ".openkan"), query: "login" });
+    const result = await search({ kanbanDir: join(tmp, ".ok"), query: "login" });
     assert.strictEqual(result.total, 1);
     assert.strictEqual(result.results[0].id, "tsk-1");
     assert.ok(result.results[0].matchIn.includes("title"));
@@ -97,7 +97,7 @@ describe("search", () => {
     await createTask("tsk-1", { title: "Task one", description: "Something about authentication" });
     await createTask("tsk-2", { title: "Task two", description: "Unrelated content" });
 
-    const result = await search({ kanbanDir: join(tmp, ".openkan"), query: "authentication" });
+    const result = await search({ kanbanDir: join(tmp, ".ok"), query: "authentication" });
     assert.strictEqual(result.total, 1);
     assert.strictEqual(result.results[0].id, "tsk-1");
     assert.ok(result.results[0].matchIn.includes("description"));
@@ -108,7 +108,7 @@ describe("search", () => {
     await createTask("tsk-1", { title: "Task one", tags: ["frontend", "bug"] });
     await createTask("tsk-2", { title: "Task two", tags: ["backend"] });
 
-    const result = await search({ kanbanDir: join(tmp, ".openkan"), query: "bug" });
+    const result = await search({ kanbanDir: join(tmp, ".ok"), query: "bug" });
     assert.strictEqual(result.total, 1);
     assert.strictEqual(result.results[0].id, "tsk-1");
     assert.ok(result.results[0].matchIn.includes("tags"));
@@ -119,7 +119,7 @@ describe("search", () => {
     await createTask("tsk-1", { title: "Task one", assignees: ["alice"] });
     await createTask("tsk-2", { title: "Task two", assignees: ["bob"] });
 
-    const result = await search({ kanbanDir: join(tmp, ".openkan"), query: "alice" });
+    const result = await search({ kanbanDir: join(tmp, ".ok"), query: "alice" });
     assert.strictEqual(result.total, 1);
     assert.strictEqual(result.results[0].id, "tsk-1");
     assert.ok(result.results[0].matchIn.includes("assignees"));
@@ -132,7 +132,7 @@ describe("search", () => {
     // text that appears in the description should match.
     await createTask("tsk-1", { title: "Task one", description: "Handle edge case X in parser" });
 
-    const result = await search({ kanbanDir: join(tmp, ".openkan"), query: "edge case" });
+    const result = await search({ kanbanDir: join(tmp, ".ok"), query: "edge case" });
     assert.strictEqual(result.total, 1);
     assert.ok(result.results[0].matchIn.includes("content") || result.results[0].matchIn.includes("description"));
   });
@@ -142,7 +142,7 @@ describe("search", () => {
     await createTask("tsk-1", { title: "Backlog task", column: "backlog" });
     await createTask("tsk-2", { title: "Doing task", column: "doing" });
 
-    const result = await search({ kanbanDir: join(tmp, ".openkan"), column: "doing" });
+    const result = await search({ kanbanDir: join(tmp, ".ok"), column: "doing" });
     assert.strictEqual(result.total, 1);
     assert.strictEqual(result.results[0].id, "tsk-2");
   });
@@ -153,7 +153,7 @@ describe("search", () => {
     await createTask("tsk-2", { title: "Task two", tags: ["frontend"] });
     await createTask("tsk-3", { title: "Task three", tags: ["bug"] });
 
-    const result = await search({ kanbanDir: join(tmp, ".openkan"), tags: ["frontend", "bug"] });
+    const result = await search({ kanbanDir: join(tmp, ".ok"), tags: ["frontend", "bug"] });
     assert.strictEqual(result.total, 1);
     assert.strictEqual(result.results[0].id, "tsk-1");
   });
@@ -163,7 +163,7 @@ describe("search", () => {
     await createTask("tsk-1", { title: "Low prio", priority: "low" });
     await createTask("tsk-2", { title: "High prio", priority: "high" });
 
-    const result = await search({ kanbanDir: join(tmp, ".openkan"), priority: "high" });
+    const result = await search({ kanbanDir: join(tmp, ".ok"), priority: "high" });
     assert.strictEqual(result.total, 1);
     assert.strictEqual(result.results[0].id, "tsk-2");
   });
@@ -173,7 +173,7 @@ describe("search", () => {
     await createTask("tsk-1", { title: "Active task" });
     await createTask("tsk-2", { title: "Archived task", archived: true });
 
-    const result = await search({ kanbanDir: join(tmp, ".openkan"), archived: false });
+    const result = await search({ kanbanDir: join(tmp, ".ok"), archived: false });
     assert.strictEqual(result.total, 1);
     assert.strictEqual(result.results[0].id, "tsk-1");
   });
@@ -183,7 +183,7 @@ describe("search", () => {
     await createTask("tsk-1", { title: "Active task" });
     await createTask("tsk-2", { title: "Archived task", archived: true });
 
-    const result = await search({ kanbanDir: join(tmp, ".openkan"), archived: true });
+    const result = await search({ kanbanDir: join(tmp, ".ok"), archived: true });
     assert.strictEqual(result.total, 2);
   });
 
@@ -193,11 +193,11 @@ describe("search", () => {
       await createTask(`tsk-${i}`, { title: `Task ${i}` });
     }
 
-    const page1 = await search({ kanbanDir: join(tmp, ".openkan"), limit: 2, offset: 0 });
+    const page1 = await search({ kanbanDir: join(tmp, ".ok"), limit: 2, offset: 0 });
     assert.strictEqual(page1.total, 5);
     assert.strictEqual(page1.results.length, 2);
 
-    const page2 = await search({ kanbanDir: join(tmp, ".openkan"), limit: 2, offset: 2 });
+    const page2 = await search({ kanbanDir: join(tmp, ".ok"), limit: 2, offset: 2 });
     assert.strictEqual(page2.results.length, 2);
     assert.notStrictEqual(page1.results[0].id, page2.results[0].id);
   });
@@ -211,7 +211,7 @@ describe("search", () => {
       assignees: ["alice"],
     });
 
-    const result = await search({ kanbanDir: join(tmp, ".openkan"), query: "fix" });
+    const result = await search({ kanbanDir: join(tmp, ".ok"), query: "fix" });
     assert.strictEqual(result.total, 1);
     const task = result.results[0];
     assert.ok(task.matchIn.includes("title"), `Expected 'title' in matchIn, got ${JSON.stringify(task.matchIn)}`);
@@ -232,7 +232,7 @@ describe("search", () => {
     await createTask("tsk-1", { title: "Task one", assignees: ["alice", "bob"] });
     await createTask("tsk-2", { title: "Task two", assignees: ["charlie"] });
 
-    const result = await search({ kanbanDir: join(tmp, ".openkan"), assignee: "bob" });
+    const result = await search({ kanbanDir: join(tmp, ".ok"), assignee: "bob" });
     assert.strictEqual(result.total, 1);
     assert.strictEqual(result.results[0].id, "tsk-1");
   });

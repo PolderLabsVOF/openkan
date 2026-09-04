@@ -31,9 +31,9 @@ describe("sanity-check", () => {
 
   beforeEach(() => {
     tmp = join(tmpdir(), `sanity-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    mkdirSync(join(tmp, ".openkan"), { recursive: true });
+    mkdirSync(join(tmp, ".ok"), { recursive: true });
     // Write a dummy docs/roadmap.mdx for valid source paths (at project root so
-    // the script's cwd-relative path check finds it; the .openkan is in tmp via OPENKAN_DIR)
+    // the script's cwd-relative path check finds it; the .ok is in tmp via OPENKAN_DIR)
     mkdirSync(join(tmp, "docs"), { recursive: true });
     writeFileSync(join(tmp, "docs", "roadmap.mdx"), "- [ ] Fix the bug\n", "utf-8");
   });
@@ -43,8 +43,8 @@ describe("sanity-check", () => {
   });
 
   it("exits 0 with no tasks", () => {
-    writeFileSync(join(tmp, ".openkan", "board.json"), makeBoardJson([]), "utf-8");
-    const r = runSanityCheck(join(tmp, ".openkan"));
+    writeFileSync(join(tmp, ".ok", "board.json"), makeBoardJson([]), "utf-8");
+    const r = runSanityCheck(join(tmp, ".ok"));
     assert.strictEqual(r.exitCode, 0, `expected 0, got ${r.exitCode}: ${r.stdout} ${r.stderr}`);
   });
 
@@ -53,8 +53,8 @@ describe("sanity-check", () => {
       { id: "tsk-001", title: "Do thing", column: "backlog", order: 0, source: null },
       { id: "tsk-002", title: "Do other", column: "backlog", order: 1, source: null },
     ];
-    writeFileSync(join(tmp, ".openkan", "board.json"), makeBoardJson(tasks), "utf-8");
-    const r = runSanityCheck(join(tmp, ".openkan"));
+    writeFileSync(join(tmp, ".ok", "board.json"), makeBoardJson(tasks), "utf-8");
+    const r = runSanityCheck(join(tmp, ".ok"));
     assert.strictEqual(r.exitCode, 0, `expected 0, got ${r.exitCode}: ${r.stdout} ${r.stderr}`);
   });
 
@@ -62,8 +62,8 @@ describe("sanity-check", () => {
     const tasks = [
       { id: "imp-abc123", title: "Imported task", column: "backlog", order: 0, source: { path: "docs/roadmap.mdx", line: 1, slug: "docs/roadmap.mdx" } },
     ];
-    writeFileSync(join(tmp, ".openkan", "board.json"), makeBoardJson(tasks), "utf-8");
-    const r = runSanityCheck(join(tmp, ".openkan"));
+    writeFileSync(join(tmp, ".ok", "board.json"), makeBoardJson(tasks), "utf-8");
+    const r = runSanityCheck(join(tmp, ".ok"));
     assert.strictEqual(r.exitCode, 0, `expected 0, got ${r.exitCode}: ${r.stdout} ${r.stderr}`);
   });
 
@@ -71,8 +71,8 @@ describe("sanity-check", () => {
     const tasks = [
       { id: "imp-abc123", title: "Imported task", column: "backlog", order: 0, source: { path: "docs/nonexistent.mdx", line: 1, slug: "docs/nonexistent.mdx" } },
     ];
-    writeFileSync(join(tmp, ".openkan", "board.json"), makeBoardJson(tasks), "utf-8");
-    const r = runSanityCheck(join(tmp, ".openkan"));
+    writeFileSync(join(tmp, ".ok", "board.json"), makeBoardJson(tasks), "utf-8");
+    const r = runSanityCheck(join(tmp, ".ok"));
     assert.strictEqual(r.exitCode, 1, `expected 1, got ${r.exitCode}: ${r.stdout} ${r.stderr}`);
     assert.ok(r.stdout.includes("missing source"), `expected 'missing source' in output: ${r.stdout}`);
   });
@@ -82,8 +82,8 @@ describe("sanity-check", () => {
       { id: "tsk-001", title: "Thing one", column: "backlog", order: 0, source: null },
       { id: "tsk-001", title: "Thing two", column: "backlog", order: 1, source: null },
     ];
-    writeFileSync(join(tmp, ".openkan", "board.json"), makeBoardJson(tasks), "utf-8");
-    const r = runSanityCheck(join(tmp, ".openkan"));
+    writeFileSync(join(tmp, ".ok", "board.json"), makeBoardJson(tasks), "utf-8");
+    const r = runSanityCheck(join(tmp, ".ok"));
     assert.strictEqual(r.exitCode, 1, `expected 1, got ${r.exitCode}: ${r.stdout} ${r.stderr}`);
     assert.ok(r.stdout.includes("duplicate task id"), `expected 'duplicate task id' in output: ${r.stdout}`);
   });
@@ -92,17 +92,17 @@ describe("sanity-check", () => {
     const tasks = [
       { id: "imp-abc123", title: "Done but stale", column: "done", order: 0, source: null, stale: true },
     ];
-    writeFileSync(join(tmp, ".openkan", "board.json"), makeBoardJson(tasks), "utf-8");
-    const r = runSanityCheck(join(tmp, ".openkan"));
+    writeFileSync(join(tmp, ".ok", "board.json"), makeBoardJson(tasks), "utf-8");
+    const r = runSanityCheck(join(tmp, ".ok"));
     assert.strictEqual(r.exitCode, 1, `expected 1, got ${r.exitCode}: ${r.stdout} ${r.stderr}`);
     assert.ok(r.stdout.includes("Done but stale"), `expected 'Done but stale' in output: ${r.stdout}`);
   });
 
   it("exits 0 (warning only) for orphaned tasks/ directory", () => {
     // Create board with no tasks, but an orphaned per-task directory
-    mkdirSync(join(tmp, ".openkan", "tasks", "tsk-orphan"), { recursive: true });
-    writeFileSync(join(tmp, ".openkan", "board.json"), makeBoardJson([]), "utf-8");
-    const r = runSanityCheck(join(tmp, ".openkan"));
+    mkdirSync(join(tmp, ".ok", "tasks", "tsk-orphan"), { recursive: true });
+    writeFileSync(join(tmp, ".ok", "board.json"), makeBoardJson([]), "utf-8");
+    const r = runSanityCheck(join(tmp, ".ok"));
     // Orphaned dir is a warning, not an error → exit 0
     assert.strictEqual(r.exitCode, 0, `expected 0, got ${r.exitCode}: ${r.stdout} ${r.stderr}`);
     assert.ok(r.stdout.includes("orphaned"), `expected 'orphaned' warning in output: ${r.stdout}`);

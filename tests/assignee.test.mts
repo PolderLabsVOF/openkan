@@ -28,7 +28,7 @@ describe("assignee auto-assign on task creation", () => {
 
   beforeEach(() => {
     tmp = join(tmpdir(), `assignee-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    mkdirSync(join(tmp, ".openkan", "tasks"), { recursive: true });
+    mkdirSync(join(tmp, ".ok", "tasks"), { recursive: true });
     mkdirSync(join(tmp, "web"), { recursive: true });
     mkdirSync(join(tmp, "tasks"), { recursive: true });
   });
@@ -142,7 +142,7 @@ describe("assignee merge on PATCH", () => {
 
   beforeEach(async () => {
     tmp = join(tmpdir(), `assignee-patch-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    mkdirSync(join(tmp, ".openkan", "tasks"), { recursive: true });
+    mkdirSync(join(tmp, ".ok", "tasks"), { recursive: true });
     mkdirSync(join(tmp, "web"), { recursive: true });
     mkdirSync(join(tmp, "tasks"), { recursive: true });
     await freshBoard(tmp);
@@ -261,7 +261,7 @@ describe("Task defaults for assignees and images", () => {
 
   beforeEach(async () => {
     tmp = join(tmpdir(), `task-defaults-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    mkdirSync(join(tmp, ".openkan", "tasks"), { recursive: true });
+    mkdirSync(join(tmp, ".ok", "tasks"), { recursive: true });
     mkdirSync(join(tmp, "web"), { recursive: true });
     mkdirSync(join(tmp, "tasks"), { recursive: true });
     await freshBoard(tmp);

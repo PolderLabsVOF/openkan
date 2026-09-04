@@ -13,7 +13,7 @@ describe("subtasks", () => {
   let tmp: string;
 
   async function setupBoard() {
-    mkdirSync(join(tmp, ".openkan", "tasks"), { recursive: true });
+    mkdirSync(join(tmp, ".ok", "tasks"), { recursive: true });
     const ctx = { directory: tmp, client: null as any, log: async () => {} };
     await initBoard(ctx);
     setProjectRoot(tmp);
@@ -184,7 +184,7 @@ describe("subtasks", () => {
     assert.strictEqual(deleteRes.status, 200);
 
     // Verify child directory is gone
-    const childDir = join(tmp, ".openkan", "tasks", child.id);
+    const childDir = join(tmp, ".ok", "tasks", child.id);
     assert.ok(!existsSync(childDir), "subtask directory should be deleted with parent");
   });
 

@@ -15,7 +15,7 @@ describe("organize", () => {
   let task2Id: string;
 
   async function setupBoard() {
-    mkdirSync(join(tmp, ".openkan", "tasks"), { recursive: true });
+    mkdirSync(join(tmp, ".ok", "tasks"), { recursive: true });
     const ctx = {
       directory: tmp,
       client: null as any,
@@ -71,7 +71,7 @@ describe("organize", () => {
     assert.strictEqual(json.summary.retagged, 1); // add-area only; set-priority is not retagged
 
     // Verify kanban.organized changelog event was recorded
-    const { events } = readEvents(join(tmp, ".openkan"));
+    const { events } = readEvents(join(tmp, ".ok"));
     const orgEvent = events.find(e => e.kind === "kanban.organized");
     assert.ok(orgEvent, "kanban.organized event should be recorded");
     assert.strictEqual(orgEvent.author, "user");

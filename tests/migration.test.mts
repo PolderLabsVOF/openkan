@@ -12,7 +12,7 @@ describe("migration", () => {
 
   beforeEach(() => {
     tmp = join(tmpdir(), `migration-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    mkdirSync(join(tmp, ".openkan", "tasks"), { recursive: true });
+    mkdirSync(join(tmp, ".ok", "tasks"), { recursive: true });
     mkdirSync(join(tmp, "web"), { recursive: true });
   });
 
@@ -25,7 +25,7 @@ describe("migration", () => {
     const legacyContent = `---\ntitle: Test Task\nid: tsk-test123\n---\n\n# Test Task\n\nDescription here.`;
 
     // Create legacy flat MDX file
-    const flatPath = join(tmp, ".openkan", "tasks", `${taskId}.mdx`);
+    const flatPath = join(tmp, ".ok", "tasks", `${taskId}.mdx`);
     writeFileSync(flatPath, legacyContent, "utf-8");
 
     // Create a minimal board.json with the task pointing to the legacy path
@@ -66,7 +66,7 @@ describe("migration", () => {
       ],
       sessions: {},
     };
-    writeFileSync(join(tmp, ".openkan", "board.json"), JSON.stringify(boardContent), "utf-8");
+    writeFileSync(join(tmp, ".ok", "board.json"), JSON.stringify(boardContent), "utf-8");
 
     // Init board — should trigger migration
     const ctx = {
@@ -80,7 +80,7 @@ describe("migration", () => {
     assert.ok(!existsSync(flatPath), "legacy flat file should be removed");
 
     // Check: per-task task.mdx should exist
-    const newPath = join(tmp, ".openkan", "tasks", taskId, "task.mdx");
+    const newPath = join(tmp, ".ok", "tasks", taskId, "task.mdx");
     assert.ok(existsSync(newPath), "new per-task MDX should exist");
     const newContent = readFileSync(newPath, "utf-8");
     assert.ok(newContent.includes("Test Task"), "content should be preserved");
@@ -93,8 +93,8 @@ describe("migration", () => {
 
   it("is idempotent: calling initBoard twice doesn't break", async () => {
     const taskId = "tsk-idempotent";
-    mkdirSync(join(tmp, ".openkan", "tasks", taskId), { recursive: true });
-    writeFileSync(join(tmp, ".openkan", "tasks", taskId, "task.mdx"), "# Already migrated\n", "utf-8");
+    mkdirSync(join(tmp, ".ok", "tasks", taskId), { recursive: true });
+    writeFileSync(join(tmp, ".ok", "tasks", taskId, "task.mdx"), "# Already migrated\n", "utf-8");
 
     const boardContent = {
       version: 1,
@@ -114,7 +114,7 @@ describe("migration", () => {
       ],
       sessions: {},
     };
-    writeFileSync(join(tmp, ".openkan", "board.json"), JSON.stringify(boardContent), "utf-8");
+    writeFileSync(join(tmp, ".ok", "board.json"), JSON.stringify(boardContent), "utf-8");
 
     const ctx = { directory: tmp, client: null as any, log: async () => {} };
     const { board: b1 } = await initBoard(ctx);

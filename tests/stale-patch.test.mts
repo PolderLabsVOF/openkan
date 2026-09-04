@@ -20,7 +20,7 @@ describe("stale field in PATCH /api/tasks/:id", () => {
 
   beforeEach(async () => {
     tmp = join(tmpdir(), `stale-patch-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    mkdirSync(join(tmp, ".openkan", "tasks"), { recursive: true });
+    mkdirSync(join(tmp, ".ok", "tasks"), { recursive: true });
     ctx = { directory: tmp, client: null as any, log: async () => {} };
     await initBoard(ctx);
     setProjectRoot(tmp);
@@ -116,7 +116,7 @@ describe("POST /api/tasks/recheck-stale", () => {
 
   beforeEach(async () => {
     tmp = join(tmpdir(), `recheck-stale-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    mkdirSync(join(tmp, ".openkan", "tasks"), { recursive: true });
+    mkdirSync(join(tmp, ".ok", "tasks"), { recursive: true });
     mkdirSync(join(tmp, "docs"), { recursive: true });
     ctx = { directory: tmp, client: null as any, log: async () => {} };
     await initBoard(ctx);

@@ -12,7 +12,7 @@ describe("task-payload", () => {
   let tmp: string;
 
   async function setupBoard() {
-    mkdirSync(join(tmp, ".openkan", "tasks"), { recursive: true });
+    mkdirSync(join(tmp, ".ok", "tasks"), { recursive: true });
     const ctx = { directory: tmp, client: null as any, log: async () => {} };
     await initBoard(ctx);
     setProjectRoot(tmp);

@@ -86,7 +86,7 @@ describe("tsx-sandbox", () => {
     it("contains BUILTIN_LIBRARY and RUNTIME", () => {
       const html = buildSandboxHtml("const App = () => <Button label='x' />;", "{}");
       assert.ok(html.includes("ok-btn"), "should include button class");
-      assert.ok(html.includes("openkan"), "should expose window.openkan");
+      assert.ok(html.includes("openkan"), "should expose window.ok");
     });
 
     it("returns a valid srcdoc HTML document", () => {

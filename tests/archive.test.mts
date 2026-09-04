@@ -14,7 +14,7 @@ describe("archive", () => {
   let tmp: string;
 
   async function setupBoard() {
-    mkdirSync(join(tmp, ".openkan", "tasks"), { recursive: true });
+    mkdirSync(join(tmp, ".ok", "tasks"), { recursive: true });
     const ctx = {
       directory: tmp,
       client: null as any,
@@ -70,7 +70,7 @@ describe("archive", () => {
       board.tasks.push(task);
     });
 
-    const updated = await archiveTask(task, join(tmp, ".openkan"), "alice");
+    const updated = await archiveTask(task, join(tmp, ".ok"), "alice");
     assert.strictEqual(updated.archived, true);
 
     // Verify persisted in board.json
@@ -79,7 +79,7 @@ describe("archive", () => {
     assert.strictEqual(found!.archived, true);
 
     // Verify changelog event was recorded
-    const { events } = readEvents(join(tmp, ".openkan"));
+    const { events } = readEvents(join(tmp, ".ok"));
     assert.ok(events.some(e => e.kind === "task.archived" && e.taskId === "tsk-test1"));
   });
 
@@ -118,14 +118,14 @@ describe("archive", () => {
       board.tasks.push(task);
     });
 
-    const updated = await restoreTask(task, join(tmp, ".openkan"), "bob");
+    const updated = await restoreTask(task, join(tmp, ".ok"), "bob");
     assert.strictEqual(updated.archived, false);
 
     const board = await gb();
     const found = board.tasks.find(t => t.id === "tsk-test2");
     assert.strictEqual(found!.archived, false);
 
-    const { events } = readEvents(join(tmp, ".openkan"));
+    const { events } = readEvents(join(tmp, ".ok"));
     assert.ok(events.some(e => e.kind === "task.restored" && e.taskId === "tsk-test2"));
   });
 

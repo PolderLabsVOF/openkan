@@ -15,14 +15,14 @@ describe("changelog reset parameter", () => {
 
   beforeEach(async () => {
     tmp = join(tmpdir(), `changelog-reset-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    mkdirSync(join(tmp, ".openkan", "tasks"), { recursive: true });
+    mkdirSync(join(tmp, ".ok", "tasks"), { recursive: true });
     ctx = { directory: tmp, client: null as any, log: async () => {} };
     await initBoard(ctx);
     setProjectRoot(tmp);
 
     // Record 5 events
     for (let i = 1; i <= 5; i++) {
-      recordEvent(join(tmp, ".openkan"), "task.created", {
+      recordEvent(join(tmp, ".ok"), "task.created", {
         taskId: `tsk-${i}`,
         author: "user",
         summary: `created task ${i}`,
@@ -37,22 +37,22 @@ describe("changelog reset parameter", () => {
 
   it("readEvents({ reset: true }) ignores offset and returns from start", async () => {
     // First, get all events with offset=0, no reset
-    const { events: allEvents, total } = readEvents(join(tmp, ".openkan"), { offset: 0 });
+    const { events: allEvents, total } = readEvents(join(tmp, ".ok"), { offset: 0 });
     assert.strictEqual(total, 5);
 
     // With offset=2 (no reset), should skip first 2
-    const { events: page2 } = readEvents(join(tmp, ".openkan"), { offset: 2 });
+    const { events: page2 } = readEvents(join(tmp, ".ok"), { offset: 2 });
     assert.strictEqual(page2.length, 3);
     assert.strictEqual(page2[0].summary, "created task 3"); // task 5, 4, 3
 
     // With reset=true AND offset=2, should ignore offset and return all 5
-    const { events: resetPage2 } = readEvents(join(tmp, ".openkan"), { offset: 2, reset: true });
+    const { events: resetPage2 } = readEvents(join(tmp, ".ok"), { offset: 2, reset: true });
     assert.strictEqual(resetPage2.length, 5);
     assert.strictEqual(resetPage2[0].summary, "created task 5");
   });
 
   it("readEvents({ reset: true }) returns all events with limit applied", async () => {
-    const { events, total } = readEvents(join(tmp, ".openkan"), { reset: true, limit: 3 });
+    const { events, total } = readEvents(join(tmp, ".ok"), { reset: true, limit: 3 });
     assert.strictEqual(total, 5); // total is still 5 (unpaged)
     assert.strictEqual(events.length, 3); // but only 3 returned
     assert.strictEqual(events[0].summary, "created task 5");

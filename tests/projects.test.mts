@@ -112,7 +112,7 @@ describe("projects.ts", () => {
   it("projectKanbanDir returns null when root doesn't exist", () => {
     const entry = { id: "fake", name: "Fake", root: "/nonexistent/path/for/sure", addedAt: new Date().toISOString(), active: false };
     const exists = existsSync(entry.root);
-    const kanbanDir = exists ? join(entry.root, ".openkan") : null;
+    const kanbanDir = exists ? join(entry.root, ".ok") : null;
     assert.strictEqual(kanbanDir, null);
   });
 });
