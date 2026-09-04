@@ -21,6 +21,8 @@ node_modules/
 .ok/index.json
 .ok/config.json
 .ok/tasks/*.json
+# Comments are local collaboration state written alongside the board cache.
+.ok/tsk-*/
 .ok/plans/
 .ok/prds/
 
