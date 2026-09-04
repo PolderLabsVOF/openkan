@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 200" width="960" height="200" role="img" aria-label="OpenKan documentation">
+  <title>OpenKan docs</title>
+  <desc>OpenKan wordmark on the left, three column silhouettes and divider on the right.</desc>
+  <!-- Background -->
+  <rect width="960" height="200" fill="#161b22"/>
+  <!-- K mark (40x40) at x=48, y=72 — derived from the 32x32 mark scaled 1.25x -->
+  <g transform="translate(48, 72) scale(1.25)">
+    <rect x="5" y="0" width="4" height="32" rx="0.5" fill="#e6ebf3"/>
+    <polygon points="9,16 21,0 25,0 13,16" fill="#e6ebf3"/>
+    <polygon points="13,16 25,32 21,32 9,16" fill="#e6ebf3"/>
+  </g>
+  <!-- "OpenKan" text -->
+  <text x="110" y="100" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'SF Pro Text', 'Inter', 'Roboto', 'Helvetica Neue', Arial, sans-serif" font-size="22" font-weight="600" letter-spacing="-0.01em" fill="#e6ebf3">OpenKan</text>
+  <!-- Horizontal divider -->
+  <line x1="48" y1="140" x2="912" y2="140" stroke="#e6ebf3" stroke-opacity="0.18" stroke-width="1"/>
+  <!-- Column silhouettes at right, right-anchored at x=680; total group width 168 -->
+  <g transform="translate(680, 40)">
+    <rect x="0"   y="40"  width="24" height="40"  rx="4" fill="rgba(255,107,91,0.12)" stroke="#FF6B5B" stroke-width="1"/>
+    <rect x="36"  y="10"  width="24" height="70"  rx="4" fill="rgba(255,107,91,0.12)" stroke="#FF6B5B" stroke-width="1"/>
+    <rect x="72"  y="-20" width="24" height="100" rx="4" fill="rgba(255,107,91,0.12)" stroke="#FF6B5B" stroke-width="1"/>
+    <rect x="108" y="-30" width="24" height="120" rx="4" fill="rgba(255,107,91,0.12)" stroke="#FF6B5B" stroke-width="1"/>
+    <rect x="144" y="-40" width="24" height="150" rx="4" fill="rgba(255,107,91,0.12)" stroke="#FF6B5B" stroke-width="1"/>
+  </g>
+</svg>
