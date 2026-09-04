@@ -62,9 +62,12 @@ for (const t of tasks) {
 // 4. Orphaned per-task files
 const tasksDir = join(KANBAN_DIR, "tasks");
 if (existsSync(tasksDir)) {
-  for (const dir of readdirSync(tasksDir)) {
-    if (!ids.has(dir)) {
-      warnings.push(`orphaned per-task directory: tasks/${dir} (no matching board entry)`);
+  for (const entry of readdirSync(tasksDir)) {
+    // Skip planning-system per-task JSON files; the orphan check is for
+    // the legacy per-task directory layout (.ok/tasks/<id>/{task.mdx,...}).
+    if (entry.endsWith(".json")) continue;
+    if (!ids.has(entry)) {
+      warnings.push(`orphaned per-task directory: tasks/${entry} (no matching board entry)`);
     }
   }
 }
