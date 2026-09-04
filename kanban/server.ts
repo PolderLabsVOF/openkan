@@ -360,6 +360,7 @@ function serveStatic(root: string, urlPath: string): { body: Buffer; contentType
   const ctMap: Record<string, string> = {
     ".html": "text/html", ".css": "text/css", ".js": "application/javascript",
     ".json": "application/json", ".md": "text/markdown",
+    ".svg": "image/svg+xml",
   };
   return { body: readFileSync(filePath), contentType: ctMap[ext] ?? "application/octet-stream" };
 }
@@ -2566,8 +2567,10 @@ async function handleRequest(req: Request): Promise<Response> {
   }
 
   // Static: any file under webRoot with an allowed extension. webRoot
-  // defaults to `<project>/web`; the caller can override.
-  if (path === "/" || /\.(html|css|js|json|md|txt)$/.test(path)) {
+  // defaults to `<project>/web`; the caller can override. The whitelist
+  // includes svg so the brand assets (logo, favicon, banners, empty-state
+  // illustrations) can be served directly.
+  if (path === "/" || /\.(html|css|js|json|md|txt|svg)$/.test(path)) {
     const root = webRoot ?? join(KANBAN_DIR, "..", "web");
     const pathForStatic = path === "/" ? "/index.html" : path;
     const sf = serveStatic(root, pathForStatic);

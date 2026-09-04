@@ -7,6 +7,8 @@
     <title>OpenKan</title>
     <link rel="stylesheet" href="style.css" />
     <link rel="stylesheet" href="workspace.css?v=20260730" />
+    <!-- M-Brand: SVG favicon, mono-coral. No PNG fallback (spec: no rasters). -->
+    <link rel="icon" type="image/svg+xml" href="./brand/favicon.svg" />
   </head>
   <body>
     <!-- M13: skip-link for keyboard / screen-reader users. Hidden until
@@ -15,8 +17,12 @@
 
     <header class="topbar" role="banner">
       <div class="brand">
-        <span class="logo" aria-hidden="true"></span>
-        <h1>OpenKan</h1>
+        <!-- M-Brand: wordmark image replaces the inline K-mark span and the
+             OpenKan <h1>. The image uses currentColor for ink-80 in the
+             topbar context. -->
+        <img src="./brand/logo-wordmark.svg" alt="OpenKan" height="24"
+             class="brand-wordmark" />
+        <h1 class="visually-hidden">OpenKan</h1>
         <!-- Brand-level project chip: clicking it opens the same project
              switcher dropdown as the topbar-right chip. Owned by app.js. -->
         <button id="brand-project-chip" class="brand-project-chip" type="button"

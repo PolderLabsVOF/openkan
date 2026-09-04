@@ -7662,3 +7662,17 @@ kbd {
     grid-template-columns: 1fr;
   }
 }
+
+/* ─── Brand wordmark in the topbar (M-Brand) ─────────────────────────────
+   Replaces the legacy .logo span. The SVG uses currentColor; the topbar
+   text colour (ink-80) flows naturally. The .logo class remains defined
+   for any workspace.css consumers; we hide it when the wordmark is the
+   active brand surface so legacy chrome doesn't double-render. */
+.brand-wordmark {
+  height: 24px;
+  width: auto;
+  display: inline-block;
+  color: var(--text);
+  vertical-align: middle;
+}
+.brand .brand-wordmark + h1 { display: none; }
