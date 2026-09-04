@@ -57,6 +57,9 @@
           <div id="project-switcher-popover" class="project-switcher-popover" role="menu" hidden></div>
         </div>
         <button id="settings-btn" class="btn-icon" type="button" aria-label="Settings" title="Settings">⚙</button>
+        <button id="chat-sidebar-toggle-btn" class="btn-icon" type="button"
+                aria-label="Toggle chat sidebar" aria-controls="chat-sidebar"
+                aria-expanded="false" title="Chat sidebar (Alt+C)">💬</button>
         <button id="palette-btn" class="btn-icon" type="button"
                 aria-label="Open command palette (Cmd/Ctrl K)"
                 title="Command palette (Cmd/Ctrl K)">⌘K</button>
@@ -439,6 +442,13 @@
          app.js (which calls OpenKanClaude.mount(...) when the Claude tab
          is activated) but AFTER api.js (so window.OpenKanAPI.api exists). -->
     <script src="claude-pane.js" defer></script>
+    <!-- chat-sidebar.js exposes window.OpenKanChatSidebar. It depends on
+         claude-pane.js (for the activity footer) and api.js (for fetch +
+         storage). Loaded before app.js so the toggle button can wire up.
+         Loaded before keyboard.js so its capture-phase Cmd/Ctrl+K handler
+         registers first and can intercept the palette-open shortcut while
+         the sidebar is open. -->
+    <script src="chat-sidebar.js" defer></script>
     <!-- M13: keyboard module loads before the palette so the palette can
          subscribe to "palette.open" / "palette.close" / "palette.isOpen". -->
     <script src="keyboard.js" defer></script>

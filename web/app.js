@@ -3854,6 +3854,11 @@
     const hash = readHashFilter();
     activateTab(hash?.tab || "tasks", { fromHash: true });
 
+    // Mount the chat sidebar (right-rail chat orchestrator). chat-sidebar.js
+    // wires its own topbar toggle button; this call ensures the DOM shell
+    // exists so the toggle can flip its open/closed state.
+    try { window.OpenKanChatSidebar?.mount?.(document.body); } catch { /* ignore */ }
+
     try {
       applySnapshot(await api("GET", "/api/board"));
       setConnected(true);
