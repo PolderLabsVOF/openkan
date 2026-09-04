@@ -7097,42 +7097,39 @@ kbd {
 
 .chat-bubble-row {
   display: flex;
+  padding: 2px 0;
   width: 100%;
 }
 .chat-bubble-row-user { justify-content: flex-end; }
 .chat-bubble-row-assistant { justify-content: flex-start; }
 .chat-bubble-row-system { justify-content: center; }
 
-.chat-bubble-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-width: 100%;
-}
-.chat-bubble-row-user .chat-bubble-stack { align-items: flex-end; }
-.chat-bubble-row-assistant .chat-bubble-stack { align-items: flex-start; }
-
 .chat-bubble {
   position: relative;
   display: inline-block;
-  max-width: 85%;
-  padding: 8px 12px;
-  font-size: 13px;
+  max-width: 80%;
+  padding: 8px 14px;
+  font-size: 14px;
   line-height: 1.5;
-  border-radius: 12px;
+  border-radius: 999px;
   word-wrap: break-word;
   overflow-wrap: anywhere;
 }
 .chat-bubble-user {
-  background: color-mix(in srgb, var(--coral) 12%, transparent);
-  color: var(--text);
-  border-radius: 12px 4px 12px 12px;
+  background: var(--coral);
+  color: var(--bg);
+  border-radius: 999px;
+  align-self: flex-end;
+  padding: 8px 16px;
 }
 .chat-bubble-assistant {
-  background: var(--bg);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: none;
   color: var(--text);
-  border-radius: 4px 12px 12px 12px;
+  border-radius: 0;
+  padding: 4px 0;
+  max-width: 100%;
+  align-self: flex-start;
 }
 .chat-bubble-system {
   background: transparent;
@@ -7151,15 +7148,15 @@ kbd {
   font-size: 12px;
   color: var(--status-red);
 }
-.chat-bubble-dot {
-  display: none; /* Reserved for future inline avatar; sized below for completeness. */
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-}
-.chat-bubble-user .chat-bubble-dot { background: var(--coral); display: inline-block; margin-right: 6px; vertical-align: middle; }
-.chat-bubble-assistant .chat-bubble-dot { background: transparent; border: 1px solid var(--coral); display: inline-block; margin-right: 6px; vertical-align: middle; }
-.chat-bubble-system .chat-bubble-dot { background: var(--ink-50); display: inline-block; margin-right: 6px; vertical-align: middle; }
+/* Dots, status, time stamps, copy + retry buttons were removed from the
+   bubble markup. The classes are still referenced by old DOM in long-lived
+   sessions; hide them defensively. */
+.chat-bubble-dot,
+.chat-bubble-status,
+.chat-bubble-time,
+.chat-bubble-copy,
+.chat-bubble-retry,
+.chat-status-dot { display: none !important; }
 
 .chat-bubble-body { white-space: normal; }
 .chat-bubble-body p { margin: 0 0 6px 0; }
@@ -7183,78 +7180,14 @@ kbd {
 }
 .chat-bubble-body pre code { background: transparent; padding: 0; }
 
-.chat-bubble-time {
-  font-size: 11px;
+/* Streaming indicator — muted italic "Working" line that sits below the
+   active assistant bubble and disappears when the turn completes. */
+.chat-bubble-streaming-indicator {
   color: var(--ink-50);
-  opacity: 0;
-  transition: opacity 120ms ease-out;
-}
-.chat-bubble-row:hover .chat-bubble-time,
-.chat-bubble:focus-within .chat-bubble-time { opacity: 1; }
-@media (prefers-reduced-motion: reduce) {
-  .chat-bubble-time { transition: none; }
-}
-
-.chat-bubble-copy,
-.chat-bubble-retry {
-  position: absolute;
-  top: 4px;
-  background: transparent;
-  border: none;
-  color: var(--ink-50);
-  cursor: pointer;
-  font-size: 11px;
-  padding: 2px 4px;
-  border-radius: 3px;
-  opacity: 0;
-  transition: opacity 120ms ease-out;
-}
-.chat-bubble-copy { right: 4px; }
-.chat-bubble-retry { right: 28px; color: var(--status-red); }
-.chat-bubble-row:hover .chat-bubble-copy,
-.chat-bubble:focus-within .chat-bubble-copy,
-.chat-bubble[data-status="error"]:hover .chat-bubble-retry,
-.chat-bubble[data-status="error"]:focus-within .chat-bubble-retry { opacity: 1; }
-.chat-bubble-copy:hover { color: var(--coral); }
-.chat-bubble-retry:hover { color: var(--coral); }
-@media (prefers-reduced-motion: reduce) {
-  .chat-bubble-copy,
-  .chat-bubble-retry { transition: none; }
-}
-
-.chat-bubble-status {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 6px;
-  vertical-align: middle;
-}
-.chat-status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  display: inline-block;
-}
-.chat-status-sent { background: var(--coral); }
-.chat-status-sending {
-  background: var(--coral-soft);
-  position: relative;
-  overflow: hidden;
-}
-.chat-status-sending::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: var(--coral);
-  border-radius: 50%;
-  animation: chat-status-pulse 1s ease-in-out infinite;
-}
-.chat-status-failed { color: var(--status-red); font-size: 12px; line-height: 1; }
-@keyframes chat-status-pulse {
-  0%, 100% { transform: scale(0.5); opacity: 0.4; }
-  50% { transform: scale(1); opacity: 1; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .chat-status-sending::after { animation: none; transform: scale(1); opacity: 0.6; }
+  font-style: italic;
+  padding: 4px 0;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 /* ─── Tool-use chips ───────────────────────────────────────────────────── */
@@ -7521,10 +7454,13 @@ kbd {
 }
 
 /* ─── ChatGPT-style sidebar shell ─────────────────────────────────────────
-   Redesign layout: collapsed header (session chip) → hero (only when
-   empty) → scrollable transcript → rounded composer bar → tabs row →
-   optional activity footer. All existing rules above remain unchanged;
-   what follows only ADDS new selectors and section styles. */
+   Layout: hero (only when empty) → scrollable transcript → optional
+   disclaimer → rounded composer bar → tabs row → optional activity
+   footer. The visible session chip and the <header> chrome have been
+   removed; only the hidden <select>s (mounted in a plain <div hidden>)
+   remain so populateSelectors() / sendTurn() keep working. All existing
+   rules above remain unchanged; what follows only ADDS new selectors
+   and section styles. */
 .chat-sidebar-header {
   flex-direction: row;
   align-items: center;
@@ -7537,46 +7473,11 @@ kbd {
   display: none;
 }
 
-.chat-sidebar__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 12px;
-  border-bottom: 1px solid var(--border);
-}
-
-.chat-sidebar__session-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  background: var(--bg-elev-2);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  color: var(--ink-80);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  max-width: 240px;
-  white-space: nowrap;
-}
-.chat-sidebar__session-chip:hover { border-color: var(--ink-50); }
-.chat-sidebar__session-chip:focus-visible {
-  outline: none;
-  border-color: var(--coral);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--coral) 25%, transparent);
-}
-.chat-sidebar__session-chip-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.chat-sidebar__session-chip-chevron {
-  flex: 0 0 auto;
-  color: var(--ink-50);
-}
+/* The visible session chip was removed from the chrome; only the hidden
+   <select>s (mounted in a plain <div hidden>) remain. Defensive hide. */
+.chat-sidebar__session-chip,
+.chat-sidebar__session-chip-title,
+.chat-sidebar__session-chip-chevron { display: none !important; }
 
 .chat-sidebar__hero {
   display: flex;
@@ -7595,6 +7496,29 @@ kbd {
   color: var(--ink-80);
 }
 .chat-sidebar--has-messages .chat-sidebar__hero { display: none; }
+
+/* ChatGPT-style disclaimer above the composer — shown only when the
+   session has any messages. */
+.chat-sidebar__disclaimer {
+  display: none;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-50);
+  padding: 8px 16px 0;
+  opacity: 0.7;
+  margin: 0;
+  line-height: 1.4;
+}
+.chat-sidebar--has-messages .chat-sidebar__disclaimer { display: block; }
+
+/* "Get desktop app" tab — behaves like the others but is treated as a
+   link rather than a toggleable panel. */
+.chat-sidebar__tabs-tab--link {
+  text-decoration: none;
+}
+.chat-sidebar__tabs-tab--link:hover {
+  color: var(--coral);
+}
 
 /* Composer becomes a horizontal rounded bar. The textarea now carries its
    own rounded pill surface instead of stretching to the edges — the legacy
@@ -7863,8 +7787,7 @@ kbd {
   .chat-sidebar__composer-send,
   .chat-sidebar__composer-mic,
   .chat-sidebar__composer-attach,
-  .chat-sidebar__composer-model,
-  .chat-sidebar__session-chip { transition: none; }
+  .chat-sidebar__composer-model { transition: none; }
 }
 
 /* ─── Insights tab ───────────────────────────────────────────────────────

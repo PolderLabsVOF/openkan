@@ -1,15 +1,17 @@
 // OpenKan — chat sidebar (right-rail chat orchestrator).
 //
 // Mounts a fixed-position aside on the right edge of the viewport with:
-//   - A header that holds only the session selector, a session count meta,
-//     and action buttons (new / archive / activity).
-//   - A scrollable transcript that renders each turn as a chat bubble
-//     (right-aligned user / left-aligned assistant / centred system) with
-//     a stack of compact tool-use chips between the user bubble and the
-//     assistant bubble.
-//   - A composer footer that contains a textarea and inline pill-style
-//     selectors (model / effort / permission mode) plus a send / abort
-//     button.
+//   - A hero title "What should we work on?" shown only on empty sessions.
+//   - A scrollable transcript that renders each turn as a single bubble
+//     (right-aligned coral pill for user; plain left-aligned text for
+//     assistant / system) with compact tool-use chips between turns.
+//     While the assistant is streaming, a muted italic "Working" line
+//     sits below the bubble and disappears when the turn completes.
+//   - A composer footer: single rounded bar with attach / textarea /
+//     model pill / mic / send (or abort while streaming) inline.
+//   - A tabs row: Project / Files / Plugins / Get desktop app (link).
+//     Activity footer still exists as a slide-in section but is no
+//     longer a tab.
 //   - Cmd/Ctrl+K focuses the composer when the sidebar is open.
 //
 // Persistence: the last-selected session id and selector state are written
@@ -232,26 +234,17 @@
         <span aria-hidden="true">‹</span>
       </button>
 
-      <!-- Header (collapsed): session chip + collapse handle. The legacy
-           header sub-sections are kept as a hidden <div> so the existing
-           <select> / <button id="chat-sidebar-meta"> wiring in
-           populateSelectors() still functions for storage + state. -->
-      <header class="chat-sidebar__header chat-sidebar-header">
-        <button type="button" class="chat-sidebar__session-chip" data-chat-action="open-session-menu"
-                aria-label="Switch session" aria-haspopup="true" aria-expanded="false" title="Switch session">
-          <span class="chat-sidebar__session-chip-title" id="chat-sidebar-session-title">New session</span>
-          <svg class="chat-sidebar__session-chip-chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-            <path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
-        <div hidden>
-          <span class="chat-sidebar-meta" id="chat-sidebar-meta">—</span>
-          <select id="chat-select-session" data-chat-select="session"></select>
-          <select id="chat-select-model" data-chat-select="model"></select>
-          <select id="chat-select-effort" data-chat-select="effort"></select>
-          <select id="chat-select-permission" data-chat-select="permissionMode"></select>
-        </div>
-      </header>
+      <!-- Hidden selectors. The legacy visible chip / header sub-sections
+           have been removed; the <select>s are still mounted (hidden) so
+           populateSelectors() and sendTurn() can read/write session +
+           model + effort + permission state. -->
+      <div hidden>
+        <span class="chat-sidebar-meta" id="chat-sidebar-meta">—</span>
+        <select id="chat-select-session" data-chat-select="session"></select>
+        <select id="chat-select-model" data-chat-select="model"></select>
+        <select id="chat-select-effort" data-chat-select="effort"></select>
+        <select id="chat-select-permission" data-chat-select="permissionMode"></select>
+      </div>
 
       <!-- Hero: visible only when the active session has zero messages. -->
       <div class="chat-sidebar__hero chat-sidebar-hero" id="chat-sidebar-hero">
@@ -263,6 +256,11 @@
                aria-live="polite" aria-label="Chat transcript"></section>
       <button type="button" class="chat-sidebar-new-messages" id="chat-sidebar-new-messages"
               hidden>↓ New messages</button>
+
+      <!-- Disclaimer shown above the composer once a session has any messages. -->
+      <p class="chat-sidebar__disclaimer" id="chat-sidebar-disclaimer" hidden>
+        Workspace data isn't used to train models.
+      </p>
 
       <!-- Composer: rounded input bar — attach / input / model pill / mic / send. -->
       <footer class="chat-sidebar__composer chat-sidebar-composer">
@@ -302,7 +300,7 @@
         </button>
       </footer>
 
-      <!-- Tabs row. Project / Files / Plugins / Activity. -->
+      <!-- Tabs row. Project / Files / Plugins / Get desktop app (CTA link). -->
       <nav class="chat-sidebar__tabs" data-chat-tabs role="tablist" aria-label="Sidebar shortcuts">
         <button type="button" class="chat-sidebar__tabs-tab" data-tab="project"
                 role="tab" aria-selected="false" title="Project">
@@ -325,14 +323,13 @@
           </svg>
           <span>Plugins</span>
         </button>
-        <button type="button" class="chat-sidebar__tabs-tab" data-tab="activity"
-                role="tab" aria-selected="false" title="Activity">
+        <button type="button" class="chat-sidebar__tabs-tab chat-sidebar__tabs-tab--link" data-tab="desktop-app"
+                role="link" aria-selected="false" title="Get desktop app">
           <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-            <circle cx="8" cy="8" r="3" fill="currentColor" />
-            <path d="M8 1.5v2 M8 12.5v2 M1.5 8h2 M12.5 8h2 M3.5 3.5l1.5 1.5 M11 11l1.5 1.5 M3.5 12.5l1.5-1.5 M11 5l1.5-1.5"
-                  stroke="currentColor" stroke-width="1.2" stroke-linecap="round" fill="none" />
+            <path d="M2 4h12v8H2z M5 12h6 M2 7h12 M8 1.5L11 4 H5z"
+                  fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
           </svg>
-          <span>Activity</span>
+          <span>Get desktop app</span>
         </button>
       </nav>
 
@@ -406,7 +403,11 @@
     label.textContent = raw === "default" ? "Default" : String(raw).replace(/^.*?\//, "");
   }
 
-  /** Toggle the "What should we work on?" hero based on transcript state. */
+  /** Toggle the "What should we work on?" hero + ChatGPT-style disclaimer
+   *  based on transcript state. The CSS rule
+   *  .chat-sidebar--has-messages .chat-sidebar__disclaimer shows the
+   *  disclaimer whenever the class is set, so no per-node hidden flag is
+   *  needed. */
   function syncHeroState() {
     if (!state.root) return;
     const has = Array.isArray(state.transcript) && state.transcript.length > 0;
@@ -418,21 +419,16 @@
    * -------------------------------------------------------------------- */
   function bubbleHTML(turn) {
     const role = turn.role || "assistant";
-    const stamp = turn.ts ? `<time class="chat-bubble-time" datetime="${esc(turn.ts)}">${esc(relativeTime(turn.ts))}</time>` : "";
     const errorLine = turn.error
       ? `<div class="chat-bubble-error">${esc(turn.error)}</div>` : "";
     if (role === "user") {
       const status = turn.__status || (turn.status && turn.status !== "ok" ? turn.status : "sent");
       return `
         <div class="chat-bubble-row chat-bubble-row-user">
-          <div class="chat-bubble-stack">
-            <div class="chat-bubble chat-bubble-user" data-ts="${esc(turn.ts || "")}" data-status="${esc(status)}">
-              <span class="chat-bubble-dot" aria-hidden="true"></span>
-              <div class="chat-bubble-body">${esc(turn.content || "")}</div>
-              <span class="chat-bubble-status" aria-label="message status: ${esc(status)}">${statusDot(status)}</span>
-            </div>
-            ${stamp}
+          <div class="chat-bubble chat-bubble-user" data-ts="${esc(turn.ts || "")}" data-status="${esc(status)}">
+            <div class="chat-bubble-body">${esc(turn.content || "")}</div>
           </div>
+          ${errorLine}
         </div>
       `;
     }
@@ -441,7 +437,6 @@
       return `
         <div class="chat-bubble-row chat-bubble-row-system">
           <div class="chat-bubble chat-bubble-system" data-ts="${esc(turn.ts || "")}" data-status="${esc(status)}">
-            <span class="chat-bubble-dot" aria-hidden="true"></span>
             <div class="chat-bubble-body">${esc(turn.content || "")}</div>
             ${errorLine}
           </div>
@@ -450,30 +445,17 @@
     }
     // Assistant bubble. Body is filled by renderTranscript via async
     // markdown rendering; the empty placeholder lets us stream into it
-    // incrementally without re-parsing markdown each tick.
-    const copyBtn = `<button type="button" class="chat-bubble-copy" data-chat-copy="${esc(turn.ts || "")}" title="Copy message" aria-label="Copy message" hidden>⧉</button>`;
-    const retryBtn = turn.status === "error"
-      ? `<button type="button" class="chat-bubble-retry" data-chat-retry="${esc(turn.ts || "")}" title="Retry" aria-label="Retry" hidden>↻</button>` : "";
+    // incrementally without re-parsing markdown each tick. The
+    // [data-bubble-body] marker is the streaming hook used by appendToken
+    // and finalizeLiveBubble — keep it.
     return `
       <div class="chat-bubble-row chat-bubble-row-assistant">
-        <div class="chat-bubble-stack">
-          <div class="chat-bubble chat-bubble-assistant" data-ts="${esc(turn.ts || "")}" data-status="${esc(turn.status || "ok")}">
-            <span class="chat-bubble-dot" aria-hidden="true"></span>
-            <div class="chat-bubble-body chat-bubble-body-stream" data-bubble-body></div>
-            ${copyBtn}
-            ${retryBtn}
-          </div>
+        <div class="chat-bubble chat-bubble-assistant" data-ts="${esc(turn.ts || "")}" data-status="${esc(turn.status || "ok")}">
+          <div class="chat-bubble-body chat-bubble-body-stream" data-bubble-body></div>
           ${errorLine}
-          ${stamp}
         </div>
       </div>
     `;
-  }
-
-  function statusDot(status) {
-    if (status === "sending") return `<span class="chat-status-dot chat-status-sending" aria-hidden="true"></span>`;
-    if (status === "failed") return `<span class="chat-status-dot chat-status-failed" aria-hidden="true" title="failed">⚠</span>`;
-    return `<span class="chat-status-dot chat-status-sent" aria-hidden="true"></span>`;
   }
 
   function chipHTML(tool) {
@@ -606,6 +588,7 @@
           bubble.textContent = text;
           bubble.dataset.streaming = "1";
         }
+        ensureStreamingIndicator();
         // Auto-scroll if user is near the bottom.
         maybeAutoScroll(transcript);
       };
@@ -708,6 +691,31 @@
         bubble.removeAttribute("data-streaming");
       });
     }
+    removeStreamingIndicator();
+  }
+
+  /**
+   * Streaming "Working" indicator — a single muted italic line appended
+   * to the transcript while the assistant turn is in flight. Hidden when
+   * the turn completes (via finalizeLiveBubble) or when the transcript is
+   * re-rendered.
+   */
+  function ensureStreamingIndicator() {
+    const transcript = state.root?.querySelector("#chat-sidebar-transcript");
+    if (!transcript) return;
+    if (transcript.querySelector(":scope > .chat-bubble-streaming-indicator")) return;
+    const node = document.createElement("div");
+    node.className = "chat-bubble-streaming-indicator";
+    node.setAttribute("aria-live", "polite");
+    node.textContent = "Working";
+    transcript.appendChild(node);
+  }
+
+  function removeStreamingIndicator() {
+    const transcript = state.root?.querySelector("#chat-sidebar-transcript");
+    if (!transcript) return;
+    const node = transcript.querySelector(":scope > .chat-bubble-streaming-indicator");
+    if (node) node.remove();
   }
 
   function maybeAutoScroll(node) {
@@ -1440,10 +1448,12 @@
       closeTab();
       return;
     }
-    // Activity is special: it doesn't open a popover, it toggles the footer.
-    if (tab === "activity") {
-      toggleActivity();
-      setActiveTab(state.activityOpen ? "activity" : null);
+    // "Get desktop app" is a CTA — open the releases page in a new tab
+    // rather than toggling a popover. It is not a real tab state.
+    if (tab === "desktop-app") {
+      try {
+        window.open("https://github.com/PolderLabsVOF/openkan/releases", "_blank", "noopener,noreferrer");
+      } catch (_err) { /* ignore */ }
       return;
     }
     closeTab();
