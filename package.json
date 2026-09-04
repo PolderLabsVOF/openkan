@@ -5,17 +5,20 @@
   "type": "module",
   "private": true,
   "bin": {
-    "openkan": "./bin/openkan.mjs"
+    "openkan": "./bin/openkan.mjs",
+    "ok": "./bin/ok.mjs"
   },
   "engines": {
     "node": ">=22.0.0"
   },
   "scripts": {
     "test": "node --test --experimental-strip-types tests/*.test.mts tests/*.test.mjs",
-    "typecheck": "tsc --noEmit --allowImportingTsExtensions --allowJs --checkJs --skipLibCheck --target ES2022 --module ESNext --moduleResolution Bundler bin/*.ts kanban/*.ts",
+    "typecheck": "tsc --noEmit --allowImportingTsExtensions --allowJs --checkJs --skipLibCheck --target ES2022 --module ESNext --moduleResolution Bundler bin/*.ts kanban/*.ts ok/*.ts ok/commands/*.ts",
     "check": "node --experimental-strip-types scripts/sanity-check.ts",
     "e2e": "node --experimental-strip-types scripts/bizar-e2e.mts",
-    "openkan": "node --experimental-strip-types bin/openkan.ts"
+    "openkan": "node --experimental-strip-types bin/openkan.ts",
+    "ok": "node --experimental-strip-types bin/ok.ts",
+    "ok-install": "node --experimental-strip-types bin/ok-install.ts"
   },
   "dependencies": {
     "marked": "^14.0.0",
