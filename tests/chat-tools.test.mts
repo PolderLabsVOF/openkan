@@ -6,6 +6,8 @@
 //   3. SSE fan-out ordering from a realistic stream-json fixture
 //   4. JSONL round-trip with toolUses array
 //   5. Backwards-compat: legacy JSONL without toolUses still reads cleanly
+//   6. pickerOptions returns the expected shape from a known fixture, and
+//      toPickerLabel strips the `provider/` prefix consistently.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -17,8 +19,10 @@ import {
   appendTurn,
   applyStreamEvent,
   parseStreamLine,
+  pickerOptions,
   readSession,
   summariseSession,
+  toPickerLabel,
   toolUseLabel,
   type ChatTurn,
   type StreamEvent,
@@ -235,4 +239,38 @@ test("legacy JSONL without toolUses reads cleanly and surfaces an empty toolUses
   // Summary still derives model/effort/permissionMode correctly.
   const summary = summariseSession(sid, read, false);
   assert.equal(summary.model, "legacy-model");
+});
+
+test("toPickerLabel strips provider prefixes consistently", () => {
+  assert.equal(toPickerLabel("minimax/MiniMax-M3"), "MiniMax-M3");
+  assert.equal(toPickerLabel("plain-id"), "plain-id");
+  assert.equal(toPickerLabel("vendor/model-with-slashes/extra"), "model-with-slashes/extra");
+});
+
+test("pickerOptions returns the expected shape from an injected fixture", async () => {
+  // Build an isolated project root so readModelRouter falls back to the
+  // default empty router, then exercise the override injection path that the
+  // frontend uses to swap the model list at startup.
+  const root = mkdtempSync(join(tmpdir(), "openkan-picker-"));
+  try {
+    const result = await pickerOptions(root, {
+      models: ["minimax/MiniMax-M3", "minimax/MiniMax-M2", "sonnet"],
+    });
+    assert.deepEqual(result.models.map((m) => m.id), [
+      "minimax/MiniMax-M3",
+      "minimax/MiniMax-M2",
+      "sonnet",
+    ]);
+    assert.deepEqual(result.models.map((m) => m.label), [
+      "MiniMax-M3",
+      "MiniMax-M2",
+      "sonnet",
+    ]);
+    assert.deepEqual(result.efforts, ["low", "medium", "high", "max"]);
+    assert.deepEqual(result.permissionModes, [
+      "accept-edits", "default", "plan", "bypass-permissions",
+    ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

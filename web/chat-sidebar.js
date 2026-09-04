@@ -143,6 +143,13 @@
     // to skip re-rendering the bubble per token.
     liveBubble: null,
     liveChips: null,
+    // Cached `/api/chat/picker-options` payload (model list + efforts + perms).
+    pickerOptions: null,
+    // Currently-open popover id (or null). Only one popover at a time.
+    popoverId: null,
+    // Currently-open tab name (project / files / plugins / activity). null
+    // when no tab is active. Activity uses activityOpen instead of a popover.
+    activeTab: null,
   };
 
   /* ----------------------------------------------------------------------
@@ -224,57 +231,120 @@
               aria-label="Toggle chat sidebar" aria-expanded="false" title="Toggle chat (Alt+C)">
         <span aria-hidden="true">‹</span>
       </button>
-      <header class="chat-sidebar-header">
-        <div class="chat-sidebar-title-row">
-          <span class="chat-sidebar-title">Chat</span>
+
+      <!-- Header (collapsed): session chip + collapse handle. The legacy
+           header sub-sections are kept as a hidden <div> so the existing
+           <select> / <button id="chat-sidebar-meta"> wiring in
+           populateSelectors() still functions for storage + state. -->
+      <header class="chat-sidebar__header chat-sidebar-header">
+        <button type="button" class="chat-sidebar__session-chip" data-chat-action="open-session-menu"
+                aria-label="Switch session" aria-haspopup="true" aria-expanded="false" title="Switch session">
+          <span class="chat-sidebar__session-chip-title" id="chat-sidebar-session-title">New session</span>
+          <svg class="chat-sidebar__session-chip-chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+        <div hidden>
           <span class="chat-sidebar-meta" id="chat-sidebar-meta">—</span>
-        </div>
-        <div class="chat-sidebar-session-row">
-          <label class="chat-select-wrap chat-select-wrap-grow">
-            <span class="chat-select-label">Session</span>
-            <select id="chat-select-session" data-chat-select="session"></select>
-          </label>
-          <div class="chat-sidebar-actions">
-            <button type="button" class="chat-icon-btn" data-chat-action="new"
-                    title="Start a new session">+ New</button>
-            <button type="button" class="chat-icon-btn" data-chat-action="archive"
-                    title="Archive the current session">Archive</button>
-            <button type="button" class="chat-icon-btn" data-chat-action="toggle-activity"
-                    title="Toggle activity footer">Activity</button>
-          </div>
+          <select id="chat-select-session" data-chat-select="session"></select>
+          <select id="chat-select-model" data-chat-select="model"></select>
+          <select id="chat-select-effort" data-chat-select="effort"></select>
+          <select id="chat-select-permission" data-chat-select="permissionMode"></select>
         </div>
       </header>
-      <section class="chat-sidebar-transcript" id="chat-sidebar-transcript"
+
+      <!-- Hero: visible only when the active session has zero messages. -->
+      <div class="chat-sidebar__hero chat-sidebar-hero" id="chat-sidebar-hero">
+        <h2 class="chat-sidebar__hero-title">What should we work on?</h2>
+      </div>
+
+      <!-- Scrollable transcript of bubbles + tool chips. -->
+      <section class="chat-sidebar__transcript chat-sidebar-transcript" id="chat-sidebar-transcript"
                aria-live="polite" aria-label="Chat transcript"></section>
       <button type="button" class="chat-sidebar-new-messages" id="chat-sidebar-new-messages"
               hidden>↓ New messages</button>
-      <footer class="chat-sidebar-composer">
-        <textarea id="chat-sidebar-input" rows="1"
-                  placeholder="Message Claude Code…"
-                  aria-label="Compose message"></textarea>
-        <div class="chat-sidebar-composer-actions">
-          <label class="chat-select-wrap chat-pill">
-            <span class="chat-pill-label">Model</span>
-            <select id="chat-select-model" data-chat-select="model"></select>
-          </label>
-          <label class="chat-select-wrap chat-pill">
-            <span class="chat-pill-label">Effort</span>
-            <select id="chat-select-effort" data-chat-select="effort"></select>
-          </label>
-          <label class="chat-select-wrap chat-pill">
-            <span class="chat-pill-label">Permissions</span>
-            <select id="chat-select-permission" data-chat-select="permissionMode"></select>
-          </label>
-          <button type="button" class="chat-icon-btn chat-send" id="chat-sidebar-send"
-                  data-chat-action="send" aria-label="Send message" title="Send (Enter)">⏎</button>
-          <button type="button" class="chat-icon-btn chat-abort" id="chat-sidebar-abort"
-                  data-chat-action="abort" hidden aria-label="Abort turn" title="Abort">■</button>
-        </div>
+
+      <!-- Composer: rounded input bar — attach / input / model pill / mic / send. -->
+      <footer class="chat-sidebar__composer chat-sidebar-composer">
+        <button type="button" class="chat-sidebar__composer-attach" data-chat-action="open-attach-menu"
+                aria-label="More options" aria-haspopup="true" aria-expanded="false" title="More options">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none" />
+          </svg>
+        </button>
+        <textarea id="chat-sidebar-input" class="chat-sidebar__composer-input"
+                  rows="1" placeholder="Work on anything…" aria-label="Compose message"></textarea>
+        <button type="button" class="chat-sidebar__composer-model" data-chat-action="open-model-picker"
+                aria-label="Choose model" aria-haspopup="true" aria-expanded="false" title="Model / effort / permissions">
+          <span class="chat-sidebar__composer-model-label" id="chat-sidebar-model-label">Default</span>
+          <svg class="chat-sidebar__chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+        <button type="button" class="chat-sidebar__composer-mic" data-chat-action="mic"
+                aria-label="Voice input" title="Coming soon" disabled>
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M8 1.5a2.5 2.5 0 0 0-2.5 2.5v4a2.5 2.5 0 0 0 5 0V4A2.5 2.5 0 0 0 8 1.5zM3 8a5 5 0 0 0 10 0M8 13v2.5"
+                  fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+        <button type="button" id="chat-sidebar-send" class="chat-sidebar__composer-send chat-send"
+                data-chat-action="send" aria-label="Send" title="Send (Enter)">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M2 8h10.5M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+        <button type="button" id="chat-sidebar-abort" class="chat-sidebar__composer-abort chat-abort"
+                data-chat-action="abort" hidden aria-label="Abort" title="Abort">
+          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+            <rect x="2" y="2" width="10" height="10" rx="1.5" fill="currentColor" />
+          </svg>
+        </button>
       </footer>
-      <section class="chat-sidebar-activity" id="chat-sidebar-activity"
+
+      <!-- Tabs row. Project / Files / Plugins / Activity. -->
+      <nav class="chat-sidebar__tabs" data-chat-tabs role="tablist" aria-label="Sidebar shortcuts">
+        <button type="button" class="chat-sidebar__tabs-tab" data-tab="project"
+                role="tab" aria-selected="false" title="Project">
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M1.5 5h13v8.5h-13z M1.5 5l1.5-2h5l1.5 2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+          </svg>
+          <span>Project</span>
+        </button>
+        <button type="button" class="chat-sidebar__tabs-tab" data-tab="files"
+                role="tab" aria-selected="false" title="Files">
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M3 1.5h5l3.5 3.5v9.5h-8.5z M8 1.5v3.5h3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+          </svg>
+          <span>Files</span>
+        </button>
+        <button type="button" class="chat-sidebar__tabs-tab" data-tab="plugins"
+                role="tab" aria-selected="false" title="Plugins">
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M5 1.5v5h-3.5v3h3.5v5h3v-5h3v-3h-3v-5z" fill="currentColor" />
+          </svg>
+          <span>Plugins</span>
+        </button>
+        <button type="button" class="chat-sidebar__tabs-tab" data-tab="activity"
+                role="tab" aria-selected="false" title="Activity">
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8" r="3" fill="currentColor" />
+            <path d="M8 1.5v2 M8 12.5v2 M1.5 8h2 M12.5 8h2 M3.5 3.5l1.5 1.5 M11 11l1.5 1.5 M3.5 12.5l1.5-1.5 M11 5l1.5-1.5"
+                  stroke="currentColor" stroke-width="1.2" stroke-linecap="round" fill="none" />
+          </svg>
+          <span>Activity</span>
+        </button>
+      </nav>
+
+      <!-- Activity footer (slide-in when activity tab is active). -->
+      <section class="chat-sidebar__activity chat-sidebar-activity" id="chat-sidebar-activity"
                aria-label="Activity" hidden>
         <div id="chat-sidebar-claude-root"></div>
       </section>
+
+      <!-- Popovers. Created lazily by ensurePopover(); the mount is here so
+           they share the sidebar's stacking context. -->
+      <div id="chat-sidebar-popover-mount"></div>
     `;
     document.body.appendChild(aside);
     return aside;
@@ -311,6 +381,36 @@
         `<option value="${p}">${p}</option>`).join("");
       permSel.value = state.selectors.permissionMode || "default";
     }
+
+    // Sync the visible chip + pill labels with the underlying <select>
+    // state. Hidden <select>s are still written above for back-compat with
+    // sendTurn() and persistence; the chip / pill are pure presentation.
+    updateSessionChip();
+    updateModelPill();
+    syncHeroState();
+  }
+
+  function updateSessionChip() {
+    if (!state.root) return;
+    const label = state.root.querySelector("#chat-sidebar-session-title");
+    if (!label) return;
+    const cur = (state.sessions || []).find((s) => s.id === state.currentSessionId);
+    label.textContent = cur?.title || cur?.id || "New session";
+  }
+
+  function updateModelPill() {
+    if (!state.root) return;
+    const label = state.root.querySelector("#chat-sidebar-model-label");
+    if (!label) return;
+    const raw = state.selectors.model || "default";
+    label.textContent = raw === "default" ? "Default" : String(raw).replace(/^.*?\//, "");
+  }
+
+  /** Toggle the "What should we work on?" hero based on transcript state. */
+  function syncHeroState() {
+    if (!state.root) return;
+    const has = Array.isArray(state.transcript) && state.transcript.length > 0;
+    state.root.classList.toggle("chat-sidebar--has-messages", has);
   }
 
   /* ----------------------------------------------------------------------
@@ -408,6 +508,7 @@
   async function renderTranscript() {
     const node = state.root?.querySelector("#chat-sidebar-transcript");
     if (!node) return;
+    syncHeroState();
     if (state.transcript.length === 0) {
       node.innerHTML = `<div class="chat-empty">No messages yet. Type below and press Enter to send.</div>`;
       hideNewMessagesPill();
@@ -636,7 +737,10 @@
       return t.ts === turn.ts && t.role === turn.role
         && (t.content || "") === (turn.content || "");
     });
-    if (!dup) state.transcript.push(turn);
+    if (!dup) {
+      state.transcript.push(turn);
+      syncHeroState();
+    }
   }
   function stopLive() {
     if (state.sse) {
@@ -708,6 +812,42 @@
       state.scrolledUp = distance > 80;
       if (!state.scrolledUp) hideNewMessagesPill();
     });
+
+    // Drag-drop: dropped files are routed through the M1 import endpoint.
+    state.root.addEventListener("dragover", (e) => { e.preventDefault(); });
+    state.root.addEventListener("drop", async (e) => {
+      const files = Array.from(e.dataTransfer?.files || []);
+      if (!files.length) return;
+      e.preventDefault();
+      const a = api();
+      if (!a) return;
+      for (const file of files) {
+        try {
+          const text = await file.text();
+          await a("POST", "/api/import", { body: { content: text, filename: file.name } });
+        } catch (_err) { /* ignore */ }
+      }
+      await refreshSessions();
+    });
+  }
+
+  /** Global click-away: close any open popover when the user clicks
+   *  outside the sidebar's interactive elements. Registered on mount. */
+  function bindGlobalDismiss() {
+    document.addEventListener("mousedown", (e) => {
+      if (!state.root || !state.popoverId) return;
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+      if (state.root.contains(target)) return;
+      closePopover();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (!state.popoverId) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closePopover();
+      }
+    });
   }
 
   function onClick(e) {
@@ -724,12 +864,41 @@
     if (copy) { copyToClipboard(copy.getAttribute("data-chat-copy")); return; }
     const retry = t.closest("[data-chat-retry]");
     if (retry) { void retryLastTurn(); return; }
+    const tabBtn = t.closest("[data-tab]");
+    if (tabBtn) {
+      const name = tabBtn.getAttribute("data-tab");
+      if (name) { openTab(name); return; }
+    }
     const action = t.closest("[data-chat-action]")?.getAttribute("data-chat-action");
     if (action === "send") void onSend();
     else if (action === "abort") void onAbort();
-    else if (action === "new") void onNewSession();
-    else if (action === "archive") void onArchive();
-    else if (action === "toggle-activity") toggleActivity();
+    else if (action === "new") { closePopover(); void onNewSession(); }
+    else if (action === "archive") { closePopover(); void onArchive(); }
+    else if (action === "toggle-activity") { closePopover(); toggleActivity(); setActiveTab(state.activityOpen ? "activity" : null); }
+    else if (action === "open-model-picker") { void openModelPicker(); return; }
+    else if (action === "open-attach-menu") { openAttachMenu(); return; }
+    else if (action === "open-session-menu") { openSessionMenu(); return; }
+    else if (action === "import-file") { void onImportFileClick(); return; }
+    else if (action === "add-to-planning") { void onAddToPlanningClick(); return; }
+    else if (action === "pick-session") {
+      const id = t.closest("[data-session-id]")?.getAttribute("data-session-id");
+      if (id) { onPickSessionClick(id); return; }
+    }
+    else if (action === "close-attach") { closePopover(); return; }
+    else if (action === "open-project-picker") { onOpenProjectPicker(); return; }
+    else if (action === "open-docs") { onOpenDocs(); return; }
+    else if (action === "toggle-docs-pane") { onToggleDocsPane(); return; }
+    else if (action === "m1-import") { onM1Import(); return; }
+    else if (action === "planning-cli") { onPlanningCli(); return; }
+    else if (action === "agents-catalog") { onAgentsCatalog(); return; }
+    else if (action === "list-sessions") { onListSessions(); return; }
+    else if (action === "mic") {
+      // Voice input is a placeholder; surfacing as a toast is the lightest
+      // way to confirm the click landed without shipping a half-working
+      // speech-recognition path.
+      try { window.dispatchEvent(new CustomEvent("openkan:toast", { detail: { kind: "info", message: "Voice input is coming soon." } })); } catch (_err) { /* ignore */ }
+      return;
+    }
   }
 
   function onChange(e) {
@@ -973,7 +1142,10 @@
     if (!state.root) return;
     state.activityOpen = !state.activityOpen;
     const section = state.root.querySelector("#chat-sidebar-activity");
-    if (section) section.hidden = !state.activityOpen;
+    if (section) {
+      section.hidden = !state.activityOpen;
+      section.classList.toggle("chat-sidebar__activity--open", state.activityOpen);
+    }
     if (state.activityOpen) {
       const target = state.root.querySelector("#chat-sidebar-claude-root");
       if (target && window.OpenKanClaude && window.OpenKanClaude.mount) {
@@ -982,6 +1154,383 @@
     } else if (window.OpenKanClaude && window.OpenKanClaude.unmount) {
       window.OpenKanClaude.unmount();
     }
+  }
+
+  /* ----------------------------------------------------------------------
+   * Popovers (model picker, attach menu, session list, tab popovers)
+   *
+   * Popovers are siblings of the composer inside `#chat-sidebar-popover-mount`.
+   * They are absolutely positioned via inline `top` / `left` derived from
+   * the trigger element's `getBoundingClientRect()` and clamped to the
+   * sidebar's visible bounds. Only one popover is open at a time; opening
+   * a new one closes the previous.
+   * -------------------------------------------------------------------- */
+
+  /** Lazily create a popover container. Returns the element. */
+  function ensurePopover(id, className) {
+    if (!state.root) return null;
+    const mount = state.root.querySelector("#chat-sidebar-popover-mount");
+    if (!mount) return null;
+    let node = mount.querySelector(`#${id}`);
+    if (!node) {
+      node = document.createElement("div");
+      node.id = id;
+      node.className = `chat-sidebar__popover ${className || ""}`.trim();
+      node.hidden = true;
+      node.setAttribute("role", "dialog");
+      mount.appendChild(node);
+    }
+    return node;
+  }
+
+  /** Close any open popover. */
+  function closePopover() {
+    if (!state.root) return;
+    const mount = state.root.querySelector("#chat-sidebar-popover-mount");
+    if (!mount) return;
+    for (const node of mount.querySelectorAll(".chat-sidebar__popover")) {
+      node.hidden = true;
+    }
+    // Reset aria-expanded on any trigger we opened.
+    for (const trigger of state.root.querySelectorAll("[data-popover-open='1']")) {
+      trigger.setAttribute("aria-expanded", "false");
+      trigger.removeAttribute("data-popover-open");
+    }
+    state.popoverId = null;
+  }
+
+  /** Anchor an already-built popover to a trigger element. */
+  function anchorPopover(popover, trigger) {
+    if (!popover || !trigger) return;
+    const triggerRect = trigger.getBoundingClientRect();
+    const sidebarRect = state.root?.getBoundingClientRect();
+    const popRect = popover.getBoundingClientRect();
+    // Default: open downward beneath the trigger, left-aligned.
+    let top = triggerRect.bottom + 6;
+    let left = triggerRect.left;
+    if (sidebarRect) {
+      // Clamp horizontally inside the sidebar.
+      const maxLeft = sidebarRect.right - popRect.width - 8;
+      if (left > maxLeft) left = Math.max(sidebarRect.left + 8, maxLeft);
+      if (left < sidebarRect.left + 4) left = sidebarRect.left + 4;
+      // Clamp vertically so the popover stays inside the viewport.
+      const maxBottom = window.innerHeight - 8;
+      if (top + popRect.height > maxBottom) {
+        // Open upward if there's no room below.
+        top = Math.max(8, triggerRect.top - popRect.height - 6);
+      }
+    }
+    popover.style.top = `${top}px`;
+    popover.style.left = `${left}px`;
+    popover.hidden = false;
+    trigger.setAttribute("aria-expanded", "true");
+    trigger.setAttribute("data-popover-open", "1");
+  }
+
+  /* ----------------------------------------------------------------------
+   * Model picker popover
+   * Three sections: Model, Effort, Permissions.
+   * -------------------------------------------------------------------- */
+
+  async function fetchPickerOptions() {
+    if (state.pickerOptions) return state.pickerOptions;
+    const a = api();
+    if (!a) return null;
+    try {
+      const data = await a("GET", "/api/chat/picker-options");
+      if (!data || !Array.isArray(data.models)) return null;
+      state.pickerOptions = data;
+      return data;
+    } catch (_err) {
+      return null;
+    }
+  }
+
+  async function openModelPicker() {
+    if (!state.root) return;
+    const trigger = state.root.querySelector(".chat-sidebar__composer-model");
+    if (!trigger) return;
+    const popover = ensurePopover("chat-sidebar-model-popover");
+    if (!popover) return;
+    if (state.popoverId === popover.id) {
+      closePopover();
+      return;
+    }
+    closePopover();
+    const opts = await fetchPickerOptions();
+    const models = (opts?.models || state.models.map((id) => ({ id, label: id })));
+    const efforts = opts?.efforts || EFFORT_OPTIONS;
+    const perms = opts?.permissionModes || PERMISSION_OPTIONS;
+
+    const modelId = state.selectors.model || "default";
+    const effort = state.selectors.effort || "high";
+    const perm = state.selectors.permissionMode || "default";
+
+    popover.innerHTML = `
+      <section class="chat-sidebar__popover-section" data-section="model">
+        <h3 class="chat-sidebar__popover-heading">Model</h3>
+        <ul class="chat-sidebar__popover-list">
+          ${modelRadio("default", "Default", modelId === "default")}
+          ${models.map((m) => modelRadio(m.id, m.label || m.id, m.id === modelId)).join("")}
+        </ul>
+      </section>
+      <section class="chat-sidebar__popover-section" data-section="effort">
+        <h3 class="chat-sidebar__popover-heading">Effort</h3>
+        <ul class="chat-sidebar__popover-list">
+          ${efforts.map((e) => effortRadio(e, e, e === effort)).join("")}
+        </ul>
+      </section>
+      <section class="chat-sidebar__popover-section" data-section="perms">
+        <h3 class="chat-sidebar__popover-heading">Permissions</h3>
+        <ul class="chat-sidebar__popover-list">
+          ${perms.map((p) => permRadio(p, p, p === perm)).join("")}
+        </ul>
+      </section>
+    `;
+    state.popoverId = popover.id;
+    // Render before measuring so getBoundingClientRect is accurate.
+    anchorPopover(popover, trigger);
+    popover.addEventListener("change", onPickerChange);
+  }
+
+  function modelRadio(value, label, checked) {
+    return `
+      <li>
+        <label class="${checked ? "is-active" : ""}">
+          <input type="radio" name="chat-picker-model" value="${esc(value)}" ${checked ? "checked" : ""} />
+          <span>${esc(label)}</span>
+        </label>
+      </li>`;
+  }
+  function effortRadio(value, label, checked) {
+    return `
+      <li>
+        <label class="${checked ? "is-active" : ""}">
+          <input type="radio" name="chat-picker-effort" value="${esc(value)}" ${checked ? "checked" : ""} />
+          <span>${esc(label)}</span>
+        </label>
+      </li>`;
+  }
+  function permRadio(value, label, checked) {
+    return `
+      <li>
+        <label class="${checked ? "is-active" : ""}">
+          <input type="radio" name="chat-picker-perm" value="${esc(value)}" ${checked ? "checked" : ""} />
+          <span>${esc(label)}</span>
+        </label>
+      </li>`;
+  }
+
+  function onPickerChange(e) {
+    if (!state.root) return;
+    const t = e.target;
+    if (!(t instanceof HTMLInputElement)) return;
+    const name = t.name;
+    const value = t.value;
+    if (name === "chat-picker-model") {
+      state.selectors = { ...state.selectors, model: value };
+    } else if (name === "chat-picker-effort") {
+      state.selectors = { ...state.selectors, effort: value };
+    } else if (name === "chat-picker-perm") {
+      state.selectors = { ...state.selectors, permissionMode: value };
+    } else {
+      return;
+    }
+    saveJSON(STORAGE_KEYS.selectors, state.selectors);
+    populateSelectors();
+    closePopover();
+  }
+
+  /* ----------------------------------------------------------------------
+   * + attach menu — New session / Import / Add to planning / Cancel.
+   * -------------------------------------------------------------------- */
+
+  function openAttachMenu() {
+    if (!state.root) return;
+    const trigger = state.root.querySelector(".chat-sidebar__composer-attach");
+    if (!trigger) return;
+    const popover = ensurePopover("chat-sidebar-attach-popover", "chat-sidebar__attach-menu");
+    if (!popover) return;
+    if (state.popoverId === popover.id) {
+      closePopover();
+      return;
+    }
+    closePopover();
+    popover.innerHTML = `
+      <button type="button" data-chat-action="new" data-attach="1">＋ New session</button>
+      <button type="button" data-chat-action="import-file" data-attach="1">⇪ Import from file</button>
+      <button type="button" data-chat-action="add-to-planning" data-attach="1">▦ Add to planning</button>
+      <button type="button" data-chat-action="close-attach" data-attach="1">Cancel</button>
+    `;
+    state.popoverId = popover.id;
+    anchorPopover(popover, trigger);
+  }
+
+  async function importFromFile() {
+    const a = api();
+    if (!a) return;
+    try {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".md,.mdx,.markdown,.txt,.json";
+      input.addEventListener("change", async () => {
+        const file = input.files?.[0];
+        if (!file) return;
+        const text = await file.text();
+        const res = await a("POST", "/api/import", {
+          body: { content: text, filename: file.name },
+        });
+        closePopover();
+        if (res && res.ok) await refreshSessions();
+      }, { once: true });
+      input.click();
+    } catch (_err) {
+      closePopover();
+    }
+  }
+
+  async function addToPlanning() {
+    const a = api();
+    if (!a) { closePopover(); return; }
+    const composer = state.root?.querySelector("#chat-sidebar-input");
+    const message = (composer?.value || "").trim();
+    if (!message) {
+      try { composer?.focus(); } catch (_err) { /* ignore */ }
+      closePopover();
+      return;
+    }
+    try {
+      const title = message.split("\n")[0].slice(0, 80) || "Untitled task";
+      await a("POST", "/api/planning/tasks", { body: { title, body: message } });
+    } catch (_err) { /* ignore */ }
+    closePopover();
+  }
+
+  /* ----------------------------------------------------------------------
+   * Session chip menu — quick switcher + New session.
+   * -------------------------------------------------------------------- */
+
+  function openSessionMenu() {
+    if (!state.root) return;
+    const trigger = state.root.querySelector(".chat-sidebar__session-chip");
+    if (!trigger) return;
+    const popover = ensurePopover("chat-sidebar-session-popover");
+    if (!popover) return;
+    if (state.popoverId === popover.id) {
+      closePopover();
+      return;
+    }
+    closePopover();
+    const items = [`<button type="button" data-chat-action="new" data-attach="1">＋ New session</button>`]
+      .concat((state.sessions || []).slice(0, 20).map((s) =>
+        `<button type="button" data-chat-action="pick-session" data-session-id="${esc(s.id)}" data-attach="1">${esc(s.title || s.id)}</button>`,
+      ));
+    popover.innerHTML = items.join("");
+    state.popoverId = popover.id;
+    anchorPopover(popover, trigger);
+  }
+
+  /* ----------------------------------------------------------------------
+   * Tab popovers — Project / Files / Plugins.
+   * -------------------------------------------------------------------- */
+
+  function openTab(tab) {
+    if (!state.root) return;
+    if (state.activeTab === tab) {
+      closeTab();
+      return;
+    }
+    // Activity is special: it doesn't open a popover, it toggles the footer.
+    if (tab === "activity") {
+      toggleActivity();
+      setActiveTab(state.activityOpen ? "activity" : null);
+      return;
+    }
+    closeTab();
+    const popover = ensurePopover(`chat-sidebar-tab-${tab}-popover`);
+    if (!popover) return;
+    if (tab === "project") {
+      popover.innerHTML = `
+        <h3 class="chat-sidebar__popover-heading">Project</h3>
+        <button type="button" data-chat-action="open-project-picker" data-attach="1">Switch project…</button>
+        <button type="button" data-chat-action="list-sessions" data-attach="1">List sessions in this project</button>
+      `;
+    } else if (tab === "files") {
+      popover.innerHTML = `
+        <h3 class="chat-sidebar__popover-heading">Files</h3>
+        <button type="button" data-chat-action="open-docs" data-attach="1">Open documentation browser</button>
+        <button type="button" data-chat-action="toggle-docs-pane" data-attach="1">Toggle docs pane</button>
+      `;
+    } else if (tab === "plugins") {
+      popover.innerHTML = `
+        <h3 class="chat-sidebar__popover-heading">Plugins</h3>
+        <button type="button" data-chat-action="m1-import" data-attach="1">M1 import</button>
+        <button type="button" data-chat-action="planning-cli" data-attach="1">Planning CLI</button>
+        <button type="button" data-chat-action="agents-catalog" data-attach="1">Agents catalog</button>
+      `;
+    } else {
+      return;
+    }
+    const trigger = state.root.querySelector(`.chat-sidebar__tabs-tab[data-tab="${tab}"]`);
+    state.popoverId = popover.id;
+    anchorPopover(popover, trigger);
+    setActiveTab(tab);
+  }
+
+  function closeTab() {
+    setActiveTab(null);
+    if (state.root) {
+      const mount = state.root.querySelector("#chat-sidebar-popover-mount");
+      if (mount) {
+        for (const node of mount.querySelectorAll('[id^="chat-sidebar-tab-"]')) {
+          node.hidden = true;
+        }
+      }
+    }
+    if (state.popoverId && state.popoverId.startsWith("chat-sidebar-tab-")) {
+      state.popoverId = null;
+    }
+  }
+
+  function setActiveTab(name) {
+    state.activeTab = name;
+    if (!state.root) return;
+    for (const tab of state.root.querySelectorAll(".chat-sidebar__tabs-tab")) {
+      const isActive = tab.getAttribute("data-tab") === name;
+      tab.classList.toggle("chat-sidebar__tabs-tab--active", isActive);
+      tab.setAttribute("aria-selected", isActive ? "true" : "false");
+    }
+  }
+
+  async function onImportFileClick() { await importFromFile(); }
+  async function onAddToPlanningClick() { await addToPlanning(); }
+  function onPickSessionClick(id) { closePopover(); void onPickSession(id); }
+  function onOpenProjectPicker() {
+    // Best-effort: open the path picker (if loaded) or focus the docs
+    // browser command. The action is fire-and-forget.
+    try { window.OpenKanPathPicker?.open?.(); } catch (_err) { /* ignore */ }
+    closePopover();
+  }
+  function onOpenDocs() {
+    try { window.dispatchEvent(new CustomEvent("openkan:open-docs")); } catch (_err) { /* ignore */ }
+    closePopover();
+  }
+  function onToggleDocsPane() {
+    try { window.dispatchEvent(new CustomEvent("openkan:toggle-docs-pane")); } catch (_err) { /* ignore */ }
+    closePopover();
+  }
+  function onM1Import() { void importFromFile(); }
+  function onPlanningCli() {
+    try { window.dispatchEvent(new CustomEvent("openkan:open-planning-cli")); } catch (_err) { /* ignore */ }
+    closePopover();
+  }
+  function onAgentsCatalog() {
+    try { window.dispatchEvent(new CustomEvent("openkan:open-agents-catalog")); } catch (_err) { /* ignore */ }
+    closePopover();
+  }
+  function onListSessions() {
+    closePopover();
+    openSessionMenu();
   }
 
   /* ----------------------------------------------------------------------
@@ -1027,6 +1576,7 @@
     state.models = await fetchModels();
     populateSelectors();
     bindEvents();
+    bindGlobalDismiss();
     if (state.open) open();
     autoResize();
     startLive();
@@ -1042,6 +1592,7 @@
     }
     await renderTranscript();
     bindChipChips();
+    syncHeroState();
     startSessionStream();
   }
 
@@ -1056,6 +1607,7 @@
       state.abortController = null;
     }
     if (state.root) {
+      try { closePopover(); } catch (_err) { /* ignore */ }
       try { state.root.remove(); } catch (_err) { /* ignore */ }
       state.root = null;
     }
@@ -1063,6 +1615,9 @@
     state.open = false;
     state.transcript = [];
     state.renderedCache.clear();
+    state.pickerOptions = null;
+    state.popoverId = null;
+    state.activeTab = null;
   }
 
   // The topbar toggle button: if it exists before mount, wire its click to
