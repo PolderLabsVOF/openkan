@@ -487,10 +487,9 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
 
 // ─── Onboard stub (M20 wires this) ──────────────────────────────────────────
 
-function cmdOnboard(): number {
+function cmdOnboard(): void {
   console.log("openkan onboard: wired in M20");
   console.log("  Hint: run 'openkan start' and use the Settings sidebar to configure agents.");
-  return 0;
 }
 
 // ─── MCP stub (M21 wires this) ───────────────────────────────────────────────
