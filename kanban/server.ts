@@ -65,6 +65,7 @@ import {
   getBizarSnapshot,
   handleBizarRequest,
 } from "./bizar.ts";
+import { runImport } from "./import.ts";
 
 // ─── Module-level server state ────────────────────────────────────────────────
 
@@ -1362,6 +1363,39 @@ export async function apiOrganize(_ctx: BoardContext, req: Request): Promise<Res
   return jsonResponse({ applied, skipped, summary });
 }
 
+// ─── Import ──────────────────────────────────────────────────────────────────
+
+export async function apiImport(_ctx: BoardContext, req: Request): Promise<Response> {
+  interface ImportBody {
+    include?: string[];
+    exclude?: string[];
+    defaultColumn?: string;
+  }
+
+  let body: ImportBody;
+  try { body = await req.json(); } catch { return errorResponse("Invalid JSON"); }
+
+  // Read defaults from config
+  const configPath = join(KANBAN_DIR, "config.json");
+  let config: Record<string, unknown> = {};
+  try {
+    if (existsSync(configPath)) config = JSON.parse(readFileSync(configPath, "utf-8")) as Record<string, unknown>;
+  } catch { /* ignore */ }
+
+  const importConfig = (config["import"] as Record<string, unknown>) ?? {};
+  const include = body.include ?? (importConfig["include"] as string[] | undefined) ?? ["docs/**", "*.md", "*.mdx"];
+  const exclude = body.exclude ?? (importConfig["exclude"] as string[] | undefined) ?? [];
+
+  const importCtx: BoardContext = {
+    directory: KANBAN_DIR,
+    client: null as any,
+    log: async () => {},
+  };
+
+  const result = await runImport(importCtx, { include, exclude });
+  return jsonResponse({ ok: true, imported: result.imported }, 201);
+}
+
 // ─── Settings ──────────────────────────────────────────────────────────────
 
 const DEFAULT_SETTINGS = {
@@ -2460,6 +2494,9 @@ async function handleRequest(req: Request): Promise<Response> {
 
   // POST /api/organize
   if (path === "/api/organize" && req.method === "POST") return apiOrganize({ directory: KANBAN_DIR, client: null as any, log: async () => {} }, req);
+
+  // POST /api/import
+  if (path === "/api/import" && req.method === "POST") return apiImport({ directory: KANBAN_DIR, client: null as any, log: async () => {} }, req);
 
   // GET /api/search
   if (path === "/api/search" && req.method === "GET") return apiSearch(req);
