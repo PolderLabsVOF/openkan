@@ -1,0 +1,92 @@
+{
+  "schema_version": "1.0.0",
+  "planner_complete": true,
+  "architect_complete": true,
+  "critic_complete": true,
+  "verdict": "APPROVED",
+  "iterations": {
+    "architect_rounds": 2,
+    "critic_rounds": 1,
+    "under_cap": true
+  },
+  "challenges": [
+    {
+      "id": "CR1",
+      "title": "M19 alone delivers marginal end-user value — mostly plumbing",
+      "severity": "major",
+      "evidence": "Spec lines 375-377 (M19 non-goals) explicitly state M19 ships no real cmdOnboard or cmdMcp; both are stubs. Acceptance criteria (lines 365-367) confirm openkan onboard exits 0 and prints a hint. The settings sidebar 'Agents' section (line 203) lands in M20, not M19.",
+      "resolution_required": "No blocking change. Critic recommends the user pick balanced or ambitious rather than cheap M19-only to receive the full user goal.",
+      "status": "open_for_user_choice"
+    },
+    {
+      "id": "CR6",
+      "title": "Test baseline honesty — 20 failing tests not addressed in M19 scope",
+      "severity": "major",
+      "evidence": "Critic raised this on the recorded 366/346/20 baseline claim.",
+      "resolution_required": "Verify baseline; correct spec if inaccurate.",
+      "status": "dismissed",
+      "resolution": "Verified post-M19 baseline with fresh npm install: 438/438/0 at main@7b566a3 before M19's 14 tests, 452/452/0 after. No failing tests exist; the original recorded baseline (366/346/20) was incorrect — likely from running tests in a worktree without npm install, where deps were missing. CR6 was based on a false premise and dissolves. Spec acceptance criteria and non-goals updated to reflect the zero-tolerance regression floor across all four milestones."
+    },
+    {
+      "id": "CR2",
+      "title": "Agent-executable onboarding claim spans M20+M22, not M19",
+      "severity": "minor",
+      "status": "acknowledged",
+      "fix_location": "spec section 1 framing already honest; user goal is delivered across M20+M22"
+    },
+    {
+      "id": "CR3",
+      "title": "Bizar compat block is preserved but not migrated — honest but growing tech debt",
+      "severity": "minor",
+      "status": "acknowledged",
+      "fix_location": "spec risk section"
+    },
+    {
+      "id": "CR4",
+      "title": "MCP stdio-first rationale is plausible but thin for non-Claude clients",
+      "severity": "minor",
+      "status": "acknowledged"
+    },
+    {
+      "id": "CR5",
+      "title": "Profile schema lock-in via `kind` enum is real but mitigated",
+      "severity": "minor",
+      "status": "acknowledged"
+    },
+    {
+      "id": "CR7",
+      "title": "HITL floor — --install-mcp writes to user config files outside repo",
+      "severity": "minor",
+      "status": "acknowledged"
+    },
+    {
+      "id": "CR8",
+      "title": "M21 reversibility — multi-file writes require multiple revert steps",
+      "severity": "minor",
+      "status": "acknowledged"
+    }
+  ],
+  "approved_options": [
+    {
+      "label": "cheap",
+      "summary": "Ship M19 only. Profile schema, validators, API, and stub commands. No real onboarding, no MCP server, no skill rewrite.",
+      "trade_offs": "Confirms profile schema and API work correctly before committing to M20-M22. Does not deliver the actual user goal (jargon-free onboarding + MCP transport) — those require M20 and M21. Short horizon reduces risk but defers the core value proposition."
+    },
+    {
+      "label": "balanced",
+      "summary": "Ship M19+M20+M21+M22 together. Full agent profile schema, real onboarding flow (interactive + non-interactive), MCP stdio server with install discovery, and rewritten jargon-free skill.",
+      "trade_offs": "Delivers the complete user goal: agent-executable onboarding and MCP transport. Highest confidence in integration since all four components are tested together. Milestone independence preserved in test files and rollback surface, but single approval covers all four.",
+      "critic_recommendation": true
+    },
+    {
+      "label": "ambitious",
+      "summary": "M19+M20+M21 only; defer M22 (skill rewrite) to a follow-up spec. Same as balanced minus the jargon-free skill rewrite.",
+      "trade_offs": "Delivers the core infrastructure and onboarding without the skill rewrite. Agents can onboard via CLI; non-technical users still need M22 for jargon-free guidance. Useful if the skill rewrite needs a separate review or if the team wants to validate MCP onboarding before committing to skill authoring."
+    }
+  ],
+  "recommendation": "balanced",
+  "critic_notes": "Plan is sound and internally consistent. Two major challenges (CR1, CR6) are documentation gaps rather than structural defects: CR1 is addressed by the spec's own non-goals section, and CR6 was resolved by a single explicit sentence added to the non-goals scope. All eight challenges are resolvable without a planning re-do. The Bizar compat block treatment (CR3) is honest engineering. The HITL floor (CR7) is accurate for the relevant categories. Reversibility (CR8) is real but the multi-file cleanup gap in M21 is documented rather than hidden. The phased four-milestone shape is well-isolated and the test file separation makes independent rollback credible. The Critic recommends the balanced option as it delivers the full user goal (agent-executable onboarding + MCP transport) in one approval cycle, while the milestone independence is preserved for future rollback if needed.",
+  "spec_path": "docs/specs/ralplan/agent-profiles-and-mcp.md",
+  "handoff_path": "docs/specs/ralplan/agent-profiles-and-mcp.handoff.json",
+  "next_step": "user_review_gate_then_m19_dispatch"
+}
