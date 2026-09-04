@@ -38,6 +38,7 @@ import { renderMdx, stripMdxFrontmatter } from "./mdx-render.ts";
 import { buildPreview } from "./tsx-sandbox.ts";
 import { writeFileAtomic, ensureDir, removeDir } from "./io.ts";
 import { recordEvent, readEvents, readSummary, type ChangelogKind } from "./changelog.ts";
+import { computeVelocity } from "./insights.ts";
 import { listContributors, attributeCommitsToTasks, isGitRepo, type GitCommit } from "./git.ts";
 import { archiveTask, restoreTask } from "./archive.ts";
 import {
@@ -1217,6 +1218,25 @@ async function apiGetChangelogSummary(req: Request): Promise<Response> {
   const days = parseInt(url.searchParams.get("days") ?? "30", 10);
   const summary = readSummary(KANBAN_DIR, { days });
   return jsonResponse(summary);
+}
+
+async function apiGetInsightsVelocity(req: Request): Promise<Response> {
+  const url = new URL(req.url);
+  const rawDays = parseInt(url.searchParams.get("days") ?? "30", 10);
+  const days = Math.max(1, Math.min(365, isFinite(rawDays) ? rawDays : 30));
+  const buckets = computeVelocity(KANBAN_DIR, days);
+  return jsonResponse({
+    days: buckets.days,
+    columns: {
+      backlog: buckets.backlog,
+      todo: buckets.todo,
+      doing: buckets.doing,
+      review: buckets.review,
+      done: buckets.done,
+    },
+    windowDays: buckets.windowDays,
+    generatedAt: buckets.generatedAt,
+  });
 }
 
 // ─── Contributors & git attribution ────────────────────────────────────────
@@ -2581,6 +2601,9 @@ async function handleRequest(req: Request): Promise<Response> {
 
   // GET /api/changelog/summary
   if (path === "/api/changelog/summary" && req.method === "GET") return apiGetChangelogSummary(req);
+
+  // GET /api/insights/velocity
+  if (path === "/api/insights/velocity" && req.method === "GET") return apiGetInsightsVelocity(req);
 
   // GET /api/contributors
   if (path === "/api/contributors" && req.method === "GET") return apiGetContributors(req);
