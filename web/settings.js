@@ -151,7 +151,7 @@
           value: f.value ?? "",
           options: Array.isArray(f.options) ? f.options : undefined,
           placeholder: f.placeholder ? String(f.placeholder) : undefined,
-          hint: f.hint ? String(f.hint) : undefined,
+          hint: f.hint ? String(f.hint) : f.description ? String(f.description) : undefined,
           min: f.min,
           max: f.max,
           step: f.step,
@@ -288,6 +288,7 @@
         "data-section": sec.id,
       });
       item.append(el("span", "settings-nav-label", { text: sec.title }));
+      item.append(el("span", "settings-nav-count", { text: `${sec.fields.length} ${sec.fields.length === 1 ? "setting" : "settings"}` }));
       item.addEventListener("click", () => {
         activeSectionId = sec.id;
         renderNav();
@@ -382,6 +383,13 @@
         }
         break;
       }
+      case "boolean": {
+        control = el("label", "settings-switch");
+        const checkbox = el("input", null, { type: "checkbox", id: inputId, name: field.name });
+        checkbox.checked = Boolean(field.value);
+        control.append(checkbox, el("span", "settings-switch-track"), el("span", "settings-switch-copy", { text: field.hint || "Enable this setting" }));
+        break;
+      }
       case "number": {
         control = el("input", "settings-input", {
           type: "number",
@@ -429,7 +437,9 @@
           // Skip — handled via the selected radio inside .settings-radio-row.
           continue;
         }
-        if (tag === "input" && el_.type === "number") {
+        if (tag === "input" && el_.type === "checkbox") {
+          out[field.name] = el_.checked;
+        } else if (tag === "input" && el_.type === "number") {
           out[field.name] = Number(el_.value || 0);
         } else {
           out[field.name] = String(el_.value || "");
@@ -515,16 +525,16 @@
         // installations only have one. We treat any non-2xx as an error.
         let saved = null;
         let lastError = null;
+        const active = sections?.find((section) => section.id === activeSectionId);
+        const entries = (active?.fields || []).map((field) => ({ key: field.name, value: payload[field.name] }));
         try {
-          saved = await api("PATCH", "/api/config-sections", payload);
+          saved = await api("PATCH", `/api/config-sections/${encodeURIComponent(activeSectionId || "")}`, entries);
         } catch (err) {
           lastError = err;
           try {
             saved = await api("PATCH", "/api/settings", payload);
             lastError = null;
-          } catch (err2) {
-            lastError = err2;
-          }
+          } catch (err2) { lastError = err2; }
         }
 
         if (saved == null) {

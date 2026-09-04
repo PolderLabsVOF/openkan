@@ -149,13 +149,13 @@ test("deleteSession removes both active and archived files", () => {
 // ─── Selector validation ─────────────────────────────────────────────────────
 
 test("validateSelectors accepts known effort + permission combinations", () => {
-  validateSelectors({ model: "minimax/MiniMax-M3", effort: "low", permissionMode: "accept-edits" });
-  validateSelectors({ model: "minimax/MiniMax-M3", effort: "high", permissionMode: "bypass-permissions" });
+  validateSelectors({ model: "minimax/MiniMax-M3", effort: "low", permissionMode: "acceptEdits" });
+  validateSelectors({ model: "minimax/MiniMax-M3", effort: "high", permissionMode: "bypassPermissions" });
 });
 
 test("validateSelectors rejects unknown effort", () => {
   assert.throws(
-    () => validateSelectors({ model: "x", effort: "ultra", permissionMode: "default" }),
+    () => validateSelectors({ model: "x", effort: "ultra", permissionMode: "auto" }),
     /Invalid effort/,
   );
 });
@@ -169,7 +169,7 @@ test("validateSelectors rejects unknown permission mode", () => {
 
 test("validateSelectors requires a model", () => {
   assert.throws(
-    () => validateSelectors({ model: "", effort: "low", permissionMode: "default" }),
+    () => validateSelectors({ model: "", effort: "low", permissionMode: "auto" }),
     /model is required/,
   );
 });
@@ -247,7 +247,7 @@ test("sendTurn spawns claude -p with selectors and persists both turns", async (
       message: "hello there",
       model: "minimax/MiniMax-M3",
       effort: "high",
-      permissionMode: "accept-edits",
+      permissionMode: "acceptEdits",
     });
     assert.equal(result.sessionId, "ses-test-1");
     assert.equal(result.userTurn.role, "user");
@@ -260,7 +260,7 @@ test("sendTurn spawns claude -p with selectors and persists both turns", async (
     assert.equal(turns[1].content.includes("PROMPT:"), true);
     assert.equal(turns[1].model, "minimax/MiniMax-M3");
     assert.equal(turns[1].effort, "high");
-    assert.equal(turns[1].permissionMode, "accept-edits");
+    assert.equal(turns[1].permissionMode, "acceptEdits");
 
     const logLine = JSON.parse(
       (await import("node:fs")).readFileSync(log, "utf-8").trim().split("\n").pop()!,
@@ -271,7 +271,7 @@ test("sendTurn spawns claude -p with selectors and persists both turns", async (
     assert.equal(logLine.argv[4], "--effort");
     assert.equal(logLine.argv[5], "high");
     assert.equal(logLine.argv[6], "--permission-mode");
-    assert.equal(logLine.argv[7], "accept-edits");
+    assert.equal(logLine.argv[7], "acceptEdits");
   } finally {
     process.env.PATH = prevPath;
   }
@@ -326,7 +326,7 @@ process.exit(42);
       message: "make it fail",
       model: "minimax/MiniMax-M3",
       effort: "low",
-      permissionMode: "default",
+      permissionMode: "auto",
     });
     assert.equal(result.assistantTurn.role, "system");
     assert.equal(result.assistantTurn.status, "error");
@@ -345,7 +345,7 @@ test("sendTurn auto-generates a sessionId when none provided", async () => {
       message: "no session yet",
       model: "minimax/MiniMax-M3",
       effort: "high",
-      permissionMode: "default",
+      permissionMode: "auto",
     });
     assert.ok(result.sessionId.startsWith("ses-"));
     assert.ok(existsSync(join(root, ".ok", "sessions", `${result.sessionId}.jsonl`)));
@@ -399,7 +399,7 @@ test("handleChatRequest rejects send with invalid selectors", async () => {
     root,
     new Request("http://l/api/chat/send", {
       method: "POST",
-      body: JSON.stringify({ message: "hi", model: "x", effort: "ultra", permissionMode: "default" }),
+      body: JSON.stringify({ message: "hi", model: "x", effort: "ultra", permissionMode: "auto" }),
     }),
     "/api/chat/send",
   );
@@ -414,7 +414,7 @@ test("handleChatRequest rejects send without message", async () => {
     root,
     new Request("http://l/api/chat/send", {
       method: "POST",
-      body: JSON.stringify({ model: "minimax/MiniMax-M3", effort: "high", permissionMode: "default" }),
+      body: JSON.stringify({ model: "minimax/MiniMax-M3", effort: "high", permissionMode: "auto" }),
     }),
     "/api/chat/send",
   );
@@ -470,8 +470,8 @@ test("handleChatRequest GET selectors returns allowed values", async () => {
   const body = await res.json() as { efforts: string[]; permissionModes: string[] };
   assert.ok(body.efforts.includes("low"));
   assert.ok(body.efforts.includes("max"));
-  assert.ok(body.permissionModes.includes("accept-edits"));
-  assert.ok(body.permissionModes.includes("bypass-permissions"));
+  assert.ok(body.permissionModes.includes("acceptEdits"));
+  assert.ok(body.permissionModes.includes("bypassPermissions"));
 });
 
 test("handleChatRequest returns 404 for unknown chat path", async () => {
@@ -535,6 +535,6 @@ test("handleChatRequest GET /api/chat/picker-options returns the expected shape"
   assert.ok(Array.isArray(body.models));
   assert.deepEqual(body.efforts, ["low", "medium", "high", "max"]);
   assert.deepEqual(body.permissionModes, [
-    "accept-edits", "default", "plan", "bypass-permissions",
+    "acceptEdits", "auto", "bypassPermissions", "manual", "dontAsk", "plan",
   ]);
 });

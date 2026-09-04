@@ -2,7 +2,7 @@
 
 Self-contained, JSON-based planning layer for Claude Code agents and humans.
 Lives next to your project under `.ok/` (sibling of `.git/`, `.claude/`,
-`.openkan/`, `node_modules/`).
+and `node_modules/`).
 
 This README is the **developer** reference. End users should read
 [`docs/OK-PLANNING.md`](../../docs/OK-PLANNING.md). Agents that pick the
@@ -89,8 +89,8 @@ serialized by the lock; cross-task writes are independent.
 ## Why `.ok/` (not `.openkan/` or `.claude/`)
 
 - `.git/` is the source of truth for code; planning state is not code.
-- `.openkan/` is owned by the OpenKan server (MDX frontmatter, boards);
-  mixing planning JSON there would couple two unrelated models.
+- `.openkan/` is a legacy import source only. Do not create or write it;
+  migrate it once with `ok migrate-from-openkan` when needed.
 - `.claude/` is the Claude Code configuration root; agent skills and
   hooks live there.
 - `.ok/` is a deliberately short namespace reserved for this system; it

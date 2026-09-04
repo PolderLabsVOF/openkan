@@ -1,0 +1,230 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="12" viewBox="0 0 440 12" fill="none" shape-rendering="crispEdges" role="img" aria-label="Processing">
+  <style>
+    :root {
+      --loader-track: #305770;
+      --loader-track-opacity: 0.59;
+      --loader-trail-5: #1d6889;
+      --loader-trail-5-opacity: 0.41;
+      --loader-trail-4: #168bb1;
+      --loader-trail-4-opacity: 0.57;
+      --loader-trail-3: #1fb8d3;
+      --loader-trail-3-opacity: 0.75;
+      --loader-trail-2: #4be2f2;
+      --loader-trail-2-opacity: 0.88;
+      --loader-trail-1: #aefbff;
+      --loader-trail-1-opacity: 0.96;
+      --loader-halo: #5ce2ef;
+      --loader-halo-opacity: 0.75;
+      --loader-core: #ffffff;
+      --loader-core-opacity: 1;
+    }
+    .track { fill: var(--loader-track, #305770); fill-opacity: var(--loader-track-opacity, 0.59); }
+    .trail-5 { fill: var(--loader-trail-5, #1d6889); fill-opacity: var(--loader-trail-5-opacity, 0.41); }
+    .trail-4 { fill: var(--loader-trail-4, #168bb1); fill-opacity: var(--loader-trail-4-opacity, 0.57); }
+    .trail-3 { fill: var(--loader-trail-3, #1fb8d3); fill-opacity: var(--loader-trail-3-opacity, 0.75); }
+    .trail-2 { fill: var(--loader-trail-2, #4be2f2); fill-opacity: var(--loader-trail-2-opacity, 0.88); }
+    .trail-1 { fill: var(--loader-trail-1, #aefbff); fill-opacity: var(--loader-trail-1-opacity, 0.96); }
+    .halo { fill: var(--loader-halo, #5ce2ef); fill-opacity: var(--loader-halo-opacity, 0.75); }
+    .core { fill: var(--loader-core, #ffffff); fill-opacity: var(--loader-core-opacity, 1); }
+  </style>
+  <g id="frame-00">
+  <path class="track" d="M2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM7 4h1v1h-1zM8 4h1v1h-1zM13 4h1v1h-1zM14 4h1v1h-1zM15 4h1v1h-1zM16 4h1v1h-1zM17 4h1v1h-1zM18 4h1v1h-1zM19 4h1v1h-1zM2 5h1v1h-1zM8 5h1v1h-1zM9 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM13 5h1v1h-1zM19 5h1v1h-1zM20 5h1v1h-1zM2 6h1v1h-1zM8 6h1v1h-1zM9 6h1v1h-1zM10 6h1v1h-1zM11 6h1v1h-1zM12 6h1v1h-1zM13 6h1v1h-1zM19 6h1v1h-1zM2 7h1v1h-1zM3 7h1v1h-1zM4 7h1v1h-1zM5 7h1v1h-1zM6 7h1v1h-1zM7 7h1v1h-1zM8 7h1v1h-1zM13 7h1v1h-1zM14 7h1v1h-1zM15 7h1v1h-1zM16 7h1v1h-1zM17 7h1v1h-1zM18 7h1v1h-1zM19 7h1v1h-1z"/>
+  <path class="trail-5" d="M6 4h1v1h-1z"/>
+  <path class="trail-4" d="M7 4h1v1h-1z"/>
+  <path class="trail-3" d="M8 4h1v1h-1z"/>
+  <path class="trail-2" d="M9 5h1v1h-1z"/>
+  <path class="trail-1" d="M10 5h1v1h-1z"/>
+  <path class="halo" d="M10 5h1v1h-1zM9 6h1v1h-1zM11 6h1v1h-1zM10 7h1v1h-1z"/>
+  <path class="core" d="M10 6h1v1h-1z"/>
+  </g>
+  <g id="frame-01">
+  <path class="track" transform="translate(22 0)" d="M2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM7 4h1v1h-1zM8 4h1v1h-1zM13 4h1v1h-1zM14 4h1v1h-1zM15 4h1v1h-1zM16 4h1v1h-1zM17 4h1v1h-1zM18 4h1v1h-1zM19 4h1v1h-1zM2 5h1v1h-1zM8 5h1v1h-1zM9 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM13 5h1v1h-1zM19 5h1v1h-1zM20 5h1v1h-1zM2 6h1v1h-1zM8 6h1v1h-1zM9 6h1v1h-1zM10 6h1v1h-1zM11 6h1v1h-1zM12 6h1v1h-1zM13 6h1v1h-1zM19 6h1v1h-1zM2 7h1v1h-1zM3 7h1v1h-1zM4 7h1v1h-1zM5 7h1v1h-1zM6 7h1v1h-1zM7 7h1v1h-1zM8 7h1v1h-1zM13 7h1v1h-1zM14 7h1v1h-1zM15 7h1v1h-1zM16 7h1v1h-1zM17 7h1v1h-1zM18 7h1v1h-1zM19 7h1v1h-1z"/>
+  <path class="trail-5" transform="translate(22 0)" d="M8 4h1v1h-1z"/>
+  <path class="trail-4" transform="translate(22 0)" d="M9 5h1v1h-1z"/>
+  <path class="trail-3" transform="translate(22 0)" d="M10 5h1v1h-1z"/>
+  <path class="trail-2" transform="translate(22 0)" d="M11 6h1v1h-1z"/>
+  <path class="trail-1" transform="translate(22 0)" d="M12 6h1v1h-1z"/>
+  <path class="halo" transform="translate(22 0)" d="M12 5h1v1h-1zM11 6h1v1h-1zM13 6h1v1h-1zM12 7h1v1h-1z"/>
+  <path class="core" transform="translate(22 0)" d="M12 6h1v1h-1z"/>
+  </g>
+  <g id="frame-02">
+  <path class="track" transform="translate(44 0)" d="M2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM7 4h1v1h-1zM8 4h1v1h-1zM13 4h1v1h-1zM14 4h1v1h-1zM15 4h1v1h-1zM16 4h1v1h-1zM17 4h1v1h-1zM18 4h1v1h-1zM19 4h1v1h-1zM2 5h1v1h-1zM8 5h1v1h-1zM9 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM13 5h1v1h-1zM19 5h1v1h-1zM20 5h1v1h-1zM2 6h1v1h-1zM8 6h1v1h-1zM9 6h1v1h-1zM10 6h1v1h-1zM11 6h1v1h-1zM12 6h1v1h-1zM13 6h1v1h-1zM19 6h1v1h-1zM2 7h1v1h-1zM3 7h1v1h-1zM4 7h1v1h-1zM5 7h1v1h-1zM6 7h1v1h-1zM7 7h1v1h-1zM8 7h1v1h-1zM13 7h1v1h-1zM14 7h1v1h-1zM15 7h1v1h-1zM16 7h1v1h-1zM17 7h1v1h-1zM18 7h1v1h-1zM19 7h1v1h-1z"/>
+  <path class="trail-5" transform="translate(44 0)" d="M10 5h1v1h-1z"/>
+  <path class="trail-4" transform="translate(44 0)" d="M11 6h1v1h-1z"/>
+  <path class="trail-3" transform="translate(44 0)" d="M12 6h1v1h-1z"/>
+  <path class="trail-2" transform="translate(44 0)" d="M13 7h1v1h-1z"/>
+  <path class="trail-1" transform="translate(44 0)" d="M14 7h1v1h-1z"/>
+  <path class="halo" transform="translate(44 0)" d="M14 6h1v1h-1zM13 7h1v1h-1zM15 7h1v1h-1zM14 8h1v1h-1z"/>
+  <path class="core" transform="translate(44 0)" d="M14 7h1v1h-1z"/>
+  </g>
+  <g id="frame-03">
+  <path class="track" transform="translate(66 0)" d="M2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM7 4h1v1h-1zM8 4h1v1h-1zM13 4h1v1h-1zM14 4h1v1h-1zM15 4h1v1h-1zM16 4h1v1h-1zM17 4h1v1h-1zM18 4h1v1h-1zM19 4h1v1h-1zM2 5h1v1h-1zM8 5h1v1h-1zM9 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM13 5h1v1h-1zM19 5h1v1h-1zM20 5h1v1h-1zM2 6h1v1h-1zM8 6h1v1h-1zM9 6h1v1h-1zM10 6h1v1h-1zM11 6h1v1h-1zM12 6h1v1h-1zM13 6h1v1h-1zM19 6h1v1h-1zM2 7h1v1h-1zM3 7h1v1h-1zM4 7h1v1h-1zM5 7h1v1h-1zM6 7h1v1h-1zM7 7h1v1h-1zM8 7h1v1h-1zM13 7h1v1h-1zM14 7h1v1h-1zM15 7h1v1h-1zM16 7h1v1h-1zM17 7h1v1h-1zM18 7h1v1h-1zM19 7h1v1h-1z"/>
+  <path class="trail-5" transform="translate(66 0)" d="M12 6h1v1h-1z"/>
+  <path class="trail-4" transform="translate(66 0)" d="M13 6h1v1h-1z"/>
+  <path class="trail-3" transform="translate(66 0)" d="M14 7h1v1h-1z"/>
+  <path class="trail-2" transform="translate(66 0)" d="M15 7h1v1h-1z"/>
+  <path class="trail-1" transform="translate(66 0)" d="M16 7h1v1h-1z"/>
+  <path class="halo" transform="translate(66 0)" d="M16 6h1v1h-1zM15 7h1v1h-1zM17 7h1v1h-1zM16 8h1v1h-1z"/>
+  <path class="core" transform="translate(66 0)" d="M16 7h1v1h-1z"/>
+  </g>
+  <g id="frame-04">
+  <path class="track" transform="translate(88 0)" d="M2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM7 4h1v1h-1zM8 4h1v1h-1zM13 4h1v1h-1zM14 4h1v1h-1zM15 4h1v1h-1zM16 4h1v1h-1zM17 4h1v1h-1zM18 4h1v1h-1zM19 4h1v1h-1zM2 5h1v1h-1zM8 5h1v1h-1zM9 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM13 5h1v1h-1zM19 5h1v1h-1zM20 5h1v1h-1zM2 6h1v1h-1zM8 6h1v1h-1zM9 6h1v1h-1zM10 6h1v1h-1zM11 6h1v1h-1zM12 6h1v1h-1zM13 6h1v1h-1zM19 6h1v1h-1zM2 7h1v1h-1zM3 7h1v1h-1zM4 7h1v1h-1zM5 7h1v1h-1zM6 7h1v1h-1zM7 7h1v1h-1zM8 7h1v1h-1zM13 7h1v1h-1zM14 7h1v1h-1zM15 7h1v1h-1zM16 7h1v1h-1zM17 7h1v1h-1zM18 7h1v1h-1zM19 7h1v1h-1z"/>
+  <path class="trail-5" transform="translate(88 0)" d="M13 7h1v1h-1z"/>
+  <path class="trail-4" transform="translate(88 0)" d="M15 7h1v1h-1z"/>
+  <path class="trail-3" transform="translate(88 0)" d="M16 7h1v1h-1z"/>
+  <path class="trail-2" transform="translate(88 0)" d="M17 7h1v1h-1z"/>
+  <path class="trail-1" transform="translate(88 0)" d="M18 7h1v1h-1z"/>
+  <path class="halo" transform="translate(88 0)" d="M18 6h1v1h-1zM17 7h1v1h-1zM19 7h1v1h-1zM18 8h1v1h-1z"/>
+  <path class="core" transform="translate(88 0)" d="M18 7h1v1h-1z"/>
+  </g>
+  <g id="frame-05">
+  <path class="track" transform="translate(110 0)" d="M2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM7 4h1v1h-1zM8 4h1v1h-1zM13 4h1v1h-1zM14 4h1v1h-1zM15 4h1v1h-1zM16 4h1v1h-1zM17 4h1v1h-1zM18 4h1v1h-1zM19 4h1v1h-1zM2 5h1v1h-1zM8 5h1v1h-1zM9 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM13 5h1v1h-1zM19 5h1v1h-1zM20 5h1v1h-1zM2 6h1v1h-1zM8 6h1v1h-1zM9 6h1v1h-1zM10 6h1v1h-1zM11 6h1v1h-1zM12 6h1v1h-1zM13 6h1v1h-1zM19 6h1v1h-1zM2 7h1v1h-1zM3 7h1v1h-1zM4 7h1v1h-1zM5 7h1v1h-1zM6 7h1v1h-1zM7 7h1v1h-1zM8 7h1v1h-1zM13 7h1v1h-1zM14 7h1v1h-1zM15 7h1v1h-1zM16 7h1v1h-1zM17 7h1v1h-1zM18 7h1v1h-1zM19 7h1v1h-1z"/>
+  <path class="trail-5" transform="translate(110 0)" d="M15 7h1v1h-1z"/>
+  <path class="trail-4" transform="translate(110 0)" d="M17 7h1v1h-1z"/>
+  <path class="trail-3" transform="translate(110 0)" d="M18 7h1v1h-1z"/>
+  <path class="trail-2" transform="translate(110 0)" d="M19 7h1v1h-1z"/>
+  <path class="trail-1" transform="translate(110 0)" d="M19 6h1v1h-1z"/>
+  <path class="halo" transform="translate(110 0)" d="M20 4h1v1h-1zM19 5h1v1h-1zM21 5h1v1h-1zM20 6h1v1h-1z"/>
+  <path class="core" transform="translate(110 0)" d="M20 5h1v1h-1z"/>
+  </g>
+  <g id="frame-06">
+  <path class="track" transform="translate(132 0)" d="M2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM7 4h1v1h-1zM8 4h1v1h-1zM13 4h1v1h-1zM14 4h1v1h-1zM15 4h1v1h-1zM16 4h1v1h-1zM17 4h1v1h-1zM18 4h1v1h-1zM19 4h1v1h-1zM2 5h1v1h-1zM8 5h1v1h-1zM9 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM13 5h1v1h-1zM19 5h1v1h-1zM20 5h1v1h-1zM2 6h1v1h-1zM8 6h1v1h-1zM9 6h1v1h-1zM10 6h1v1h-1zM11 6h1v1h-1zM12 6h1v1h-1zM13 6h1v1h-1zM19 6h1v1h-1zM2 7h1v1h-1zM3 7h1v1h-1zM4 7h1v1h-1zM5 7h1v1h-1zM6 7h1v1h-1zM7 7h1v1h-1zM8 7h1v1h-1zM13 7h1v1h-1zM14 7h1v1h-1zM15 7h1v1h-1zM16 7h1v1h-1zM17 7h1v1h-1zM18 7h1v1h-1zM19 7h1v1h-1z"/>
+  <path class="trail-5" transform="translate(132 0)" d="M18 7h1v1h-1z"/>
+  <path class="trail-4" transform="translate(132 0)" d="M19 7h1v1h-1z"/>
+  <path class="trail-3" transform="translate(132 0)" d="M19 6h1v1h-1z"/>
+  <path class="trail-2" transform="translate(132 0)" d="M19 5h1v1h-1z"/>
+  <path class="trail-1" transform="translate(132 0)" d="M19 4h1v1h-1z"/>
+  <path class="halo" transform="translate(132 0)" d="M18 3h1v1h-1zM17 4h1v1h-1zM19 4h1v1h-1zM18 5h1v1h-1z"/>
+  <path class="core" transform="translate(132 0)" d="M18 4h1v1h-1z"/>
+  </g>
+  <g id="frame-07">
+  <path class="track" transform="translate(154 0)" d="M2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM7 4h1v1h-1zM8 4h1v1h-1zM13 4h1v1h-1zM14 4h1v1h-1zM15 4h1v1h-1zM16 4h1v1h-1zM17 4h1v1h-1zM18 4h1v1h-1zM19 4h1v1h-1zM2 5h1v1h-1zM8 5h1v1h-1zM9 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM13 5h1v1h-1zM19 5h1v1h-1zM20 5h1v1h-1zM2 6h1v1h-1zM8 6h1v1h-1zM9 6h1v1h-1zM10 6h1v1h-1zM11 6h1v1h-1zM12 6h1v1h-1zM13 6h1v1h-1zM19 6h1v1h-1zM2 7h1v1h-1zM3 7h1v1h-1zM4 7h1v1h-1zM5 7h1v1h-1zM6 7h1v1h-1zM7 7h1v1h-1zM8 7h1v1h-1zM13 7h1v1h-1zM14 7h1v1h-1zM15 7h1v1h-1zM16 7h1v1h-1zM17 7h1v1h-1zM18 7h1v1h-1zM19 7h1v1h-1z"/>
+  <path class="trail-5" transform="translate(154 0)" d="M19 6h1v1h-1z"/>
+  <path class="trail-4" transform="translate(154 0)" d="M19 5h1v1h-1z"/>
+  <path class="trail-3" transform="translate(154 0)" d="M19 4h1v1h-1z"/>
+  <path class="trail-2" transform="translate(154 0)" d="M18 4h1v1h-1z"/>
+  <path class="trail-1" transform="translate(154 0)" d="M17 4h1v1h-1z"/>
+  <path class="halo" transform="translate(154 0)" d="M16 3h1v1h-1zM15 4h1v1h-1zM17 4h1v1h-1zM16 5h1v1h-1z"/>
+  <path class="core" transform="translate(154 0)" d="M16 4h1v1h-1z"/>
+  </g>
+  <g id="frame-08">
+  <path class="track" transform="translate(176 0)" d="M2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM7 4h1v1h-1zM8 4h1v1h-1zM13 4h1v1h-1zM14 4h1v1h-1zM15 4h1v1h-1zM16 4h1v1h-1zM17 4h1v1h-1zM18 4h1v1h-1zM19 4h1v1h-1zM2 5h1v1h-1zM8 5h1v1h-1zM9 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM13 5h1v1h-1zM19 5h1v1h-1zM20 5h1v1h-1zM2 6h1v1h-1zM8 6h1v1h-1zM9 6h1v1h-1zM10 6h1v1h-1zM11 6h1v1h-1zM12 6h1v1h-1zM13 6h1v1h-1zM19 6h1v1h-1zM2 7h1v1h-1zM3 7h1v1h-1zM4 7h1v1h-1zM5 7h1v1h-1zM6 7h1v1h-1zM7 7h1v1h-1zM8 7h1v1h-1zM13 7h1v1h-1zM14 7h1v1h-1zM15 7h1v1h-1zM16 7h1v1h-1zM17 7h1v1h-1zM18 7h1v1h-1zM19 7h1v1h-1z"/>
+  <path class="trail-5" transform="translate(176 0)" d="M19 4h1v1h-1z"/>
+  <path class="trail-4" transform="translate(176 0)" d="M18 4h1v1h-1z"/>
+  <path class="trail-3" transform="translate(176 0)" d="M17 4h1v1h-1z"/>
+  <path class="trail-2" transform="translate(176 0)" d="M16 4h1v1h-1z"/>
+  <path class="trail-1" transform="translate(176 0)" d="M15 4h1v1h-1z"/>
+  <path class="halo" transform="translate(176 0)" d="M14 3h1v1h-1zM13 4h1v1h-1zM15 4h1v1h-1zM14 5h1v1h-1z"/>
+  <path class="core" transform="translate(176 0)" d="M14 4h1v1h-1z"/>
+  </g>
+  <g id="frame-09">
+  <path class="track" transform="translate(198 0)" d="M2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM7 4h1v1h-1zM8 4h1v1h-1zM13 4h1v1h-1zM14 4h1v1h-1zM15 4h1v1h-1zM16 4h1v1h-1zM17 4h1v1h-1zM18 4h1v1h-1zM19 4h1v1h-1zM2 5h1v1h-1zM8 5h1v1h-1zM9 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM13 5h1v1h-1zM19 5h1v1h-1zM20 5h1v1h-1zM2 6h1v1h-1zM8 6h1v1h-1zM9 6h1v1h-1zM10 6h1v1h-1zM11 6h1v1h-1zM12 6h1v1h-1zM13 6h1v1h-1zM19 6h1v1h-1zM2 7h1v1h-1zM3 7h1v1h-1zM4 7h1v1h-1zM5 7h1v1h-1zM6 7h1v1h-1zM7 7h1v1h-1zM8 7h1v1h-1zM13 7h1v1h-1zM14 7h1v1h-1zM15 7h1v1h-1zM16 7h1v1h-1zM17 7h1v1h-1zM18 7h1v1h-1zM19 7h1v1h-1z"/>
+  <path class="trail-5" transform="translate(198 0)" d="M17 4h1v1h-1z"/>
+  <path class="trail-4" transform="translate(198 0)" d="M16 4h1v1h-1z"/>
+  <path class="trail-3" transform="translate(198 0)" d="M15 4h1v1h-1z"/>
+  <path class="trail-2" transform="translate(198 0)" d="M14 4h1v1h-1z"/>
+  <path class="trail-1" transform="translate(198 0)" d="M13 4h1v1h-1z"/>
+  <path class="halo" transform="translate(198 0)" d="M12 4h1v1h-1zM11 5h1v1h-1zM13 5h1v1h-1zM12 6h1v1h-1z"/>
+  <path class="core" transform="translate(198 0)" d="M12 5h1v1h-1z"/>
+  </g>
+  <g id="frame-10">
+  <path class="track" transform="translate(220 0)" d="M2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM7 4h1v1h-1zM8 4h1v1h-1zM13 4h1v1h-1zM14 4h1v1h-1zM15 4h1v1h-1zM16 4h1v1h-1zM17 4h1v1h-1zM18 4h1v1h-1zM19 4h1v1h-1zM2 5h1v1h-1zM8 5h1v1h-1zM9 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM13 5h1v1h-1zM19 5h1v1h-1zM20 5h1v1h-1zM2 6h1v1h-1zM8 6h1v1h-1zM9 6h1v1h-1zM10 6h1v1h-1zM11 6h1v1h-1zM12 6h1v1h-1zM13 6h1v1h-1zM19 6h1v1h-1zM2 7h1v1h-1zM3 7h1v1h-1zM4 7h1v1h-1zM5 7h1v1h-1zM6 7h1v1h-1zM7 7h1v1h-1zM8 7h1v1h-1zM13 7h1v1h-1zM14 7h1v1h-1zM15 7h1v1h-1zM16 7h1v1h-1zM17 7h1v1h-1zM18 7h1v1h-1zM19 7h1v1h-1z"/>
+  <path class="trail-5" transform="translate(220 0)" d="M15 4h1v1h-1z"/>
+  <path class="trail-4" transform="translate(220 0)" d="M14 4h1v1h-1z"/>
+  <path class="trail-3" transform="translate(220 0)" d="M13 4h1v1h-1z"/>
+  <path class="trail-2" transform="translate(220 0)" d="M12 5h1v1h-1z"/>
+  <path class="trail-1" transform="translate(220 0)" d="M11 5h1v1h-1z"/>
+  <path class="halo" transform="translate(220 0)" d="M10 5h1v1h-1zM9 6h1v1h-1zM11 6h1v1h-1zM10 7h1v1h-1z"/>
+  <path class="core" transform="translate(220 0)" d="M10 6h1v1h-1z"/>
+  </g>
+  <g id="frame-11">
+  <path class="track" transform="translate(242 0)" d="M2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM7 4h1v1h-1zM8 4h1v1h-1zM13 4h1v1h-1zM14 4h1v1h-1zM15 4h1v1h-1zM16 4h1v1h-1zM17 4h1v1h-1zM18 4h1v1h-1zM19 4h1v1h-1zM2 5h1v1h-1zM8 5h1v1h-1zM9 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM13 5h1v1h-1zM19 5h1v1h-1zM20 5h1v1h-1zM2 6h1v1h-1zM8 6h1v1h-1zM9 6h1v1h-1zM10 6h1v1h-1zM11 6h1v1h-1zM12 6h1v1h-1zM13 6h1v1h-1zM19 6h1v1h-1zM2 7h1v1h-1zM3 7h1v1h-1zM4 7h1v1h-1zM5 7h1v1h-1zM6 7h1v1h-1zM7 7h1v1h-1zM8 7h1v1h-1zM13 7h1v1h-1zM14 7h1v1h-1zM15 7h1v1h-1zM16 7h1v1h-1zM17 7h1v1h-1zM18 7h1v1h-1zM19 7h1v1h-1z"/>
+  <path class="trail-5" transform="translate(242 0)" d="M13 4h1v1h-1z"/>
+  <path class="trail-4" transform="translate(242 0)" d="M12 5h1v1h-1z"/>
+  <path class="trail-3" transform="translate(242 0)" d="M11 5h1v1h-1z"/>
+  <path class="trail-2" transform="translate(242 0)" d="M10 6h1v1h-1z"/>
+  <path class="trail-1" transform="translate(242 0)" d="M9 6h1v1h-1z"/>
+  <path class="halo" transform="translate(242 0)" d="M9 5h1v1h-1zM8 6h1v1h-1zM10 6h1v1h-1zM9 7h1v1h-1z"/>
+  <path class="core" transform="translate(242 0)" d="M9 6h1v1h-1z"/>
+  </g>
+  <g id="frame-12">
+  <path class="track" transform="translate(264 0)" d="M2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM7 4h1v1h-1zM8 4h1v1h-1zM13 4h1v1h-1zM14 4h1v1h-1zM15 4h1v1h-1zM16 4h1v1h-1zM17 4h1v1h-1zM18 4h1v1h-1zM19 4h1v1h-1zM2 5h1v1h-1zM8 5h1v1h-1zM9 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM13 5h1v1h-1zM19 5h1v1h-1zM20 5h1v1h-1zM2 6h1v1h-1zM8 6h1v1h-1zM9 6h1v1h-1zM10 6h1v1h-1zM11 6h1v1h-1zM12 6h1v1h-1zM13 6h1v1h-1zM19 6h1v1h-1zM2 7h1v1h-1zM3 7h1v1h-1zM4 7h1v1h-1zM5 7h1v1h-1zM6 7h1v1h-1zM7 7h1v1h-1zM8 7h1v1h-1zM13 7h1v1h-1zM14 7h1v1h-1zM15 7h1v1h-1zM16 7h1v1h-1zM17 7h1v1h-1zM18 7h1v1h-1zM19 7h1v1h-1z"/>
+  <path class="trail-5" transform="translate(264 0)" d="M11 5h1v1h-1z"/>
+  <path class="trail-4" transform="translate(264 0)" d="M10 6h1v1h-1z"/>
+  <path class="trail-3" transform="translate(264 0)" d="M9 6h1v1h-1z"/>
+  <path class="trail-2" transform="translate(264 0)" d="M8 7h1v1h-1z"/>
+  <path class="trail-1" transform="translate(264 0)" d="M7 7h1v1h-1z"/>
+  <path class="halo" transform="translate(264 0)" d="M7 6h1v1h-1zM6 7h1v1h-1zM8 7h1v1h-1zM7 8h1v1h-1z"/>
+  <path class="core" transform="translate(264 0)" d="M7 7h1v1h-1z"/>
+  </g>
+  <g id="frame-13">
+  <path class="track" transform="translate(286 0)" d="M2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM7 4h1v1h-1zM8 4h1v1h-1zM13 4h1v1h-1zM14 4h1v1h-1zM15 4h1v1h-1zM16 4h1v1h-1zM17 4h1v1h-1zM18 4h1v1h-1zM19 4h1v1h-1zM2 5h1v1h-1zM8 5h1v1h-1zM9 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM13 5h1v1h-1zM19 5h1v1h-1zM20 5h1v1h-1zM2 6h1v1h-1zM8 6h1v1h-1zM9 6h1v1h-1zM10 6h1v1h-1zM11 6h1v1h-1zM12 6h1v1h-1zM13 6h1v1h-1zM19 6h1v1h-1zM2 7h1v1h-1zM3 7h1v1h-1zM4 7h1v1h-1zM5 7h1v1h-1zM6 7h1v1h-1zM7 7h1v1h-1zM8 7h1v1h-1zM13 7h1v1h-1zM14 7h1v1h-1zM15 7h1v1h-1zM16 7h1v1h-1zM17 7h1v1h-1zM18 7h1v1h-1zM19 7h1v1h-1z"/>
+  <path class="trail-5" transform="translate(286 0)" d="M9 6h1v1h-1z"/>
+  <path class="trail-4" transform="translate(286 0)" d="M8 6h1v1h-1z"/>
+  <path class="trail-3" transform="translate(286 0)" d="M7 7h1v1h-1z"/>
+  <path class="trail-2" transform="translate(286 0)" d="M6 7h1v1h-1z"/>
+  <path class="trail-1" transform="translate(286 0)" d="M5 7h1v1h-1z"/>
+  <path class="halo" transform="translate(286 0)" d="M5 6h1v1h-1zM4 7h1v1h-1zM6 7h1v1h-1zM5 8h1v1h-1z"/>
+  <path class="core" transform="translate(286 0)" d="M5 7h1v1h-1z"/>
+  </g>
+  <g id="frame-14">
+  <path class="track" transform="translate(308 0)" d="M2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM7 4h1v1h-1zM8 4h1v1h-1zM13 4h1v1h-1zM14 4h1v1h-1zM15 4h1v1h-1zM16 4h1v1h-1zM17 4h1v1h-1zM18 4h1v1h-1zM19 4h1v1h-1zM2 5h1v1h-1zM8 5h1v1h-1zM9 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM13 5h1v1h-1zM19 5h1v1h-1zM20 5h1v1h-1zM2 6h1v1h-1zM8 6h1v1h-1zM9 6h1v1h-1zM10 6h1v1h-1zM11 6h1v1h-1zM12 6h1v1h-1zM13 6h1v1h-1zM19 6h1v1h-1zM2 7h1v1h-1zM3 7h1v1h-1zM4 7h1v1h-1zM5 7h1v1h-1zM6 7h1v1h-1zM7 7h1v1h-1zM8 7h1v1h-1zM13 7h1v1h-1zM14 7h1v1h-1zM15 7h1v1h-1zM16 7h1v1h-1zM17 7h1v1h-1zM18 7h1v1h-1zM19 7h1v1h-1z"/>
+  <path class="trail-5" transform="translate(308 0)" d="M8 7h1v1h-1z"/>
+  <path class="trail-4" transform="translate(308 0)" d="M6 7h1v1h-1z"/>
+  <path class="trail-3" transform="translate(308 0)" d="M5 7h1v1h-1z"/>
+  <path class="trail-2" transform="translate(308 0)" d="M4 7h1v1h-1z"/>
+  <path class="trail-1" transform="translate(308 0)" d="M3 7h1v1h-1z"/>
+  <path class="halo" transform="translate(308 0)" d="M3 6h1v1h-1zM2 7h1v1h-1zM4 7h1v1h-1zM3 8h1v1h-1z"/>
+  <path class="core" transform="translate(308 0)" d="M3 7h1v1h-1z"/>
+  </g>
+  <g id="frame-15">
+  <path class="track" transform="translate(330 0)" d="M2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM7 4h1v1h-1zM8 4h1v1h-1zM13 4h1v1h-1zM14 4h1v1h-1zM15 4h1v1h-1zM16 4h1v1h-1zM17 4h1v1h-1zM18 4h1v1h-1zM19 4h1v1h-1zM2 5h1v1h-1zM8 5h1v1h-1zM9 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM13 5h1v1h-1zM19 5h1v1h-1zM20 5h1v1h-1zM2 6h1v1h-1zM8 6h1v1h-1zM9 6h1v1h-1zM10 6h1v1h-1zM11 6h1v1h-1zM12 6h1v1h-1zM13 6h1v1h-1zM19 6h1v1h-1zM2 7h1v1h-1zM3 7h1v1h-1zM4 7h1v1h-1zM5 7h1v1h-1zM6 7h1v1h-1zM7 7h1v1h-1zM8 7h1v1h-1zM13 7h1v1h-1zM14 7h1v1h-1zM15 7h1v1h-1zM16 7h1v1h-1zM17 7h1v1h-1zM18 7h1v1h-1zM19 7h1v1h-1z"/>
+  <path class="trail-5" transform="translate(330 0)" d="M6 7h1v1h-1z"/>
+  <path class="trail-4" transform="translate(330 0)" d="M4 7h1v1h-1z"/>
+  <path class="trail-3" transform="translate(330 0)" d="M3 7h1v1h-1z"/>
+  <path class="trail-2" transform="translate(330 0)" d="M2 7h1v1h-1z"/>
+  <path class="trail-1" transform="translate(330 0)" d="M2 6h1v1h-1z"/>
+  <path class="halo" transform="translate(330 0)" d="M2 4h1v1h-1zM1 5h1v1h-1zM3 5h1v1h-1zM2 6h1v1h-1z"/>
+  <path class="core" transform="translate(330 0)" d="M2 5h1v1h-1z"/>
+  </g>
+  <g id="frame-16">
+  <path class="track" transform="translate(352 0)" d="M2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM7 4h1v1h-1zM8 4h1v1h-1zM13 4h1v1h-1zM14 4h1v1h-1zM15 4h1v1h-1zM16 4h1v1h-1zM17 4h1v1h-1zM18 4h1v1h-1zM19 4h1v1h-1zM2 5h1v1h-1zM8 5h1v1h-1zM9 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM13 5h1v1h-1zM19 5h1v1h-1zM20 5h1v1h-1zM2 6h1v1h-1zM8 6h1v1h-1zM9 6h1v1h-1zM10 6h1v1h-1zM11 6h1v1h-1zM12 6h1v1h-1zM13 6h1v1h-1zM19 6h1v1h-1zM2 7h1v1h-1zM3 7h1v1h-1zM4 7h1v1h-1zM5 7h1v1h-1zM6 7h1v1h-1zM7 7h1v1h-1zM8 7h1v1h-1zM13 7h1v1h-1zM14 7h1v1h-1zM15 7h1v1h-1zM16 7h1v1h-1zM17 7h1v1h-1zM18 7h1v1h-1zM19 7h1v1h-1z"/>
+  <path class="trail-5" transform="translate(352 0)" d="M3 7h1v1h-1z"/>
+  <path class="trail-4" transform="translate(352 0)" d="M2 7h1v1h-1z"/>
+  <path class="trail-3" transform="translate(352 0)" d="M2 6h1v1h-1z"/>
+  <path class="trail-2" transform="translate(352 0)" d="M2 5h1v1h-1z"/>
+  <path class="trail-1" transform="translate(352 0)" d="M2 4h1v1h-1z"/>
+  <path class="halo" transform="translate(352 0)" d="M3 3h1v1h-1zM2 4h1v1h-1zM4 4h1v1h-1zM3 5h1v1h-1z"/>
+  <path class="core" transform="translate(352 0)" d="M3 4h1v1h-1z"/>
+  </g>
+  <g id="frame-17">
+  <path class="track" transform="translate(374 0)" d="M2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM7 4h1v1h-1zM8 4h1v1h-1zM13 4h1v1h-1zM14 4h1v1h-1zM15 4h1v1h-1zM16 4h1v1h-1zM17 4h1v1h-1zM18 4h1v1h-1zM19 4h1v1h-1zM2 5h1v1h-1zM8 5h1v1h-1zM9 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM13 5h1v1h-1zM19 5h1v1h-1zM20 5h1v1h-1zM2 6h1v1h-1zM8 6h1v1h-1zM9 6h1v1h-1zM10 6h1v1h-1zM11 6h1v1h-1zM12 6h1v1h-1zM13 6h1v1h-1zM19 6h1v1h-1zM2 7h1v1h-1zM3 7h1v1h-1zM4 7h1v1h-1zM5 7h1v1h-1zM6 7h1v1h-1zM7 7h1v1h-1zM8 7h1v1h-1zM13 7h1v1h-1zM14 7h1v1h-1zM15 7h1v1h-1zM16 7h1v1h-1zM17 7h1v1h-1zM18 7h1v1h-1zM19 7h1v1h-1z"/>
+  <path class="trail-5" transform="translate(374 0)" d="M2 6h1v1h-1z"/>
+  <path class="trail-4" transform="translate(374 0)" d="M2 5h1v1h-1z"/>
+  <path class="trail-3" transform="translate(374 0)" d="M2 4h1v1h-1z"/>
+  <path class="trail-2" transform="translate(374 0)" d="M3 4h1v1h-1z"/>
+  <path class="trail-1" transform="translate(374 0)" d="M4 4h1v1h-1z"/>
+  <path class="halo" transform="translate(374 0)" d="M5 3h1v1h-1zM4 4h1v1h-1zM6 4h1v1h-1zM5 5h1v1h-1z"/>
+  <path class="core" transform="translate(374 0)" d="M5 4h1v1h-1z"/>
+  </g>
+  <g id="frame-18">
+  <path class="track" transform="translate(396 0)" d="M2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM7 4h1v1h-1zM8 4h1v1h-1zM13 4h1v1h-1zM14 4h1v1h-1zM15 4h1v1h-1zM16 4h1v1h-1zM17 4h1v1h-1zM18 4h1v1h-1zM19 4h1v1h-1zM2 5h1v1h-1zM8 5h1v1h-1zM9 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM13 5h1v1h-1zM19 5h1v1h-1zM20 5h1v1h-1zM2 6h1v1h-1zM8 6h1v1h-1zM9 6h1v1h-1zM10 6h1v1h-1zM11 6h1v1h-1zM12 6h1v1h-1zM13 6h1v1h-1zM19 6h1v1h-1zM2 7h1v1h-1zM3 7h1v1h-1zM4 7h1v1h-1zM5 7h1v1h-1zM6 7h1v1h-1zM7 7h1v1h-1zM8 7h1v1h-1zM13 7h1v1h-1zM14 7h1v1h-1zM15 7h1v1h-1zM16 7h1v1h-1zM17 7h1v1h-1zM18 7h1v1h-1zM19 7h1v1h-1z"/>
+  <path class="trail-5" transform="translate(396 0)" d="M2 4h1v1h-1z"/>
+  <path class="trail-4" transform="translate(396 0)" d="M3 4h1v1h-1z"/>
+  <path class="trail-3" transform="translate(396 0)" d="M4 4h1v1h-1z"/>
+  <path class="trail-2" transform="translate(396 0)" d="M5 4h1v1h-1z"/>
+  <path class="trail-1" transform="translate(396 0)" d="M6 4h1v1h-1z"/>
+  <path class="halo" transform="translate(396 0)" d="M7 3h1v1h-1zM6 4h1v1h-1zM8 4h1v1h-1zM7 5h1v1h-1z"/>
+  <path class="core" transform="translate(396 0)" d="M7 4h1v1h-1z"/>
+  </g>
+  <g id="frame-19">
+  <path class="track" transform="translate(418 0)" d="M2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM7 4h1v1h-1zM8 4h1v1h-1zM13 4h1v1h-1zM14 4h1v1h-1zM15 4h1v1h-1zM16 4h1v1h-1zM17 4h1v1h-1zM18 4h1v1h-1zM19 4h1v1h-1zM2 5h1v1h-1zM8 5h1v1h-1zM9 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM13 5h1v1h-1zM19 5h1v1h-1zM20 5h1v1h-1zM2 6h1v1h-1zM8 6h1v1h-1zM9 6h1v1h-1zM10 6h1v1h-1zM11 6h1v1h-1zM12 6h1v1h-1zM13 6h1v1h-1zM19 6h1v1h-1zM2 7h1v1h-1zM3 7h1v1h-1zM4 7h1v1h-1zM5 7h1v1h-1zM6 7h1v1h-1zM7 7h1v1h-1zM8 7h1v1h-1zM13 7h1v1h-1zM14 7h1v1h-1zM15 7h1v1h-1zM16 7h1v1h-1zM17 7h1v1h-1zM18 7h1v1h-1zM19 7h1v1h-1z"/>
+  <path class="trail-5" transform="translate(418 0)" d="M4 4h1v1h-1z"/>
+  <path class="trail-4" transform="translate(418 0)" d="M5 4h1v1h-1z"/>
+  <path class="trail-3" transform="translate(418 0)" d="M6 4h1v1h-1z"/>
+  <path class="trail-2" transform="translate(418 0)" d="M7 4h1v1h-1z"/>
+  <path class="trail-1" transform="translate(418 0)" d="M8 4h1v1h-1z"/>
+  <path class="halo" transform="translate(418 0)" d="M9 4h1v1h-1zM8 5h1v1h-1zM10 5h1v1h-1zM9 6h1v1h-1z"/>
+  <path class="core" transform="translate(418 0)" d="M9 5h1v1h-1z"/>
+  </g>
+</svg>

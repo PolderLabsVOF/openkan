@@ -20,25 +20,32 @@
         <!-- M-Brand: wordmark image replaces the inline K-mark span and the
              OpenKan <h1>. The image uses currentColor for ink-80 in the
              topbar context. -->
-        <img src="./brand/logo-wordmark.svg" alt="OpenKan" height="24"
-             class="brand-wordmark" />
+        <span class="brand-wordmark" role="img" aria-label="OpenKan"></span>
         <h1 class="visually-hidden">OpenKan</h1>
         <!-- Brand-level project chip: clicking it opens the same project
              switcher dropdown as the topbar-right chip. Owned by app.js. -->
         <button id="brand-project-chip" class="brand-project-chip" type="button"
                 title="Switch project" aria-label="Switch project">
-          <span class="brand-project-dot" aria-hidden="true"></span>
-          <span id="brand-project-name" class="brand-project-name">…</span>
+          <span class="brand-project-label">Project</span>
+          <span class="brand-project-value">
+            <span class="brand-project-dot" aria-hidden="true"></span>
+            <span id="brand-project-name" class="brand-project-name">Loading…</span>
+          </span>
           <span class="brand-project-caret" aria-hidden="true">▾</span>
         </button>
       </div>
+      <div class="workspace-mode" role="group" aria-label="Workspace mode">
+        <button type="button" data-workspace-mode="tasks" class="active">Tasks</button>
+        <button type="button" data-workspace-mode="chat">Chat</button>
+      </div>
       <nav class="topbar-tabs" role="tablist" aria-label="Dashboard sections">
+        <button type="button" class="tab" role="tab" data-tab="home" aria-selected="false">Home</button>
         <button type="button" class="tab" role="tab" data-tab="tasks" aria-selected="true">Tasks</button>
         <button type="button" class="tab" role="tab" data-tab="changelog" aria-selected="false">Changelog</button>
         <button type="button" class="tab" role="tab" data-tab="contributors" aria-selected="false">Contributors</button>
         <button type="button" class="tab" role="tab" data-tab="docs" aria-selected="false">Docs</button>
-        <button type="button" class="tab" role="tab" data-tab="bizar" aria-selected="false">Bizar</button>
-        <button type="button" class="tab" role="tab" data-tab="claude" aria-selected="false">Claude</button>
+        <button type="button" class="tab" role="tab" data-tab="goals" aria-selected="false">Goals</button>
+        <button type="button" class="tab" role="tab" data-tab="agents" aria-selected="false">Agents</button>
         <button type="button" class="tab" role="tab" data-tab="insights" aria-selected="false">Insights</button>
       </nav>
       <div class="topbar-right">
@@ -77,6 +84,9 @@
     <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
     <main class="dashboard">
+      <section id="tab-home" class="tab-pane" role="tabpanel" data-tab="home" hidden>
+        <div id="home-root" class="view-root"></div>
+      </section>
       <!-- ─── TAB: Tasks ───────────────────────────────────────────────── -->
       <section id="tab-tasks" class="tab-pane" role="tabpanel" data-tab="tasks">
         <div class="workspace-intro">
@@ -306,38 +316,15 @@
 
       <!-- ─── TAB: Docs ───────────────────────────────────────────────── -->
       <section id="tab-docs" class="tab-pane" role="tabpanel" data-tab="docs" hidden>
-        <div class="docs-tab" id="docs-root">
-          <aside class="docs-tree">
-            <header class="docs-tree-header">
-              <span class="docs-tree-label">docs/</span>
-              <button id="docs-new-file-btn" class="btn btn-icon-sm" type="button"
-                      title="Create a new doc file">+ New file</button>
-            </header>
-            <div class="docs-tree-list-wrap">
-              <ul id="docs-tree-list" class="docs-tree-list" role="tree"></ul>
-            </div>
-          </aside>
-          <main class="docs-viewer">
-            <header class="docs-file-header">
-              <span id="docs-file-path" class="docs-file-path">/docs/</span>
-              <span class="docs-file-actions">
-                <a id="docs-open-raw" href="#" target="_blank" rel="noopener">Open raw</a>
-              </span>
-            </header>
-            <article id="docs-content" class="docs-content">
-              <div class="docs-empty">Select a file from the left to read it here.</div>
-            </article>
-          </main>
-        </div>
+        <div class="docs-tab" id="docs-root"></div>
       </section>
 
-      <!-- ─── TAB: Bizar ──────────────────────────────────────────────── -->
-      <section id="tab-bizar" class="tab-pane" role="tabpanel" data-tab="bizar" hidden>
-        <div id="bizar-root" class="view-root"></div>
+      <!-- ─── TAB: Agents ─────────────────────────────────────────────── -->
+      <section id="tab-goals" class="tab-pane" role="tabpanel" data-tab="goals" hidden>
+        <div id="goals-root"></div>
       </section>
 
-      <!-- ─── TAB: Claude ─────────────────────────────────────────────── -->
-      <section id="tab-claude" class="tab-pane" role="tabpanel" data-tab="claude" hidden>
+      <section id="tab-agents" class="tab-pane" role="tabpanel" data-tab="agents" hidden>
         <div id="claude-pane-root" class="claude-pane view-root"></div>
       </section>
 
@@ -449,7 +436,6 @@
     <script src="changelog-view.js" defer></script>
     <script src="contributors-view.js" defer></script>
     <script src="docs-view.js" defer></script>
-    <script src="bizar.js" defer></script>
     <!-- claude-pane.js exposes window.OpenKanClaude. It must load BEFORE
          app.js (which calls OpenKanClaude.mount(...) when the Claude tab
          is activated) but AFTER api.js (so window.OpenKanAPI.api exists). -->
@@ -475,6 +461,8 @@
          and BEFORE app.js (which calls them from the tab router). -->
     <script src="charts.js" defer></script>
     <script src="insights.js" defer></script>
+    <script src="goals-view.js" defer></script>
+    <script src="home-view.js" defer></script>
     <script src="app.js" defer></script>
   </body>
 </html>

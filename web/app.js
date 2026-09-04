@@ -965,7 +965,12 @@
       const dragged = new Set([t.id, ...selectedIds]);
       dragState.draggedIds = [...dragged];
       e.dataTransfer.effectAllowed = "move";
-      try { e.dataTransfer.setData("text/plain", dragState.draggedIds.join(",")); } catch {}
+      try {
+        e.dataTransfer.setData("text/plain", dragState.draggedIds.join(","));
+        // Chat consumes this structured payload as a mention and never moves
+        // the board card, so its original column/order remains untouched.
+        e.dataTransfer.setData("application/x-openkan-task", JSON.stringify({ id: t.id, title: t.title, column: t.column }));
+      } catch {}
       card.classList.add("dragging");
       // Show ghost preview — custom positioned div.
       dragState.ghost = buildGhost(t, dragState.draggedIds);
@@ -2132,6 +2137,7 @@
   const dragState = {
     ghost: null,
     draggedIds: [],
+    activeColumn: null,
   };
 
   function buildGhost(card, ids) {
@@ -2163,6 +2169,7 @@
       dragState.ghost = null;
     }
     dragState.draggedIds = [];
+    dragState.activeColumn = null;
     document.querySelectorAll(".column.drag-over").forEach((c) => c.classList.remove("drag-over"));
     document.querySelectorAll(".drop-indicator").forEach((d) => d.remove());
   }
@@ -2172,6 +2179,11 @@
     column.addEventListener("dragover", (e) => {
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
+      if (dragState.activeColumn !== column) {
+        document.querySelectorAll(".column.drag-over").forEach((item) => item.classList.remove("drag-over"));
+        document.querySelectorAll(".drop-indicator").forEach((item) => item.remove());
+        dragState.activeColumn = column;
+      }
       column.classList.add("drag-over");
       // Position the ghost to follow the cursor — dragover fires even when
       // dataTransfer is dragging from the same window.
@@ -2183,7 +2195,10 @@
     column.addEventListener("dragleave", (e) => {
       if (!column.contains(e.relatedTarget)) {
         column.classList.remove("drag-over");
-        // Don't remove indicator if we're moving within the column.
+        if (dragState.activeColumn === column) {
+          body.querySelectorAll(".drop-indicator").forEach((item) => item.remove());
+          dragState.activeColumn = null;
+        }
       }
     });
     column.addEventListener("drop", async (e) => {
@@ -2215,8 +2230,8 @@
   document.addEventListener("dragend", teardownDragVisuals);
 
   function showDropIndicator(body, idx) {
-    // Remove any existing indicator first.
-    body.querySelectorAll(".drop-indicator").forEach((d) => d.remove());
+    // There is exactly one active insertion target across the board.
+    document.querySelectorAll(".drop-indicator").forEach((d) => d.remove());
     const indicator = el("div", "drop-indicator");
     const cards = [...body.querySelectorAll(".card:not(.dragging):not(.selected)")];
     if (idx >= cards.length) {
@@ -3224,7 +3239,8 @@
 
   // ---------- Tab router ----------
   function activateTab(name, opts = {}) {
-    const valid = ["tasks", "changelog", "contributors", "docs", "bizar", "claude", "insights"];
+    if (name === "claude" || name === "bizar") name = "agents";
+    const valid = ["home", "tasks", "changelog", "contributors", "docs", "goals", "agents", "insights"];
     if (!valid.includes(name)) name = "tasks";
     for (const btn of document.querySelectorAll(".tab")) {
       const isActive = btn.dataset.tab === name;
@@ -3246,7 +3262,10 @@
       }
     }
     // Lazy-mount views.
-    if (name === "changelog") {
+    if (name === "home") {
+      const root = document.getElementById("home-root");
+      if (root && window.OpenKanHome) window.OpenKanHome.mount(root);
+    } else if (name === "changelog") {
       const root = document.getElementById("changelog-root");
       if (root && window.OpenKanChangelog) window.OpenKanChangelog.mount(root);
     } else if (name === "contributors") {
@@ -3260,10 +3279,10 @@
         const initial = readHashFilter();
         window.OpenKanDocs.mount(root, { initialDoc: initial?.doc || "" });
       }
-    } else if (name === "bizar") {
-      const root = document.getElementById("bizar-root");
-      if (root && window.OpenKanBizar) window.OpenKanBizar.mount(root);
-    } else if (name === "claude") {
+    } else if (name === "goals") {
+      const root = document.getElementById("goals-root");
+      if (root && window.OpenKanGoals) window.OpenKanGoals.mount(root);
+    } else if (name === "agents") {
       const root = document.getElementById("claude-pane-root");
       if (root && window.OpenKanClaude) window.OpenKanClaude.mount(root);
     } else if (name === "insights") {
@@ -3274,10 +3293,25 @@
       window.OpenKanChangelog?.unmount?.();
       window.OpenKanContributors?.unmount?.();
       window.OpenKanDocs?.unmount?.();
-      window.OpenKanBizar?.unmount?.();
+      window.OpenKanGoals?.unmount?.();
       window.OpenKanClaude?.unmount?.();
       window.OpenKanInsights?.unmount?.();
     }
+  }
+
+  function attachWorkspaceMode() {
+    const key = "openkan:workspace-mode";
+    const setMode = (mode) => {
+      const chatMode = mode === "chat";
+      document.body.classList.toggle("workspace-mode-chat", chatMode);
+      document.body.classList.toggle("workspace-mode-tasks", !chatMode);
+      document.querySelectorAll("[data-workspace-mode]").forEach((button) => button.classList.toggle("active", button.dataset.workspaceMode === mode));
+      try { localStorage.setItem(key, mode); } catch {}
+      if (chatMode) window.OpenKanChatSidebar?.open?.();
+    };
+    let initial = "tasks"; try { initial = localStorage.getItem(key) || "tasks"; } catch {}
+    setMode(initial);
+    document.querySelectorAll("[data-workspace-mode]").forEach((button) => button.addEventListener("click", () => setMode(button.dataset.workspaceMode)));
   }
 
   function attachTabRouter() {
@@ -3406,6 +3440,8 @@
     const name = projectSwitcher.active?.name || "no project";
     if (label) label.textContent = truncateName(name);
     if (brand) brand.textContent = name;
+    const chip = document.getElementById("brand-project-chip");
+    if (chip) chip.setAttribute("aria-label", `Current project: ${name}. Switch project`);
     if (dot) dot.classList.toggle("is-empty", !projectSwitcher.active);
     if (bdot) bdot.classList.toggle("is-empty", !projectSwitcher.active);
   }
@@ -3825,6 +3861,7 @@
     applyFilterToButtons();
     renderSavedFilters();
     attachTabRouter();
+    attachWorkspaceMode();
     attachFilterDisclosure();
     attachProjectSwitcher();
     // Page-wide right-click context menu (capture-phase delegation). The

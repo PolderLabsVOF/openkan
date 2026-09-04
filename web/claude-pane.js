@@ -299,10 +299,10 @@
     return `
       <header class="claude-pane-header">
         <div class="claude-pane-header-meta">
-          <span class="claude-pane-eyebrow">Native Claude control plane</span>
-          <h2 class="claude-pane-title">Claude</h2>
+          <span class="claude-pane-eyebrow">Agent control plane</span>
+          <h2 class="claude-pane-title">Agents</h2>
           <p class="claude-pane-subtitle">
-            Bizar + Claude Code · ${agents} agents · ${teams} teams · ${workflows} workflows
+            Claude Code · ${agents} agents · ${teams} teams · ${workflows} workflows
           </p>
         </div>
         <div class="claude-pane-header-actions">
@@ -333,7 +333,7 @@
       </button>
     `;
     return `
-      <nav class="claude-pane-subnav" role="tablist" aria-label="Claude sub-views">
+      <nav class="claude-pane-subnav" role="tablist" aria-label="Agent sub-views">
         ${tab("subagents", "Subagents")}
         ${tab("teams", "Teams")}
         ${tab("workflows", "Workflows")}

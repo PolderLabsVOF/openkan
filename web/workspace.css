@@ -1234,3 +1234,140 @@ body {
     transition: none;
   }
 }
+
+/* Workspace layout overrides: must follow the base workspace contract. */
+.topbar {
+  display: grid;
+  grid-template-columns: minmax(170px, 1fr) auto minmax(0, 1.7fr) auto;
+  align-items: center;
+  gap: 14px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.brand { min-width: 0; }
+.workspace-mode { grid-column: 2; grid-row: 1; }
+.topbar-tabs {
+  grid-column: 3;
+  grid-row: 1;
+  min-width: 0;
+  width: min-content;
+  max-width: 100%;
+  justify-self: center;
+}
+.topbar-right {
+  grid-column: 4;
+  grid-row: 1;
+  min-width: max-content;
+  justify-self: end;
+}
+body.workspace-mode-chat { padding-left: 0; }
+.workspace-mode-chat .dashboard {
+  top: var(--topbar-height);
+  right: 0;
+  bottom: 0;
+  left: auto;
+  width: 320px;
+  padding: 0;
+  border-right: 0;
+  border-left: 1px solid var(--border);
+  box-shadow: -12px 0 32px rgba(0, 0, 0, .12);
+}
+.workspace-mode-chat .chat-sidebar {
+  top: var(--topbar-height);
+  right: 320px;
+  bottom: 0;
+  left: 0;
+  width: auto;
+}
+.workspace-mode-chat .chat-sidebar__topbar { padding-inline: 32px; }
+.workspace-mode-chat .chat-sidebar-transcript { max-width: 900px; }
+.workspace-mode-chat .chat-sidebar-composer { padding-inline: max(32px, calc((100vw - 1240px) / 2)); }
+.workspace-mode-chat #board { padding: 10px; }
+.workspace-mode-chat #board .column:nth-child(n + 3) { display: none; }
+@media (max-width: 1180px) and (min-width: 901px) {
+  .topbar { grid-template-columns: minmax(140px, 1fr) auto minmax(0, 1.4fr) auto; gap: 8px; padding-inline: 12px; }
+  .topbar-tabs .tab { padding-inline: 8px; }
+  .topbar-right { gap: 5px; }
+  #status-pill { display: none; }
+}
+@media (max-width: 900px) {
+  .topbar { display: flex; min-height: var(--topbar-height); height: auto; flex-wrap: wrap; }
+  .workspace-mode { display: none; }
+  .topbar-tabs { order: 3; width: 100%; max-width: none; justify-self: auto; }
+  .topbar-right { margin-left: auto; }
+  .workspace-mode-chat .dashboard { display: none; }
+  .workspace-mode-chat .chat-sidebar { inset: var(--topbar-height) 0 0; width: 100%; }
+}
+
+/* External SVG images do not inherit `currentColor`; the wordmark asset owns
+   its high-contrast dark-theme fill. */
+.brand-wordmark { width: 120px; height: 30px; object-fit: contain; object-position: left center; }
+
+/* The wordmark is a CSS mask, so its color follows the active theme token. */
+.brand-wordmark {
+  display: inline-block;
+  width: 120px;
+  height: 30px;
+  flex: 0 0 auto;
+  background: var(--text);
+  -webkit-mask: url("./brand/logo-wordmark.svg") left center / contain no-repeat;
+  mask: url("./brand/logo-wordmark.svg") left center / contain no-repeat;
+}
+
+/* One explicit project control: a label, current project, and a clear menu affordance. */
+.brand-project-chip {
+  gap: 9px;
+  min-width: 174px;
+  max-width: 252px;
+  min-height: 36px;
+  padding: 5px 10px 5px 11px;
+  border-radius: 10px;
+  background: var(--bg-elev);
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+}
+.brand-project-chip:hover { background: var(--bg-elev-2); border-color: var(--accent); }
+.brand-project-label {
+  flex: 0 0 auto;
+  color: var(--text-mute);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.brand-project-value { display: inline-flex; min-width: 0; align-items: center; gap: 6px; }
+.brand-project-name { max-width: 132px; color: var(--text); font-size: 12px; font-weight: 650; }
+.brand-project-dot { width: 7px; height: 7px; }
+.brand-project-caret { margin-left: auto; color: var(--text-mute); font-size: 11px; transition: transform var(--transition); }
+.brand-project-chip[aria-expanded="true"] .brand-project-caret { transform: rotate(180deg); color: var(--text); }
+@media (max-width: 1180px) { .brand-project-chip { min-width: 0; max-width: 180px; } .brand-project-label { display: none; } }
+
+/* Final chat-mode composer geometry. workspace.css is loaded last, so this
+   clears its former wide inline padding before the surface is measured. */
+.workspace-mode-chat .chat-sidebar__composer {
+  position: absolute;
+  z-index: 5;
+  right: auto !important;
+  bottom: 22px;
+  left: 50% !important;
+  width: calc(100% - 56px) !important;
+  max-width: 900px;
+  box-sizing: border-box;
+  padding: 0 !important;
+  border: 0;
+  background: transparent;
+  transform: translateX(-50%);
+}
+.workspace-mode-chat .chat-sidebar__composer-surface { width: 100%; box-sizing: border-box; }
+.workspace-mode-chat .chat-sidebar__composer-input { box-sizing: border-box; }
+@media (max-width: 900px) {
+  .workspace-mode-chat .chat-sidebar__composer {
+    right: 16px !important;
+    left: 16px !important;
+    width: auto !important;
+    max-width: none;
+    transform: none;
+  }
+}

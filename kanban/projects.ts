@@ -62,7 +62,25 @@ function slugify(name: string): string {
 
 /** List all registered projects. */
 export function listProjects(): ProjectEntry[] {
-  return loadRegistry().projects;
+  // Claude worktrees are execution sandboxes, not independent OpenKan
+  // projects. Keep legacy registry entries on disk for compatibility, but
+  // never surface them in selectors or overview APIs.
+  return loadRegistry().projects.filter((project) => !isWorktreePath(project.root));
+}
+
+export function isWorktreePath(root: string): boolean {
+  const path = root.replace(/\\/g, "/").toLowerCase();
+  if (path.includes("/.claude/worktrees/") || path.includes("/.git/worktrees/") || /\/worktrees\/[^/]+$/.test(path) || /\/(?:wt|worktree)-/i.test(path)) return true;
+  // Linked Git worktrees store `.git` as a text file pointing into the main
+  // repository's `.git/worktrees/<name>` directory, even when their own root
+  // has an innocuous name such as `wt-feature`.
+  try {
+    const git = join(root, ".git");
+    if (existsSync(git) && statSync(git).isFile()) {
+      return /gitdir:\s+.*[\\/]\.git[\\/]worktrees[\\/]/i.test(readFileSync(git, "utf-8"));
+    }
+  } catch { /* unreadable entries remain eligible projects */ }
+  return false;
 }
 
 /** Return the currently active project, or null. */

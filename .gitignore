@@ -56,3 +56,7 @@ Thumbs.db
 
 # Bizar harness / agent memory (per-project)
 .bizar/
+
+# Local Claude agent worktrees and browser captures
+.claude/worktrees/
+current-home.png

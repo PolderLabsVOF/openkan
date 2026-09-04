@@ -1,10 +1,10 @@
 // OpenKan — HTTP API server.
 
-import { readFileSync, existsSync, statSync, writeFileSync, readdirSync, unlinkSync } from "fs";
+import { readFileSync, existsSync, statSync, writeFileSync, readdirSync, unlinkSync, mkdirSync, rmSync } from "fs";
 import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
 import { Readable } from "node:stream";
-import { join, extname } from "path";
+import { join, extname, resolve } from "path";
 import { constants as fs_constants, openSync, closeSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import type { BoardContext } from "./board.ts";
@@ -72,7 +72,9 @@ import {
   validateAgentsConfig,
   DEFAULT_AGENTS_CONFIG,
 } from "../ok/schemas.ts";
-import { handleChatRequest } from "./chat.ts";
+import { handleChatRequest, sendTurn } from "./chat.ts";
+import { initIfMissing as initOkIfMissing, listPrds as listOkPrds, readPrd as readOkPrd, writePrd as writeOkPrd, rebuildIndex as rebuildOkIndex } from "../ok/storage.ts";
+import type { PrdGoal } from "../ok/schemas.ts";
 import { WebSocketServer, WebSocket } from "ws";
 import { runImport } from "./import.ts";
 
@@ -386,6 +388,35 @@ function errorResponse(message: string, status = 400): Response {
 
 async function apiGetBoard(): Promise<Response> {
   return jsonResponse(await getBoard());
+}
+
+// ─── Goals (PRDs stored in the canonical .ok/ planning workspace) ──────────
+
+async function apiGetGoals(projectRoot: string): Promise<Response> {
+  const paths = await initOkIfMissing(projectRoot);
+  const prds = await listOkPrds(paths);
+  prds.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return jsonResponse({ prds });
+}
+
+async function apiPatchGoal(projectRoot: string, prdId: string, goalId: string, req: Request): Promise<Response> {
+  let body: { status?: unknown };
+  try { body = await req.json() as { status?: unknown }; }
+  catch { return errorResponse("invalid JSON body"); }
+  const statuses: PrdGoal["status"][] = ["open", "in_progress", "met", "dropped"];
+  if (!statuses.includes(body.status as PrdGoal["status"])) {
+    return errorResponse("status must be open, in_progress, met, or dropped");
+  }
+  const paths = await initOkIfMissing(projectRoot);
+  const prd = await readOkPrd(paths, prdId);
+  if (!prd) return errorResponse("PRD not found", 404);
+  const goal = prd.goals.find((item) => item.id === goalId);
+  if (!goal) return errorResponse("goal not found", 404);
+  goal.status = body.status as PrdGoal["status"];
+  prd.updatedAt = new Date().toISOString();
+  await writeOkPrd(paths, prd);
+  await rebuildOkIndex(paths);
+  return jsonResponse({ prd });
 }
 
 // ─── Search endpoint ─────────────────────────────────────────────────────────
@@ -1515,8 +1546,8 @@ export async function apiGetConfigSections(): Promise<Response> {
       fields: [
         { key: "defaultAgent",   label: "Default agent",     type: "text",   value: (config["project"] as Record<string, unknown>)?.["defaultAgent"] ?? "" },
         { key: "defaultModel",    label: "Default model",      type: "text",   value: (config["project"] as Record<string, unknown>)?.["defaultModel"] ?? "" },
-        { key: "defaultColumn",   label: "Default column",     type: "text",   value: (config["project"] as Record<string, unknown>)?.["defaultColumn"] ?? "backlog" },
-        { key: "autoArchiveDays", label: "Auto-archive days",  type: "number", value: (config["project"] as Record<string, unknown>)?.["autoArchiveDays"] ?? 0 },
+        { key: "defaultColumn", label: "Default column", type: "select", value: (config["project"] as Record<string, unknown>)?.["defaultColumn"] ?? "backlog", options: [{ label: "Backlog", value: "backlog" }, { label: "To Do", value: "todo" }, { label: "In Progress", value: "doing" }, { label: "Review", value: "review" }, { label: "Done", value: "done" }], description: "Where newly created tasks start." },
+        { key: "autoArchiveDays", label: "Auto-archive days", type: "number", value: (config["project"] as Record<string, unknown>)?.["autoArchiveDays"] ?? 0, description: "Use 0 to keep completed tasks indefinitely." },
       ],
     },
     {
@@ -1532,7 +1563,7 @@ export async function apiGetConfigSections(): Promise<Response> {
       label: "UI",
       fields: [
         {
-          key: "theme", label: "Theme", type: "select",
+          key: "theme", label: "Theme", type: "select", description: "Applied immediately and remembered for this browser.",
           value: config["theme"] ?? "dark",
           options: [
             { label: "Light",  value: "light"  },
@@ -1551,7 +1582,7 @@ export async function apiGetConfigSections(): Promise<Response> {
     },
     {
       id: "bizar",
-      label: "Bizar",
+      label: "Agent runtime",
       fields: [
         {
           key: "enabled",
@@ -1582,6 +1613,23 @@ export async function apiGetConfigSections(): Promise<Response> {
       fields: [
         { key: "include", label: "Include paths",   type: "text", value: JSON.stringify((config["import"] as Record<string, unknown>)?.["include"] ?? []) },
         { key: "exclude", label: "Exclude paths",   type: "text", value: JSON.stringify((config["import"] as Record<string, unknown>)?.["exclude"] ?? []) },
+      ],
+    },
+    {
+      id: "chat",
+      label: "Chat",
+      fields: [
+        { key: "defaultModel", label: "Default model", type: "text", value: (config["chat"] as Record<string, unknown>)?.["defaultModel"] ?? "", description: "Leave empty to use the model router's configured default." },
+        { key: "defaultEffort", label: "Default effort", type: "select", value: (config["chat"] as Record<string, unknown>)?.["defaultEffort"] ?? "high", options: [{ label: "Low", value: "low" }, { label: "Medium", value: "medium" }, { label: "High", value: "high" }] },
+        { key: "permissionMode", label: "Permission mode", type: "select", value: (config["chat"] as Record<string, unknown>)?.["permissionMode"] ?? "default", options: [{ label: "Default", value: "default" }, { label: "Accept edits", value: "acceptEdits" }, { label: "Plan", value: "plan" }] },
+      ],
+    },
+    {
+      id: "notifications",
+      label: "Notifications",
+      fields: [
+        { key: "desktop", label: "Desktop notifications", type: "boolean", value: (config["notifications"] as Record<string, unknown>)?.["desktop"] ?? false },
+        { key: "sound", label: "Completion sound", type: "boolean", value: (config["notifications"] as Record<string, unknown>)?.["sound"] ?? false },
       ],
     },
     {
@@ -1656,6 +1704,11 @@ export async function apiPatchConfigSection(_ctx: BoardContext, sectionId: strin
         } else {
           (config["import"] as Record<string, unknown>)[key] = value;
         }
+        break;
+      case "chat":
+      case "notifications":
+        if (!config[sectionId]) (config as Record<string, unknown>)[sectionId] = {};
+        (config[sectionId] as Record<string, unknown>)[key] = value;
         break;
       case "advanced":
         (config as Record<string, unknown>)[key] = value;
@@ -2003,6 +2056,36 @@ async function apiGetDoc(req: Request, path: string): Promise<Response> {
   } catch (e) {
     return errorResponse((e as Error).message ?? "Not found", 404);
   }
+}
+
+async function apiWriteDoc(req: Request, relPath: string): Promise<Response> {
+  const root = getActiveProjectRoot();
+  if (!relPath || relPath.includes("..") || !/\.(md|mdx|txt)$/i.test(relPath)) return errorResponse("Use a safe .md, .mdx, or .txt path", 422);
+  let body: { content?: unknown };
+  try { body = await req.json(); } catch { return errorResponse("Invalid JSON"); }
+  if (typeof body.content !== "string") return errorResponse("content is required", 422);
+  const docsRoot = resolve(root, "docs"); const target = resolve(docsRoot, relPath);
+  if (!target.startsWith(`${docsRoot}/`)) return errorResponse("Unsafe path", 422);
+  mkdirSync(join(target, ".."), { recursive: true });
+  writeFileSync(target, body.content, "utf8");
+  return apiGetDoc(new Request(`http://local/api/docs/${encodeURI(relPath)}`), relPath);
+}
+
+async function apiDeleteDoc(relPath: string): Promise<Response> {
+  const root = getActiveProjectRoot(); const docsRoot = resolve(root, "docs"); const target = resolve(docsRoot, relPath);
+  if (!relPath || relPath.includes("..") || !target.startsWith(`${docsRoot}/`) || !existsSync(target)) return errorResponse("Document not found", 404);
+  rmSync(target); return jsonResponse({ ok: true, path: relPath });
+}
+
+async function apiGenerateDoc(req: Request): Promise<Response> {
+  const root = getActiveProjectRoot(); let body: { path?: unknown; prompt?: unknown; model?: unknown; effort?: unknown; permissionMode?: unknown };
+  try { body = await req.json(); } catch { return errorResponse("Invalid JSON"); }
+  const path = typeof body.path === "string" ? body.path : ""; const prompt = typeof body.prompt === "string" ? body.prompt : "";
+  if (!path || !prompt) return errorResponse("path and prompt are required", 422);
+  const result = await sendTurn(root, { message: `Write a complete Markdown document for docs/${path}. ${prompt}. Return only the document content.`, model: typeof body.model === "string" ? body.model : "default", effort: typeof body.effort === "string" ? body.effort : "high", permissionMode: typeof body.permissionMode === "string" ? body.permissionMode : "bypassPermissions" });
+  const content = result.assistantTurn.content;
+  const writeReq = new Request("http://local/api/docs", { method: "PUT", body: JSON.stringify({ content }), headers: { "content-type": "application/json" } });
+  return apiWriteDoc(writeReq, path);
 }
 
 // ─── File-system browser endpoints ─────────────────────────────────────────────
@@ -2641,6 +2724,11 @@ async function handleRequest(req: Request): Promise<Response> {
     return handleChatRequest(projectRoot, req, path);
   }
 
+  // GET /api/goals — PRDs and their durable goals from .ok/prds.
+  if (path === "/api/goals" && req.method === "GET") return apiGetGoals(projectRoot);
+  const goalMatch = path.match(/^\/api\/goals\/(prd-[A-Za-z0-9_-]+)\/(g[0-9]+)$/);
+  if (goalMatch && req.method === "PATCH") return apiPatchGoal(projectRoot, goalMatch[1], goalMatch[2], req);
+
   // GET /api/tasks-index
   if (path === "/api/tasks-index" && req.method === "GET") return apiGetTasksIndex(req);
 
@@ -2814,17 +2902,14 @@ async function handleRequest(req: Request): Promise<Response> {
     return apiActivateProject(activateProjectMatch[1]);
   }
 
-  // GET /api/docs — list docs tree
+  // Docs workspace CRUD + configured-agent generation.
+  if (path === "/api/docs/generate" && req.method === "POST") return apiGenerateDoc(req);
   const docListMatch = path.match(/^\/api\/docs\/?$/);
-  if (docListMatch && req.method === "GET") {
-    return apiGetDocs();
-  }
-
-  // GET /api/docs/* — read a doc file (accepts deep paths with slashes)
+  if (docListMatch && req.method === "GET") return apiGetDocs();
   const docFileMatch = path.match(/^\/api\/docs\/(.+)$/);
-  if (docFileMatch && req.method === "GET") {
-    return apiGetDoc(req, docFileMatch[1]);
-  }
+  if (docFileMatch && req.method === "GET") return apiGetDoc(req, docFileMatch[1]);
+  if (docFileMatch && req.method === "PUT") return apiWriteDoc(req, decodeURIComponent(docFileMatch[1]));
+  if (docFileMatch && req.method === "DELETE") return apiDeleteDoc(decodeURIComponent(docFileMatch[1]));
 
   // GET /api/fs — browse filesystem
   if (path === "/api/fs" && req.method === "GET") return apiFs(req);

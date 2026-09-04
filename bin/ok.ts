@@ -23,7 +23,7 @@ Usage:
   ok prd  <subcommand> [args]        Manage long-horizon PRDs.
   ok index                           Rebuild .ok/index.json from filesystem.
   ok doctor                          Validate every JSON against its schema.
-  ok migrate-from-openkan [root]     One-shot import of legacy .ok/ workspace.
+  ok migrate-from-openkan [root]     One-shot import of legacy .openkan/ workspace.
   ok help                            Show this message.
 
 Task subcommands:

@@ -186,14 +186,12 @@ test("Bizar WebSocket still sends an initial snapshot from native readers", asyn
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
 
-test("OpenKan ships a Bizar workspace for all control-plane resources", () => {
+test("OpenKan ships an Agents workspace without a Bizar tab", () => {
   const html = readFileSync(join(import.meta.dirname, "..", "web", "index.html"), "utf8");
-  const script = readFileSync(join(import.meta.dirname, "..", "web", "bizar.js"), "utf8");
-  assert.match(html, /data-tab="bizar"/);
-  assert.match(html, /id="bizar-root"/);
-  for (const resource of ["Agents", "Durable tasks", "Sessions", "Messages"]) {
-    assert.match(script, new RegExp(resource));
-  }
-  assert.match(script, /new WebSocket/);
-  assert.match(script, /send-session/);
+  const script = readFileSync(join(import.meta.dirname, "..", "web", "claude-pane.js"), "utf8");
+  assert.match(html, /data-tab="agents"/);
+  assert.match(html, /id="claude-pane-root"/);
+  assert.doesNotMatch(html, /data-tab="bizar"/);
+  assert.match(script, /OpenKanClaude/);
+  assert.match(script, /\/api\/claude\/snapshot/);
 });

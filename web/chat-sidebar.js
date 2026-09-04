@@ -30,15 +30,16 @@
     lastSession: "ok.chat.lastSession",
     open: "ok.chat.open",
     selectors: "ok.chat.selectors",
+    width: "ok.chat.width",
   };
   const DEFAULT_SELECTORS = Object.freeze({
     model: "default",
     effort: "high",
-    permissionMode: "default",
+    permissionMode: "bypassPermissions",
   });
   const EFFORT_OPTIONS = ["low", "medium", "high", "max"];
   const PERMISSION_OPTIONS = [
-    "accept-edits", "default", "plan", "bypass-permissions",
+    "bypassPermissions", "acceptEdits", "auto", "manual", "dontAsk", "plan",
   ];
 
   function esc(v) {
@@ -145,6 +146,7 @@
     // to skip re-rendering the bubble per token.
     liveBubble: null,
     liveChips: null,
+    liveActivity: [],
     // Cached `/api/chat/picker-options` payload (model list + efforts + perms).
     pickerOptions: null,
     // Currently-open popover id (or null). Only one popover at a time.
@@ -152,6 +154,8 @@
     // Currently-open tab name (project / files / plugins / activity). null
     // when no tab is active. Activity uses activityOpen instead of a popover.
     activeTab: null,
+    width: 460,
+    resizing: false,
   };
 
   /* ----------------------------------------------------------------------
@@ -229,10 +233,8 @@
     aside.setAttribute("role", "complementary");
     aside.hidden = true;
     aside.innerHTML = `
-      <button type="button" class="chat-sidebar-handle" data-chat-toggle
-              aria-label="Toggle chat sidebar" aria-expanded="false" title="Toggle chat (Alt+C)">
-        <span aria-hidden="true">‹</span>
-      </button>
+      <div class="chat-sidebar__resize-handle" data-chat-resize role="separator" aria-orientation="vertical"
+           aria-label="Resize chat sidebar" aria-valuemin="320" aria-valuemax="640" aria-valuenow="460" tabindex="0"></div>
 
       <!-- Hidden selectors. The legacy visible chip / header sub-sections
            have been removed; the <select>s are still mounted (hidden) so
@@ -246,101 +248,92 @@
         <select id="chat-select-permission" data-chat-select="permissionMode"></select>
       </div>
 
-      <!-- Hero: visible only when the active session has zero messages. -->
-      <div class="chat-sidebar__hero chat-sidebar-hero" id="chat-sidebar-hero">
-        <h2 class="chat-sidebar__hero-title">What should we work on?</h2>
+      <header class="chat-sidebar__topbar">
+        <button type="button" class="chat-sidebar__session-chip" data-chat-action="open-session-menu"
+                aria-haspopup="true" aria-expanded="false" title="Switch session">
+          <span class="chat-sidebar__session-kicker">Chat</span>
+          <span class="chat-sidebar__session-chip-title" id="chat-sidebar-session-title">New chat</span>
+          <svg class="chat-sidebar__session-chip-chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+        <button type="button" class="chat-sidebar__new-chat" data-chat-action="new" aria-label="Start a new chat" title="New chat">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M8 2.25v11.5M2.25 8h11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          </svg>
+          <span>New chat</span>
+        </button>
+      </header>
+
+      <div class="chat-sidebar__workspace-tools" aria-label="Chat shortcuts">
+        <span class="chat-sidebar__workspace-label">Workspace assistant</span>
+        <div class="chat-sidebar__quick-prompts" role="group" aria-label="Suggested prompts">
+          <button type="button" data-chat-prompt="Plan the next best task for this project.">Plan next task</button>
+          <button type="button" data-chat-prompt="Summarize the current project state and blockers.">Summarize</button>
+          <button type="button" data-chat-prompt="Review the current changes and identify risks.">Review changes</button>
+          <button type="button" data-chat-prompt="What should I work on next?">Suggest work</button>
+        </div>
       </div>
 
-      <!-- Scrollable transcript of bubbles + tool chips. -->
+      <div class="chat-sidebar__hero chat-sidebar-hero" id="chat-sidebar-hero">
+        <div class="chat-sidebar__hero-mark" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24">
+            <path d="M5 5.5h14v10.75H9.25L5 20.5V5.5Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+            <path d="M8.5 10h7M8.5 13.5h4.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          </svg>
+        </div>
+        <h2 class="chat-sidebar__hero-title">What should we work on?</h2>
+        <p class="chat-sidebar__hero-copy">Ask about this project, plan a task, or start a focused coding session.</p>
+      </div>
+
       <section class="chat-sidebar__transcript chat-sidebar-transcript" id="chat-sidebar-transcript"
                aria-live="polite" aria-label="Chat transcript"></section>
       <button type="button" class="chat-sidebar-new-messages" id="chat-sidebar-new-messages"
-              hidden>↓ New messages</button>
+              hidden>New messages</button>
 
-      <!-- Disclaimer shown above the composer once a session has any messages. -->
-      <p class="chat-sidebar__disclaimer" id="chat-sidebar-disclaimer" hidden>
-        Workspace data isn't used to train models.
-      </p>
-
-      <!-- Composer: rounded input bar — attach / input / model pill / mic / send. -->
       <footer class="chat-sidebar__composer chat-sidebar-composer">
-        <button type="button" class="chat-sidebar__composer-attach" data-chat-action="open-attach-menu"
-                aria-label="More options" aria-haspopup="true" aria-expanded="false" title="More options">
-          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none" />
-          </svg>
-        </button>
-        <textarea id="chat-sidebar-input" class="chat-sidebar__composer-input"
-                  rows="1" placeholder="Work on anything…" aria-label="Compose message"></textarea>
-        <button type="button" class="chat-sidebar__composer-model" data-chat-action="open-model-picker"
-                aria-label="Choose model" aria-haspopup="true" aria-expanded="false" title="Model / effort / permissions">
-          <span class="chat-sidebar__composer-model-label" id="chat-sidebar-model-label">Default</span>
-          <svg class="chat-sidebar__chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-            <path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
-        <button type="button" class="chat-sidebar__composer-mic" data-chat-action="mic"
-                aria-label="Voice input" title="Coming soon" disabled>
-          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M8 1.5a2.5 2.5 0 0 0-2.5 2.5v4a2.5 2.5 0 0 0 5 0V4A2.5 2.5 0 0 0 8 1.5zM3 8a5 5 0 0 0 10 0M8 13v2.5"
-                  fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
-        <button type="button" id="chat-sidebar-send" class="chat-sidebar__composer-send chat-send"
-                data-chat-action="send" aria-label="Send" title="Send (Enter)">
-          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M2 8h10.5M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
-        <button type="button" id="chat-sidebar-abort" class="chat-sidebar__composer-abort chat-abort"
-                data-chat-action="abort" hidden aria-label="Abort" title="Abort">
-          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-            <rect x="2" y="2" width="10" height="10" rx="1.5" fill="currentColor" />
-          </svg>
-        </button>
+        <div class="chat-sidebar__composer-surface">
+          <textarea id="chat-sidebar-input" class="chat-sidebar__composer-input"
+                    rows="1" placeholder="Message OpenKan" aria-label="Message OpenKan"></textarea>
+          <div class="chat-sidebar__composer-footer">
+            <button type="button" class="chat-sidebar__composer-attach" data-chat-action="open-attach-menu"
+                    aria-label="Add context or start a new chat" aria-haspopup="true" aria-expanded="false" title="Add context">
+              <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+                <path d="M9 2.25v13.5M2.25 9h13.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+              </svg>
+            </button>
+            <button type="button" class="chat-sidebar__composer-model" data-chat-action="open-model-picker"
+                    aria-label="Choose model" aria-haspopup="true" aria-expanded="false" title="Choose model">
+              <span class="chat-sidebar__composer-model-label" id="chat-sidebar-model-label">Default</span>
+              <svg class="chat-sidebar__chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                <path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+            <button type="button" class="chat-sidebar__composer-model chat-sidebar__composer-effort" data-chat-action="open-effort-picker"
+                    aria-label="Choose reasoning effort" aria-haspopup="true" aria-expanded="false" title="Reasoning effort">
+              <span class="chat-sidebar__composer-model-label" id="chat-sidebar-effort-label">High effort</span>
+              <svg class="chat-sidebar__chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            </button>
+            <span class="chat-sidebar__send-hint" aria-hidden="true">Enter to send</span>
+            <button type="button" id="chat-sidebar-send" class="chat-sidebar__composer-send chat-send"
+                    data-chat-action="send" aria-label="Send message" title="Send message">
+              <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+                <path d="M9 14.75V3.25M4.75 7.5 9 3.25l4.25 4.25" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+            <button type="button" id="chat-sidebar-abort" class="chat-sidebar__composer-abort chat-abort"
+                    data-chat-action="abort" hidden aria-label="Stop generating" title="Stop generating">
+              <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="2" y="2" width="10" height="10" rx="1.5" fill="currentColor" /></svg>
+            </button>
+          </div>
+        </div>
+        <p class="chat-sidebar__disclaimer" id="chat-sidebar-disclaimer">OpenKan can make mistakes. Review important changes.</p>
       </footer>
 
-      <!-- Tabs row. Project / Files / Plugins / Get desktop app (CTA link). -->
-      <nav class="chat-sidebar__tabs" data-chat-tabs role="tablist" aria-label="Sidebar shortcuts">
-        <button type="button" class="chat-sidebar__tabs-tab" data-tab="project"
-                role="tab" aria-selected="false" title="Project">
-          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M1.5 5h13v8.5h-13z M1.5 5l1.5-2h5l1.5 2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
-          </svg>
-          <span>Project</span>
-        </button>
-        <button type="button" class="chat-sidebar__tabs-tab" data-tab="files"
-                role="tab" aria-selected="false" title="Files">
-          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M3 1.5h5l3.5 3.5v9.5h-8.5z M8 1.5v3.5h3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
-          </svg>
-          <span>Files</span>
-        </button>
-        <button type="button" class="chat-sidebar__tabs-tab" data-tab="plugins"
-                role="tab" aria-selected="false" title="Plugins">
-          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M5 1.5v5h-3.5v3h3.5v5h3v-5h3v-3h-3v-5z" fill="currentColor" />
-          </svg>
-          <span>Plugins</span>
-        </button>
-        <button type="button" class="chat-sidebar__tabs-tab chat-sidebar__tabs-tab--link" data-tab="desktop-app"
-                role="link" aria-selected="false" title="Get desktop app">
-          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M2 4h12v8H2z M5 12h6 M2 7h12 M8 1.5L11 4 H5z"
-                  fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
-          </svg>
-          <span>Get desktop app</span>
-        </button>
-      </nav>
-
-      <!-- Activity footer (slide-in when activity tab is active). -->
       <section class="chat-sidebar__activity chat-sidebar-activity" id="chat-sidebar-activity"
                aria-label="Activity" hidden>
         <div id="chat-sidebar-claude-root"></div>
       </section>
-
-      <!-- Popovers. Created lazily by ensurePopover(); the mount is here so
-           they share the sidebar's stacking context. -->
       <div id="chat-sidebar-popover-mount"></div>
     `;
     document.body.appendChild(aside);
@@ -401,6 +394,8 @@
     if (!label) return;
     const raw = state.selectors.model || "default";
     label.textContent = raw === "default" ? "Default" : String(raw).replace(/^.*?\//, "");
+    const effortLabel = state.root.querySelector("#chat-sidebar-effort-label");
+    if (effortLabel) effortLabel.textContent = `${String(state.selectors.effort || "high").replace(/^./, (c) => c.toUpperCase())} effort`;
   }
 
   /** Toggle the "What should we work on?" hero + ChatGPT-style disclaimer
@@ -417,6 +412,17 @@
   /* ----------------------------------------------------------------------
    * Bubble rendering
    * -------------------------------------------------------------------- */
+  function formatTurnTime(ts) {
+    const date = new Date(ts || "");
+    return Number.isNaN(date.getTime()) ? "Now" : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+  function bubbleMetaHTML(turn) {
+    const label = turn.role === "user" ? "You" : turn.role === "assistant" ? "Claude Code" : "OpenKan";
+    const copy = turn.role !== "system"
+      ? `<button type="button" class="chat-copy-button" data-chat-copy="${esc(turn.ts || "")}" aria-label="Copy ${label} message" title="Copy message">⧉</button>`
+      : "";
+    return `<div class="chat-bubble-meta ${turn.role === "assistant" ? "chat-bubble-meta-assistant" : ""}">${turn.role === "assistant" ? copy : ""}<span>${label} · ${formatTurnTime(turn.ts)}</span>${turn.role !== "assistant" ? copy : ""}</div>`;
+  }
   function bubbleHTML(turn) {
     const role = turn.role || "assistant";
     const errorLine = turn.error
@@ -426,6 +432,7 @@
       return `
         <div class="chat-bubble-row chat-bubble-row-user">
           <div class="chat-bubble chat-bubble-user" data-ts="${esc(turn.ts || "")}" data-status="${esc(status)}">
+            ${bubbleMetaHTML(turn)}
             <div class="chat-bubble-body">${esc(turn.content || "")}</div>
           </div>
           ${errorLine}
@@ -437,6 +444,7 @@
       return `
         <div class="chat-bubble-row chat-bubble-row-system">
           <div class="chat-bubble chat-bubble-system" data-ts="${esc(turn.ts || "")}" data-status="${esc(status)}">
+            ${bubbleMetaHTML(turn)}
             <div class="chat-bubble-body">${esc(turn.content || "")}</div>
             ${errorLine}
           </div>
@@ -451,6 +459,7 @@
     return `
       <div class="chat-bubble-row chat-bubble-row-assistant">
         <div class="chat-bubble chat-bubble-assistant" data-ts="${esc(turn.ts || "")}" data-status="${esc(turn.status || "ok")}">
+          ${bubbleMetaHTML(turn)}
           <div class="chat-bubble-body chat-bubble-body-stream" data-bubble-body></div>
           ${errorLine}
         </div>
@@ -474,6 +483,23 @@
         </div>
       </div>
     `;
+  }
+
+  function activitySummaryHTML(turn) {
+    if (turn.role !== "assistant" && turn.role !== "system") return "";
+    const tools = Array.isArray(turn.toolUses) ? turn.toolUses : [];
+    const reads = tools.filter((tool) => tool.name === "Read" || tool.name === "Glob" || tool.name === "Grep").length;
+    const commands = tools.filter((tool) => tool.name === "Bash").length;
+    const seconds = Math.max(1, Math.round((turn.durationMs || 0) / 1000));
+    const bits = [`Thought for ${seconds}s`];
+    if (reads) bits.push(`read ${reads} file${reads === 1 ? "" : "s"}`);
+    if (commands) bits.push(`ran ${commands} command${commands === 1 ? "" : "s"}`);
+    if (!turn.durationMs && !tools.length) return "";
+    const reasoning = typeof turn.reasoning === "string" ? turn.reasoning.trim() : "";
+    const reasoningDetail = reasoning
+      ? `<div class="chat-reasoning-output"><strong>Reasoning summary</strong><pre>${esc(reasoning)}</pre></div>`
+      : `<span class="chat-reasoning-unavailable">No provider-visible reasoning summary was emitted for this turn.</span>`;
+    return `<details class="chat-activity-summary"><summary><span class="chat-activity-sprite" aria-hidden="true"></span>${bits.join(" · ")}</summary><div class="chat-activity-details"><strong>Activity details</strong><span>${tools.length ? "Open each tool below to inspect its input and result." : "No tools were used."}</span>${reasoningDetail}</div></details>`;
   }
 
   function chipsHTML(turn) {
@@ -502,7 +528,7 @@
     const parts = [];
     for (const turn of state.transcript) {
       const role = turn.role || "assistant";
-      if (role === "assistant") parts.push(chipsHTML(turn));
+      if (role === "assistant" || role === "system") { parts.push(activitySummaryHTML(turn)); if (role === "assistant") parts.push(chipsHTML(turn)); }
       parts.push(bubbleHTML(turn));
     }
     const wasNearBottom = node.scrollHeight - node.scrollTop - node.clientHeight < 80;
@@ -520,8 +546,12 @@
       const turnTs = el.closest(".chat-bubble")?.getAttribute("data-ts");
       const turn = state.transcript.find((t) => (t.ts || "") === turnTs);
       if (!turn) continue;
+      // Put plain text on screen before the asynchronous markdown round-trip.
+      // This guarantees a completed response is visible even if markdown
+      // rendering is slow or unavailable.
+      el.textContent = turn.content || "(No text returned)";
       const html = await renderMarkdown(turn.content || "");
-      el.innerHTML = html;
+      el.innerHTML = html || esc(turn.content || "(No text returned)");
     }
   }
 
@@ -550,8 +580,11 @@
             appendTurnIfNew(userTurn);
             appendTurnIfNew(assistantTurn);
             state.inFlight = false;
+            removeStreamingIndicator();
             updateAbortButton();
             void renderTranscript();
+            removeStreamingIndicator();
+            stopSessionStream();
             hideNewMessagesPill();
           }
         } catch (_err) { /* ignore */ }
@@ -578,7 +611,14 @@
       const transcript = state.root?.querySelector("#chat-sidebar-transcript");
       const appendToken = (text) => {
         if (!text) return;
-        const bubble = transcript?.querySelector(".chat-bubble-row-assistant:last-child .chat-bubble-body");
+        let bubble = transcript?.querySelector(".chat-bubble-row-assistant:last-child .chat-bubble-body");
+        if (!bubble && transcript) {
+          const row = document.createElement("div");
+          row.className = "chat-bubble-row chat-bubble-row-assistant";
+          row.innerHTML = `<div class="chat-bubble chat-bubble-assistant" data-ts="live" data-status="streaming"><div class="chat-bubble-meta"><span>Claude Code · responding</span></div><div class="chat-bubble-body chat-bubble-body-stream" data-bubble-body></div></div>`;
+          transcript.appendChild(row);
+          bubble = row.querySelector("[data-bubble-body]");
+        }
         if (!bubble) return;
         // Stream into the last text block — DO NOT re-render markdown per
         // token; the final render runs at message-done time.
@@ -598,6 +638,16 @@
           appendToken(data?.text || "");
         } catch (_err) { /* ignore */ }
       });
+      src.addEventListener("chat.status", (e) => {
+        try { updateLiveStatus(JSON.parse(e.data)); } catch (_err) { /* ignore */ }
+      });
+      src.addEventListener("chat.activity", (e) => {
+        try {
+          const event = JSON.parse(e.data);
+          state.liveActivity = [...(state.liveActivity || []), event].slice(-80);
+          renderLiveActivity();
+        } catch (_err) { /* ignore */ }
+      });
       src.addEventListener("chat.tool-use", (e) => {
         try {
           const data = JSON.parse(e.data);
@@ -606,6 +656,7 @@
           // Skip if we already have this chip id (defensive — the server
           // can fan the same event twice across channels).
           if (state.liveChips.some((c) => c.id === data.id)) return;
+          updateLiveStatus({ phase: "tool", label: toolUseLabel({ name: data.name, input: data.input || {} }) });
           state.liveChips.push({
             id: data.id,
             name: data.name,
@@ -651,6 +702,7 @@
       state.sessionSse = null;
     }
     state.liveChips = null;
+    state.liveActivity = [];
     state.liveBubble = null;
   }
 
@@ -679,6 +731,36 @@
     maybeAutoScroll(transcript);
   }
 
+  function activityLabel(event) {
+    const raw = event?.raw || {};
+    const tool = raw.content_block?.name || raw.tool_name || raw.name;
+    if (tool) return `${tool}: ${raw.subtype || event.type}`;
+    if (raw.subtype === "api_retry") return `Retrying API request (${raw.attempt || 1}/${raw.max_retries || "?"})`;
+    return [event?.type, event?.subtype].filter(Boolean).join(" · ") || "Agent activity";
+  }
+  function isImportantActivity(event) {
+    const raw = event?.raw || {};
+    const block = raw.content_block || {};
+    const type = String(event?.type || raw.type || "").toLowerCase();
+    const subtype = String(event?.subtype || raw.subtype || "").toLowerCase();
+    // Keep the work a person can act on or inspect. Text/thinking deltas are
+    // already visible in the response and must not become a wall of traces.
+    if (["tool_use", "tool_result"].includes(String(block.type || ""))) return true;
+    if (raw.tool_name || raw.hook_event_name || raw.mcp_server_name || raw.mcp_tool_name) return true;
+    if (subtype.includes("retry") || subtype.includes("hook") || subtype.includes("team") || subtype.includes("workflow") || subtype.includes("agent") || subtype.includes("mcp")) return true;
+    return type === "system" || type === "error";
+  }
+  function renderLiveActivity() {
+    const transcript = state.root?.querySelector("#chat-sidebar-transcript");
+    if (!transcript) return;
+    let node = transcript.querySelector(":scope > .chat-live-activity");
+    if (!node) { node = document.createElement("details"); node.className = "chat-live-activity"; node.open = true; transcript.appendChild(node); }
+    const events = (state.liveActivity || []).filter(isImportantActivity);
+    if (events.length === 0) { node?.remove(); return; }
+    node.innerHTML = `<summary><span class="chat-working-loader-wrap"><img class="chat-working-loader" src="brand/infinity-loader-animated.svg" width="52" height="28" alt="" /></span>Important agent activity <span>${events.length}</span></summary><div class="chat-live-activity-list">${events.map((event) => `<details><summary>${esc(activityLabel(event))}</summary><pre>${esc(JSON.stringify(event.raw || {}, null, 2))}</pre></details>`).join("")}</div>`;
+    maybeAutoScroll(transcript);
+  }
+
   function finalizeLiveBubble() {
     if (!state.root) return;
     const transcript = state.root.querySelector("#chat-sidebar-transcript");
@@ -692,6 +774,7 @@
       });
     }
     removeStreamingIndicator();
+    transcript?.querySelector(":scope > .chat-live-activity")?.remove();
   }
 
   /**
@@ -700,21 +783,24 @@
    * the turn completes (via finalizeLiveBubble) or when the transcript is
    * re-rendered.
    */
-  function ensureStreamingIndicator() {
+  function updateLiveStatus(status = {}) {
     const transcript = state.root?.querySelector("#chat-sidebar-transcript");
     if (!transcript) return;
-    if (transcript.querySelector(":scope > .chat-bubble-streaming-indicator")) return;
-    const node = document.createElement("div");
-    node.className = "chat-bubble-streaming-indicator";
-    node.setAttribute("aria-live", "polite");
-    node.textContent = "Working";
-    transcript.appendChild(node);
+    let node = transcript.querySelector(":scope > .chat-bubble-streaming-indicator");
+    if (!node) {
+      node = document.createElement("div");
+      node.className = "chat-bubble-streaming-indicator";
+      node.setAttribute("aria-live", "polite");
+      transcript.appendChild(node);
+    }
+    const label = status.label || (status.phase === "tool" ? "Using a tool" : "Thinking");
+    node.innerHTML = `<img class="chat-working-loader" src="brand/infinity-loader-animated.svg" width="52" height="28" alt="" aria-hidden="true" /><span>${esc(label)}</span>`;
+    maybeAutoScroll(transcript);
   }
-
+  function ensureStreamingIndicator() { updateLiveStatus({ phase: "thinking", label: "Writing response" }); }
   function removeStreamingIndicator() {
     const transcript = state.root?.querySelector("#chat-sidebar-transcript");
-    if (!transcript) return;
-    const node = transcript.querySelector(":scope > .chat-bubble-streaming-indicator");
+    const node = transcript?.querySelector(":scope > .chat-bubble-streaming-indicator");
     if (node) node.remove();
   }
 
@@ -821,6 +907,33 @@
       if (!state.scrolledUp) hideNewMessagesPill();
     });
 
+    // Dropping a board card into chat mentions it without moving it.
+    state.root.addEventListener("dragenter", (e) => {
+      if (e.dataTransfer?.types?.includes("application/x-openkan-task")) state.root.classList.add("chat-sidebar--task-drop");
+    });
+    state.root.addEventListener("dragleave", (e) => {
+      if (!state.root.contains(e.relatedTarget)) state.root.classList.remove("chat-sidebar--task-drop");
+    });
+    state.root.addEventListener("dragover", (e) => {
+      if (e.dataTransfer?.types?.includes("application/x-openkan-task")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }
+    });
+    state.root.addEventListener("drop", (e) => {
+      const raw = e.dataTransfer?.getData("application/x-openkan-task");
+      if (!raw) return;
+      e.preventDefault();
+      state.root.classList.remove("chat-sidebar--task-drop");
+      try {
+        const task = JSON.parse(raw);
+        const input = state.root.querySelector("#chat-sidebar-input");
+        if (!input || !task?.id) return;
+        const mention = `@task(${task.id}) ${task.title || ""}`.trim();
+        input.value = `${input.value ? `${input.value}
+` : ""}${mention}`;
+        input.focus(); autoResize();
+        state.root.classList.add("chat-sidebar--task-dropped");
+        setTimeout(() => state.root?.classList.remove("chat-sidebar--task-dropped"), 520);
+      } catch (_err) { /* invalid external drop */ }
+    });
     // Drag-drop: dropped files are routed through the M1 import endpoint.
     state.root.addEventListener("dragover", (e) => { e.preventDefault(); });
     state.root.addEventListener("drop", async (e) => {
@@ -846,7 +959,9 @@
       if (!state.root || !state.popoverId) return;
       const target = e.target;
       if (!(target instanceof Element)) return;
-      if (state.root.contains(target)) return;
+      const popover = state.root.querySelector(`#${CSS.escape(state.popoverId)}`);
+      const trigger = state.root.querySelector("[data-popover-open='1']");
+      if (popover?.contains(target) || trigger?.contains(target)) return;
       closePopover();
     });
     document.addEventListener("keydown", (e) => {
@@ -872,6 +987,16 @@
     if (copy) { copyToClipboard(copy.getAttribute("data-chat-copy")); return; }
     const retry = t.closest("[data-chat-retry]");
     if (retry) { void retryLastTurn(); return; }
+    const prompt = t.closest("[data-chat-prompt]");
+    if (prompt) {
+      const input = state.root.querySelector("#chat-sidebar-input");
+      if (input) {
+        input.value = prompt.getAttribute("data-chat-prompt") || "";
+        input.focus();
+        autoResize();
+      }
+      return;
+    }
     const tabBtn = t.closest("[data-tab]");
     if (tabBtn) {
       const name = tabBtn.getAttribute("data-tab");
@@ -884,6 +1009,7 @@
     else if (action === "archive") { closePopover(); void onArchive(); }
     else if (action === "toggle-activity") { closePopover(); toggleActivity(); setActiveTab(state.activityOpen ? "activity" : null); }
     else if (action === "open-model-picker") { void openModelPicker(); return; }
+    else if (action === "open-effort-picker") { void openEffortPicker(); return; }
     else if (action === "open-attach-menu") { openAttachMenu(); return; }
     else if (action === "open-session-menu") { openSessionMenu(); return; }
     else if (action === "import-file") { void onImportFileClick(); return; }
@@ -927,6 +1053,13 @@
 
   function onKeyDown(e) {
     if (!state.root) return;
+    if (e.target?.matches?.("[data-chat-resize]")) {
+      const step = e.shiftKey ? 48 : 16;
+      if (e.key === "ArrowLeft") { e.preventDefault(); setSidebarWidth(state.width + step); return; }
+      if (e.key === "ArrowRight") { e.preventDefault(); setSidebarWidth(state.width - step); return; }
+      if (e.key === "Home") { e.preventDefault(); setSidebarWidth(320); return; }
+      if (e.key === "End") { e.preventDefault(); setSidebarWidth(640); return; }
+    }
     if (e.target?.id === "chat-sidebar-input") {
       // IME composition guard — do not send mid-composition.
       if (e.isComposing) return;
@@ -1036,7 +1169,7 @@
     });
     state.liveChips = [];
     await renderTranscript();
-    startSessionStream();
+    updateLiveStatus({ phase: "thinking", label: "Starting Claude Code" });
 
     state.abortController = new AbortController();
     try {
@@ -1057,13 +1190,23 @@
       if (result?.sessionId) {
         state.currentSessionId = result.sessionId;
         saveString(STORAGE_KEYS.lastSession, state.currentSessionId);
+        // A newly created session could not subscribe before its ID existed.
+        // Subscribe as soon as the server acknowledges it, while the turn runs.
+        startSessionStream();
       }
-      // Drop the optimistic local turn (last one we pushed) so the
-      // canonical one from the server replaces it via appendTurnIfNew.
-      state.transcript = state.transcript.filter((t) => t.ts !== localTs);
-      appendTurnIfNew(result?.userTurn);
-      appendTurnIfNew(result?.assistantTurn);
-      await renderTranscript();
+      if (result?.accepted) {
+        state.transcript = state.transcript.filter((t) => t.ts !== localTs);
+        appendTurnIfNew(result.userTurn);
+        await renderTranscript();
+        updateLiveStatus({ phase: "thinking", label: "Claude is thinking" });
+        void pollForCompletion(state.currentSessionId);
+      } else {
+        state.transcript = state.transcript.filter((t) => t.ts !== localTs);
+        appendTurnIfNew(result?.userTurn);
+        appendTurnIfNew(result?.assistantTurn);
+        await renderTranscript();
+        removeStreamingIndicator();
+      }
       bindChipChips();
       await refreshSessions();
     } catch (err) {
@@ -1079,7 +1222,22 @@
       state.inFlight = false;
       state.abortController = null;
       updateAbortButton();
-      stopSessionStream();
+    }
+  }
+
+  async function pollForCompletion(sessionId) {
+    for (let attempt = 0; attempt < 24 && sessionId === state.currentSessionId; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 750));
+      const data = await fetchSession(sessionId);
+      const last = data?.turns?.at?.(-1);
+      if (last?.role === "assistant" || last?.role === "system") {
+        state.transcript = data.turns;
+        removeStreamingIndicator();
+        await renderTranscript();
+        bindChipChips();
+        stopSessionStream();
+        return;
+      }
     }
   }
 
@@ -1207,37 +1365,29 @@
     state.popoverId = null;
   }
 
-  /** Anchor an already-built popover to a trigger element. */
+  /** Anchor an already-built popover within the sidebar's coordinate space. */
   function anchorPopover(popover, trigger) {
-    if (!popover || !trigger) return;
-    const triggerRect = trigger.getBoundingClientRect();
     const sidebarRect = state.root?.getBoundingClientRect();
+    if (!popover || !trigger || !sidebarRect) return;
+    popover.hidden = false;
+    const triggerRect = trigger.getBoundingClientRect();
     const popRect = popover.getBoundingClientRect();
-    // Default: open downward beneath the trigger, left-aligned.
-    let top = triggerRect.bottom + 6;
-    let left = triggerRect.left;
-    if (sidebarRect) {
-      // Clamp horizontally inside the sidebar.
-      const maxLeft = sidebarRect.right - popRect.width - 8;
-      if (left > maxLeft) left = Math.max(sidebarRect.left + 8, maxLeft);
-      if (left < sidebarRect.left + 4) left = sidebarRect.left + 4;
-      // Clamp vertically so the popover stays inside the viewport.
-      const maxBottom = window.innerHeight - 8;
-      if (top + popRect.height > maxBottom) {
-        // Open upward if there's no room below.
-        top = Math.max(8, triggerRect.top - popRect.height - 6);
-      }
+    const inset = 8;
+    let left = triggerRect.left - sidebarRect.left;
+    let top = triggerRect.bottom - sidebarRect.top + 6;
+    left = Math.max(inset, Math.min(left, sidebarRect.width - popRect.width - inset));
+    if (top + popRect.height > sidebarRect.height - inset) {
+      top = Math.max(inset, triggerRect.top - sidebarRect.top - popRect.height - 6);
     }
     popover.style.top = `${top}px`;
     popover.style.left = `${left}px`;
-    popover.hidden = false;
     trigger.setAttribute("aria-expanded", "true");
     trigger.setAttribute("data-popover-open", "1");
   }
 
   /* ----------------------------------------------------------------------
-   * Model picker popover
-   * Three sections: Model, Effort, Permissions.
+   * Separate model and effort pickers. Compact controls are faster to scan
+   * and avoid mixing a model choice with independent reasoning settings.
    * -------------------------------------------------------------------- */
 
   async function fetchPickerOptions() {
@@ -1267,12 +1417,7 @@
     closePopover();
     const opts = await fetchPickerOptions();
     const models = (opts?.models || state.models.map((id) => ({ id, label: id })));
-    const efforts = opts?.efforts || EFFORT_OPTIONS;
-    const perms = opts?.permissionModes || PERMISSION_OPTIONS;
-
     const modelId = state.selectors.model || "default";
-    const effort = state.selectors.effort || "high";
-    const perm = state.selectors.permissionMode || "default";
 
     popover.innerHTML = `
       <section class="chat-sidebar__popover-section" data-section="model">
@@ -1282,21 +1427,24 @@
           ${models.map((m) => modelRadio(m.id, m.label || m.id, m.id === modelId)).join("")}
         </ul>
       </section>
-      <section class="chat-sidebar__popover-section" data-section="effort">
-        <h3 class="chat-sidebar__popover-heading">Effort</h3>
-        <ul class="chat-sidebar__popover-list">
-          ${efforts.map((e) => effortRadio(e, e, e === effort)).join("")}
-        </ul>
-      </section>
-      <section class="chat-sidebar__popover-section" data-section="perms">
-        <h3 class="chat-sidebar__popover-heading">Permissions</h3>
-        <ul class="chat-sidebar__popover-list">
-          ${perms.map((p) => permRadio(p, p, p === perm)).join("")}
-        </ul>
-      </section>
     `;
     state.popoverId = popover.id;
     // Render before measuring so getBoundingClientRect is accurate.
+    anchorPopover(popover, trigger);
+    popover.addEventListener("change", onPickerChange);
+  }
+
+  async function openEffortPicker() {
+    if (!state.root) return;
+    const trigger = state.root.querySelector(".chat-sidebar__composer-effort");
+    const popover = ensurePopover("chat-sidebar-effort-popover");
+    if (!trigger || !popover) return;
+    if (state.popoverId === popover.id) { closePopover(); return; }
+    closePopover();
+    const opts = await fetchPickerOptions();
+    const effort = state.selectors.effort || "high";
+    popover.innerHTML = `<section class="chat-sidebar__popover-section"><h3 class="chat-sidebar__popover-heading">Reasoning effort</h3><p class="chat-sidebar__popover-note">Higher effort gives the agent more time to reason before responding.</p><ul class="chat-sidebar__popover-list">${(opts?.efforts || EFFORT_OPTIONS).map((e) => effortRadio(e, e, e === effort)).join("")}</ul></section>`;
+    state.popoverId = popover.id;
     anchorPopover(popover, trigger);
     popover.addEventListener("change", onPickerChange);
   }
@@ -1543,6 +1691,39 @@
     openSessionMenu();
   }
 
+  function sidebarWidthFor(value) {
+    const available = Math.max(320, window.innerWidth - 360);
+    return Math.round(Math.max(320, Math.min(value, Math.min(640, available))));
+  }
+
+  function setSidebarWidth(value, persist = true) {
+    state.width = sidebarWidthFor(value);
+    document.documentElement.style.setProperty("--chat-sidebar-width", `${state.width}px`);
+    const handle = state.root?.querySelector("[data-chat-resize]");
+    if (handle) handle.setAttribute("aria-valuenow", String(state.width));
+    if (persist) saveString(STORAGE_KEYS.width, String(state.width));
+  }
+
+  function beginResize(event) {
+    if (event.button !== undefined && event.button !== 0) return;
+    event.preventDefault();
+    const handle = event.currentTarget;
+    state.resizing = true;
+    document.body.classList.add("chat-sidebar-resizing");
+    try { handle.setPointerCapture?.(event.pointerId); } catch (_err) { /* ignore */ }
+    const resize = (move) => setSidebarWidth(move.clientX);
+    const finish = () => {
+      state.resizing = false;
+      document.body.classList.remove("chat-sidebar-resizing");
+      window.removeEventListener("pointermove", resize);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+    };
+    window.addEventListener("pointermove", resize);
+    window.addEventListener("pointerup", finish, { once: true });
+    window.addEventListener("pointercancel", finish, { once: true });
+  }
+
   /* ----------------------------------------------------------------------
    * Open / close + mount
    * -------------------------------------------------------------------- */
@@ -1550,7 +1731,7 @@
     if (!state.root) return;
     state.root.hidden = false;
     state.open = true;
-    state.root.querySelector(".chat-sidebar-handle")?.setAttribute("aria-expanded", "true");
+    document.body.classList.add("chat-sidebar-open");
     saveString(STORAGE_KEYS.open, "1");
     autoResize();
   }
@@ -1558,7 +1739,7 @@
     if (!state.root) return;
     state.root.hidden = true;
     state.open = false;
-    state.root.querySelector(".chat-sidebar-handle")?.setAttribute("aria-expanded", "false");
+    document.body.classList.remove("chat-sidebar-open");
     saveString(STORAGE_KEYS.open, "0");
   }
   function toggle() { state.open ? close() : open(); }
@@ -1580,13 +1761,23 @@
     if (state.mounted) return;
     state.root = buildShell();
     state.mounted = true;
-    state.open = loadString(STORAGE_KEYS.open) === "1";
+    // Chat mode owns the main canvas, so it must not inherit a previously
+    // closed task-mode rail. `attachWorkspaceMode()` runs before mount(),
+    // therefore this is the authoritative point to reconcile the state.
+    state.open = document.body.classList.contains("workspace-mode-chat")
+      || loadString(STORAGE_KEYS.open) === "1";
     state.selectors = { ...DEFAULT_SELECTORS, ...(loadJSON(STORAGE_KEYS.selectors) || {}) };
+    const permissionAliases = { "bypass-permissions": "bypassPermissions", "accept-edits": "acceptEdits", default: "bypassPermissions" };
+    state.selectors.permissionMode = permissionAliases[state.selectors.permissionMode] || state.selectors.permissionMode || "bypassPermissions";
     state.currentSessionId = loadString(STORAGE_KEYS.lastSession);
     state.models = await fetchModels();
     populateSelectors();
     bindEvents();
     bindGlobalDismiss();
+    const savedWidth = Number.parseInt(loadString(STORAGE_KEYS.width), 10);
+    setSidebarWidth(Number.isFinite(savedWidth) ? savedWidth : state.width, false);
+    const resizeHandle = state.root.querySelector("[data-chat-resize]");
+    resizeHandle?.addEventListener("pointerdown", beginResize);
     if (state.open) open();
     autoResize();
     startLive();
@@ -1621,6 +1812,7 @@
       try { state.root.remove(); } catch (_err) { /* ignore */ }
       state.root = null;
     }
+    document.body.classList.remove("chat-sidebar-open", "chat-sidebar-resizing");
     state.mounted = false;
     state.open = false;
     state.transcript = [];

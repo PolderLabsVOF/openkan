@@ -24,5 +24,9 @@
     "enabled": true,
     "projectRoot": "../BizarHarness",
     "command": "../BizarHarness/cli/bin.mjs"
+  },
+  "notifications": {
+    "desktop": false,
+    "sound": false
   }
 }

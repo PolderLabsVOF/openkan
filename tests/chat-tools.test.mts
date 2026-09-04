@@ -184,7 +184,7 @@ test("appendTurn + readSession round-trip a turn with toolUses", () => {
     toolUses,
     model: "minimax/MiniMax-M3",
     effort: "medium",
-    permissionMode: "default",
+    permissionMode: "auto",
     messageId: "msg-roundtrip",
     status: "ok",
   };
@@ -203,7 +203,7 @@ test("appendTurn + readSession round-trip a turn with toolUses", () => {
   const summary = summariseSession(sid, read, false);
   assert.equal(summary.model, "minimax/MiniMax-M3");
   assert.equal(summary.effort, "medium");
-  assert.equal(summary.permissionMode, "default");
+  assert.equal(summary.permissionMode, "auto");
 });
 
 // ─── 5. Backwards-compat: legacy JSONL without toolUses ──────────────────────
@@ -221,7 +221,7 @@ test("legacy JSONL without toolUses reads cleanly and surfaces an empty toolUses
       content: "Legacy answer",
       model: "legacy-model",
       effort: "low",
-      permissionMode: "default",
+      permissionMode: "auto",
       messageId: "msg-legacy",
       status: "ok",
     }) + "\n",
@@ -268,7 +268,7 @@ test("pickerOptions returns the expected shape from an injected fixture", async 
     ]);
     assert.deepEqual(result.efforts, ["low", "medium", "high", "max"]);
     assert.deepEqual(result.permissionModes, [
-      "accept-edits", "default", "plan", "bypass-permissions",
+      "acceptEdits", "auto", "bypassPermissions", "manual", "dontAsk", "plan",
     ]);
   } finally {
     rmSync(root, { recursive: true, force: true });

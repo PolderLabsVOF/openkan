@@ -59,6 +59,10 @@ export interface ChatTurn {
    * reader treats `undefined` as an empty array.
    */
   toolUses?: ToolUseRecord[];
+  /** Wall-clock time spent generating this assistant turn. */
+  durationMs?: number;
+  /** Provider-visible reasoning summary, when the selected CLI exposes one. */
+  reasoning?: string;
 }
 
 /** Persisted shape of a single tool-use block. */
@@ -76,6 +80,7 @@ export interface ToolUseRecord {
 /** Live state held while a turn is in flight, mutated by the stream parser. */
 interface TurnState {
   textByBlock: Map<number, string>;
+  reasoningByBlock: Map<number, string>;
   toolUses: Map<number, ToolUseRecord>;
   /** tool_use_id -> index in `toolUses` so we can attach results. */
   toolIndexById: Map<string, number>;
@@ -135,7 +140,7 @@ export interface StreamEvent {
   index?: number;
   /** Convenience copy of `event.content_block` when present. */
   contentBlock?: {
-    type: "text" | "tool_use" | "tool_result";
+    type: "text" | "thinking" | "tool_use" | "tool_result";
     id?: string;
     name?: string;
     tool_use_id?: string;
@@ -147,6 +152,7 @@ export interface StreamEvent {
   delta?: {
     type: string;
     text?: string;
+    thinking?: string;
     partial_json?: string;
     stop_reason?: string;
   };
@@ -422,9 +428,7 @@ export function validateSelectors(selectors: ChatSelectors): void {
   if (!validEffort.has(eff)) {
     throw new Error(`Invalid effort: ${eff}. Expected one of ${[...validEffort].join(", ")}.`);
   }
-  const validPerm = new Set([
-    "accept-edits", "default", "plan", "bypass-permissions",
-  ]);
+  const validPerm = new Set<string>(ALLOWED_PERMISSION_MODES);
   if (!validPerm.has(selectors.permissionMode)) {
     throw new Error(
       `Invalid permissionMode: ${selectors.permissionMode}. Expected one of ${[...validPerm].join(", ")}.`,
@@ -437,7 +441,7 @@ export function validateSelectors(selectors: ChatSelectors): void {
 
 /** Allowed permission modes for the Claude Code CLI. */
 export const ALLOWED_PERMISSION_MODES = [
-  "accept-edits", "default", "plan", "bypass-permissions",
+  "acceptEdits", "auto", "bypassPermissions", "manual", "dontAsk", "plan",
 ] as const;
 
 /** One option in the model picker UI. */
@@ -473,10 +477,18 @@ export async function pickerOptions(
   projectRoot: string,
   overrides: { models?: string[] } = {},
 ): Promise<PickerOptions> {
-  const ids = overrides.models ?? (await readModelRouter(projectRoot)).models;
+  const router = await readModelRouter(projectRoot);
+  // Older router files often specify policy defaults but omit the optional
+  // `models` array. Expose those configured model ids in the picker rather
+  // than leaving the model menu apparently empty.
+  const policyModels = Object.values(router.policies ?? {})
+    .filter((value): value is string => typeof value === "string" && value.length > 0);
+  const ids = overrides.models ?? [...router.models, ...policyModels];
   const models: PickerModelOption[] = [];
+  const seen = new Set<string>();
   for (const id of ids) {
-    if (typeof id !== "string" || !id) continue;
+    if (typeof id !== "string" || !id || seen.has(id)) continue;
+    seen.add(id);
     models.push({ id, label: toPickerLabel(id) });
   }
   return {
@@ -554,17 +566,51 @@ export function parseStreamLine(line: string): StreamEvent | null {
   } catch {
     return null;
   }
-  const type = typeof raw.type === "string" ? raw.type : "unknown";
-  const event: StreamEvent = { type, raw };
+  // `--include-partial-messages` wraps Anthropic-style deltas as
+  // `{type:"stream_event",event:{...}}`. Normalise that documented envelope
+  // before parsing, while retaining its original payload for diagnostics.
+  const envelope = raw;
+  if (raw.type === "stream_event" && raw.event && typeof raw.event === "object") {
+    raw = raw.event as Record<string, unknown>;
+  }
+  let type = typeof raw.type === "string" ? raw.type : "unknown";
+  const event: StreamEvent = { type, raw: { ...raw, _envelope: envelope.type === "stream_event" ? envelope : undefined } };
 
   if (typeof raw.index === "number") event.index = raw.index;
+
+  // Claude Code's current stream-json format emits completed assistant
+  // snapshots (`{type:"assistant", message:{content:[...]}}`) instead of
+  // Anthropic content_block_delta records. Normalise visible text into the
+  // same delta shape so the UI and persisted turn never go blank.
+  if (type === "assistant") {
+    const content = (raw.message as Record<string, unknown> | undefined)?.content;
+    const text = Array.isArray(content)
+      ? content.filter((part) => part && typeof part === "object" && (part as Record<string, unknown>).type === "text")
+        .map((part) => String((part as Record<string, unknown>).text ?? "")).join("")
+      : "";
+    if (text) {
+      type = "content_block_delta";
+      event.type = type;
+      event.index = 0;
+      event.delta = { type: "text_delta", text };
+      return event;
+    }
+  }
+  // The terminal result carries a reliable text fallback for providers that
+  // do not emit a separate assistant-text record.
+  if (type === "result" && typeof raw.result === "string" && raw.result) {
+    event.type = "content_block_delta";
+    event.index = 0;
+    event.delta = { type: "text_delta", text: raw.result };
+    return event;
+  }
 
   // content_block_start carries the block descriptor under `content_block`.
   const cb = raw.content_block;
   if (cb && typeof cb === "object") {
     const block = cb as Record<string, unknown>;
     const blockType = typeof block.type === "string" ? block.type : "";
-    if (blockType === "text" || blockType === "tool_use" || blockType === "tool_result") {
+    if (blockType === "text" || blockType === "thinking" || blockType === "tool_use" || blockType === "tool_result") {
       event.contentBlock = {
         type: blockType,
         id: typeof block.id === "string" ? block.id : undefined,
@@ -590,6 +636,7 @@ export function parseStreamLine(line: string): StreamEvent | null {
     event.delta = {
       type: typeof delta.type === "string" ? delta.type : "",
       text: typeof delta.text === "string" ? delta.text : undefined,
+      thinking: typeof delta.thinking === "string" ? delta.thinking : undefined,
       partial_json: typeof delta.partial_json === "string" ? delta.partial_json : undefined,
       stop_reason: typeof delta.stop_reason === "string" ? delta.stop_reason : undefined,
     };
@@ -606,13 +653,20 @@ export function parseStreamLine(line: string): StreamEvent | null {
 export function applyStreamEvent(
   state: TurnState,
   event: StreamEvent,
-): { toolUseIndex: number; toolUse: ToolUseRecord } | { toolResult: ToolUseRecord } | { textDelta: string } | { stopReason: string } | null {
+): { toolUseIndex: number; toolUse: ToolUseRecord } | { toolResult: ToolUseRecord } | { textDelta: string } | { reasoningDelta: string } | { stopReason: string } | null {
+  // `result` is a fallback for providers that skip assistant text events.
+  // Do not append it when a normal assistant snapshot has already supplied text.
+  if (event.raw.type === "result" && [...state.textByBlock.values()].some(Boolean)) return null;
   switch (event.type) {
     case "content_block_start": {
       const cb = event.contentBlock;
       if (!cb) return null;
       if (cb.type === "text" && typeof event.index === "number") {
         state.textByBlock.set(event.index, "");
+        return null;
+      }
+      if (cb.type === "thinking" && typeof event.index === "number") {
+        state.reasoningByBlock.set(event.index, cb.text ?? "");
         return null;
       }
       if (cb.type === "tool_use" && typeof event.index === "number" && cb.id) {
@@ -656,6 +710,11 @@ export function applyStreamEvent(
         const next = prev + (d.text ?? "");
         state.textByBlock.set(event.index, next);
         return { textDelta: d.text ?? "" };
+      }
+      if ((d.type === "thinking_delta" || d.type === "reasoning_delta") && typeof event.index === "number") {
+        const text = d.thinking ?? d.text ?? "";
+        state.reasoningByBlock.set(event.index, (state.reasoningByBlock.get(event.index) ?? "") + text);
+        return { reasoningDelta: text };
       }
       if (d.type === "input_json_delta" && typeof event.index === "number") {
         const existing = state.toolUses.get(event.index);
@@ -701,6 +760,8 @@ export function assembleAssistantTurn(
   // Concatenate text blocks in index order.
   const orderedIndexes = [...state.textByBlock.keys()].sort((a, b) => a - b);
   const content = orderedIndexes.map((i) => state.textByBlock.get(i) ?? "").join("");
+  const reasoning = [...state.reasoningByBlock.keys()].sort((a, b) => a - b)
+    .map((i) => state.reasoningByBlock.get(i) ?? "").join("");
 
   // Concatenate tool uses in the order they were opened (index order).
   const toolUses: ToolUseRecord[] = [...state.toolUses.entries()]
@@ -718,6 +779,7 @@ export function assembleAssistantTurn(
     status: status ?? "ok",
     toolUses,
   };
+  if (reasoning) turn.reasoning = reasoning;
   if (error) turn.error = error;
   return turn;
 }
@@ -734,6 +796,7 @@ export async function sendTurn(
   validateSelectors(opts);
   const sessionId = opts.sessionId ?? generateSessionId();
   const messageId = newMessageId();
+  const startedAtMs = Date.now();
   const ts = nowIso();
   const userTurn: ChatTurn = {
     ts,
@@ -755,6 +818,8 @@ export async function sendTurn(
     "--permission-mode", opts.permissionMode,
     "--output-format", "stream-json",
     "--verbose",
+    "--include-partial-messages",
+    "--include-hook-events",
   ];
 
   const child = spawn(bin, args, {
@@ -785,6 +850,7 @@ export async function sendTurn(
   let lineBuf = "";
   const state: TurnState = {
     textByBlock: new Map(),
+    reasoningByBlock: new Map(),
     toolUses: new Map(),
     toolIndexById: new Map(),
     toolResults: new Map(),
@@ -856,6 +922,7 @@ export async function sendTurn(
   } else {
     assistantTurn = assembleAssistantTurn(state, opts, assistantTs, "ok");
   }
+  assistantTurn.durationMs = Date.now() - startedAtMs;
   appendTurn(projectRoot, sessionId, assistantTurn);
 
   return { sessionId, userTurn, assistantTurn };
@@ -1042,12 +1109,15 @@ export async function handleChatRequest(
       if (!body) return errResponse("Invalid JSON body", 400);
       const message = typeof body.message === "string" ? body.message.trim() : "";
       if (!message) return errResponse("message is required", 422);
+      const legacyPermissionModes: Record<string, string> = {
+        "accept-edits": "acceptEdits", default: "auto", "bypass-permissions": "bypassPermissions",
+      };
+      const requestedPermissionMode = typeof body.permissionMode === "string" && body.permissionMode
+        ? body.permissionMode : "bypassPermissions";
       const selectors: ChatSelectors = {
         model: typeof body.model === "string" && body.model ? body.model : "default",
         effort: typeof body.effort === "string" && body.effort ? body.effort : "high",
-        permissionMode: typeof body.permissionMode === "string" && body.permissionMode
-          ? body.permissionMode
-          : "default",
+        permissionMode: legacyPermissionModes[requestedPermissionMode] ?? requestedPermissionMode,
       };
       try {
         validateSelectors(selectors);
@@ -1058,13 +1128,28 @@ export async function handleChatRequest(
         ? body.sessionId
         : generateSessionId();
       try {
-        const result = await sendTurn(projectRoot, {
+        // Start immediately and return an acknowledgement. The browser can now
+        // subscribe to this session before Claude's first streamed event,
+        // rather than staring at an empty composer until the process exits.
+        broadcastChatSession(sessionId, "chat.status", { sessionId, phase: "thinking", label: "Thinking" });
+        const running = sendTurn(projectRoot, {
           sessionId,
           message,
           model: selectors.model,
           effort: selectors.effort,
           permissionMode: selectors.permissionMode,
           onStreamEvent: (event) => {
+            // Preserve every documented stream/hook/system event for the
+            // activity timeline. Typed branches below still drive bubbles and
+            // tool cards; this channel exposes retries, MCP, hooks, teams,
+            // workflows, and new future event kinds without dropping them.
+            broadcastChatSession(sessionId, "chat.activity", {
+              sessionId,
+              type: event.type,
+              subtype: typeof event.raw.subtype === "string" ? event.raw.subtype : undefined,
+              raw: event.raw,
+              ts: nowIso(),
+            });
             // Per-session channel: stream typed events for chips + bubbles.
             switch (event.type) {
               case "content_block_start": {
@@ -1087,6 +1172,11 @@ export async function handleChatRequest(
                   broadcastChatSession(sessionId, "chat.text-delta", {
                     sessionId,
                     text: d.text,
+                  });
+                } else if ((d?.type === "thinking_delta" || d?.type === "reasoning_delta") && typeof (d.thinking ?? d.text) === "string") {
+                  broadcastChatSession(sessionId, "chat.reasoning-delta", {
+                    sessionId,
+                    text: d.thinking ?? d.text,
                   });
                 } else if (d?.type === "input_json_delta" && typeof event.index === "number") {
                   broadcastChatSession(sessionId, "chat.tool-input-delta", {
@@ -1118,17 +1208,14 @@ export async function handleChatRequest(
             }
           },
         });
-        broadcastChat("chat.turn", {
-          sessionId: result.sessionId,
-          userTurn: result.userTurn,
-          assistantTurn: result.assistantTurn,
+        void running.then((result) => {
+          broadcastChat("chat.turn", { sessionId: result.sessionId, userTurn: result.userTurn, assistantTurn: result.assistantTurn });
+          broadcastChatSession(result.sessionId, "chat.turn", { sessionId: result.sessionId, userTurn: result.userTurn, assistantTurn: result.assistantTurn });
+        }).catch((error) => {
+          broadcastChatSession(sessionId, "chat.status", { sessionId, phase: "error", label: "Chat failed", error: error instanceof Error ? error.message : String(error) });
         });
-        broadcastChatSession(result.sessionId, "chat.turn", {
-          sessionId: result.sessionId,
-          userTurn: result.userTurn,
-          assistantTurn: result.assistantTurn,
-        });
-        return jsonResponse(result, 200);
+        const userTurn = readSession(projectRoot, sessionId).at(-1);
+        return jsonResponse({ sessionId, accepted: true, userTurn }, 202);
       } catch (e) {
         const message = (e as Error)?.message || "sendTurn failed";
         return errResponse(message, 500);

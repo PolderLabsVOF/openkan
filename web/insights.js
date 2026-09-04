@@ -187,8 +187,7 @@
     const loading = el("p", "insights-loading", { text: "Loading insights…" });
     root.appendChild(loading);
     try {
-      const res = await api("/api/insights/velocity?days=30");
-      const data = await res.json();
+      const data = await api("GET", "/api/insights/velocity?days=30");
       mountedData = data;
       if (mountedRoot === root) render(root, data);
     } catch (err) {
