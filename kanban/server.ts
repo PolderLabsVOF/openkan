@@ -65,14 +65,10 @@ import {
   getBizarSnapshot,
   handleBizarRequest,
 } from "./bizar.ts";
-<<<<<<< HEAD
 import * as claudeState from "./claude-state.ts";
 import { handleClaudeRequest } from "./claude-state.ts";
 import { WebSocketServer, WebSocket } from "ws";
 import { runImport } from "./import.ts";
-=======
-import { runImport } from "./import.ts";
->>>>>>> origin/main
 
 // ─── Module-level server state ────────────────────────────────────────────────
 
