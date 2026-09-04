@@ -1,5 +1,7 @@
 # `.ok/` — OpenKan Planning Workspace
 
+![Planning banner](./web/brand/banner-docs.svg)
+
 > **Status:** the new default. The legacy `.openkan/` directory has been
 > renamed to `.ok/` on `feat/ok-planning-system`. OpenKan reads and writes
 > `.ok/` directly; the planning CLI (`ok`) and the OpenKan UI share the
