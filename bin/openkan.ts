@@ -315,8 +315,30 @@ async function cmdStatus(ctx: BoardContext): Promise<void> {
 // ─── Subcommand: open ─────────────────────────────────────────────────────────
 
 async function cmdOpen(ctx: BoardContext): Promise<void> {
+  // Mirror cmdStatus: refuse to open the browser when no server is up so the
+  // user gets a clear error instead of staring at a blank tab.
+  const pidFile = join(ctx.directory, ".ok", "server.pid");
+  if (!existsSync(pidFile)) {
+    console.error("No server.pid found — is the server running? Start it with `openkan start`.");
+    process.exit(1);
+  }
+  const raw = readFileSync(pidFile, "utf-8").trim();
+  const [pidStr, portStr] = raw.split(":");
+  const pid = parseInt(pidStr, 10);
+  if (isNaN(pid)) {
+    console.error("Invalid PID in server.pid");
+    process.exit(1);
+  }
+  let alive = false;
+  try { process.kill(pid, 0); alive = true; } catch { alive = false; }
+  if (!alive) {
+    console.error("Server is not running (stale PID). Start it with `openkan start`.");
+    process.exit(1);
+  }
+
   const cfg = loadConfig();
-  const url = `http://${cfg.host}:${cfg.port}/`;
+  const port = portStr ? parseInt(portStr, 10) : cfg.port;
+  const url = `http://${cfg.host}:${port}/`;
   openUrl(url);
 }
 
