@@ -25,15 +25,21 @@
 
 import {
   appendFileSync,
+  closeSync,
+  copyFileSync,
   existsSync,
+  openSync,
   readdirSync,
   readFileSync,
+  readSync,
   renameSync,
+  statSync,
   unlinkSync,
 } from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";
 import { join, resolve } from "node:path";
 import { basename } from "node:path";
+import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { ensureDir, writeFileAtomic } from "./io.ts";
 import { readAgents, readModelRouter } from "./claude-state.ts";
@@ -104,6 +110,13 @@ interface TurnState {
   stopReason: string | null;
 }
 
+/** Where a `ChatSessionSummary` originated. `openkan` is the native backend;
+ *  `claude-code` was discovered in `~/.claude/projects/<encoded>/` (the file
+ *  is still on disk and can be continued); `history-fallback` was found in
+ *  `~/.claude/history.jsonl` only — the underlying JSONL is gone, so the
+ *  session cannot be continued. */
+export type ChatSessionSource = "openkan" | "claude-code" | "history-fallback";
+
 /** Lightweight metadata about a session, returned by listSessions. */
 export interface ChatSessionSummary {
   id: string;
@@ -115,6 +128,9 @@ export interface ChatSessionSummary {
   lastActivity: string;    // ISO timestamp of latest turn
   turnCount: number;
   archived: boolean;
+  /** Provenance of this summary. `openkan` for native sessions; see
+   *  `ChatSessionSource` for the other two external cases. */
+  readonly source: ChatSessionSource;
 }
 
 /** Selector values submitted with a chat message. */
@@ -142,6 +158,15 @@ export interface SendTurnOptions extends ChatSelectors {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   claudeBin?: string;
+  /**
+   * When true, pass `--resume <sessionId>` to Claude so the subprocess
+   * inherits the conversation state Claude already has for this id. Set by
+   * the chat route when the caller is continuing an externally-discovered
+   * session (one whose transcript lives in `~/.claude/projects/...`). For
+   * brand-new internal sessions the flag stays false so Claude starts a
+   * clean session.
+   */
+  resume?: boolean;
   /** Callback invoked for each parsed event and the non-duplicated effect it had. */
   onStreamEvent?: (event: StreamEvent, applied: StreamApplyResult) => void;
   signal?: AbortSignal;
@@ -386,11 +411,15 @@ export function summariseSession(
     lastActivity: last?.ts ?? turns[0]?.ts ?? nowIso(),
     turnCount: turns.length,
     archived,
+    source: "openkan",
   };
 }
 
 /** List every session (active first, then archived) in last-activity order. */
-export function listSessions(projectRoot: string): ChatSessionSummary[] {
+export function listSessions(
+  projectRoot: string,
+  options?: { includeExternal?: boolean },
+): ChatSessionSummary[] {
   const summaries: ChatSessionSummary[] = [];
   if (!existsSync(sessionsDir(projectRoot))) return summaries;
   const activeEntries = readdirSync(sessionsDir(projectRoot))
@@ -412,11 +441,346 @@ export function listSessions(projectRoot: string): ChatSessionSummary[] {
       summaries.push(summariseSession(id, turns, true));
     }
   }
+  // External Claude Code sessions are appended (and merged by `source`) when
+  // the caller opts in via `options.includeExternal`. The HTTP route also
+  // accepts `?include=external` and applies the same cap before responding.
+  if (options?.includeExternal) {
+    summaries.push(...discoverExternalSessions(projectRoot));
+  }
   // Sort by lastActivity desc. Active before archived ties are not guaranteed
   // (the caller can filter); we sort by timestamp only and rely on the UI to
   // group them.
   summaries.sort((a, b) => (a.lastActivity < b.lastActivity ? 1 : -1));
   return summaries;
+}
+
+// ─── External Claude Code session discovery ──────────────────────────────────
+//
+// Claude Code writes every CLI session transcript to
+// `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl` where `<encoded-cwd>`
+// is the absolute cwd with `/` replaced by `-`. A global metadata file at
+// `~/.claude/history.jsonl` records `{display, pastedContents, timestamp,
+// project, sessionId}` for every past chat, even after the JSONL transcript
+// itself is cleaned up. The two sources are merged: the JSONL wins when both
+// exist (rich metadata), and `history.jsonl` provides `history-fallback`
+// summaries for sessions whose transcripts are gone.
+
+/** Maximum bytes from the start of a JSONL file used to derive the title. */
+const DISCOVERY_HEAD_BYTES = 4096;
+/** Maximum bytes from the end of a JSONL file used to derive lastActivity. */
+const DISCOVERY_TAIL_BYTES = 2048;
+/** Hard cap on discovered sessions returned by one call (binds the API). */
+const DISCOVERY_CAP = 500;
+
+/** Path encoding used by Claude Code: replace every `/` with `-`. */
+export function encodeClaudeProjectDir(projectRoot: string): string {
+  const abs = resolve(projectRoot);
+  return abs.replace(/\//g, "-");
+}
+
+/** `~/.claude/projects/<encoded>/` for the given project root, or empty if HOME is unset. */
+export function claudeProjectsDir(projectRoot: string): string | null {
+  try {
+    const home = homedir();
+    if (!home) return null;
+    return join(home, ".claude", "projects", encodeClaudeProjectDir(projectRoot));
+  } catch {
+    return null;
+  }
+}
+
+/** Global Claude history file (`~/.claude/history.jsonl`). */
+export function claudeHistoryPath(): string | null {
+  try {
+    const home = homedir();
+    if (!home) return null;
+    return join(home, ".claude", "history.jsonl");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read up to `headBytes` from the start and `tailBytes` from the end of a
+ * file. For files smaller than `headBytes + tailBytes`, the entire file is
+ * returned. Used to avoid reading multi-MB transcripts just to summarise.
+ */
+function readHeadTail(filePath: string, headBytes: number, tailBytes: number): string {
+  let total: number;
+  try {
+    total = statSync(filePath).size;
+  } catch {
+    return "";
+  }
+  if (total <= headBytes + tailBytes) {
+    try {
+      return readFileSync(filePath, "utf-8");
+    } catch {
+      return "";
+    }
+  }
+  let fd: number | undefined;
+  try {
+    fd = openSync(filePath, "r");
+    const head = Buffer.alloc(headBytes);
+    readSync(fd, head, 0, headBytes, 0);
+    const tail = Buffer.alloc(tailBytes);
+    readSync(fd, tail, 0, tailBytes, total - tailBytes);
+    return head.toString("utf-8") + "\n" + tail.toString("utf-8");
+  } catch {
+    return "";
+  } finally {
+    if (fd !== undefined) {
+      try { closeSync(fd); } catch { /* ignore */ }
+    }
+  }
+}
+
+/**
+ * Leniently parse one line of a Claude Code session JSONL file. Claude's
+ * native shape is `{type, message, timestamp, ...}` where `type` is
+ * `user` / `assistant` / ... Returns null for unrecognised lines.
+ */
+function parseExternalLine(raw: string): { role: "user" | "assistant" | "other"; content: string; ts: string; model?: string } | null {
+  try {
+    const obj = JSON.parse(raw) as Record<string, unknown>;
+    if (!obj || typeof obj !== "object") return null;
+    const type = typeof obj.type === "string" ? obj.type : "";
+    const message = (obj.message && typeof obj.message === "object") ? obj.message as Record<string, unknown> : null;
+    const ts = typeof obj.timestamp === "string" && obj.timestamp
+      ? obj.timestamp
+      : (typeof obj.ts === "string" ? obj.ts : "");
+    let role: "user" | "assistant" | "other" = "other";
+    let content = "";
+    let model: string | undefined;
+    if (type === "user") role = "user";
+    else if (type === "assistant") role = "assistant";
+    else if (message) {
+      const mRole = typeof message.role === "string" ? message.role : "";
+      if (mRole === "user") role = "user";
+      else if (mRole === "assistant") role = "assistant";
+    }
+    if (message) {
+      const c = message.content;
+      if (typeof c === "string") content = c;
+      else if (Array.isArray(c)) {
+        const parts: string[] = [];
+        for (const part of c) {
+          if (part && typeof part === "object") {
+            const p = part as Record<string, unknown>;
+            if (typeof p.text === "string") parts.push(p.text);
+            else if (typeof p.content === "string") parts.push(p.content);
+          }
+        }
+        content = parts.join("");
+      }
+    }
+    if (typeof obj.model === "string") model = obj.model;
+    else if (message && typeof message.model === "string") model = message.model;
+    return { role, content, ts, model };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Derive an external-session summary from a Claude Code JSONL file without
+ * loading the full transcript. Returns null when the head bytes contain no
+ * recognisable user/assistant line (a still-being-written session).
+ */
+function summariseExternalFile(filePath: string, sessionId: string): ChatSessionSummary | null {
+  const head = readHeadTail(filePath, DISCOVERY_HEAD_BYTES, DISCOVERY_TAIL_BYTES);
+  if (!head) return null;
+  const lines = head.split("\n");
+  let firstUser: { content: string; ts: string } | null = null;
+  let firstAssistant: { content: string; ts: string; model?: string } | null = null;
+  let lastTs = "";
+  let userTurnCount = 0;
+  let assistantTurnCount = 0;
+  let firstTs = "";
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const parsed = parseExternalLine(trimmed);
+    if (!parsed) continue;
+    if (!firstTs && parsed.ts) firstTs = parsed.ts;
+    if (parsed.ts) lastTs = parsed.ts;
+    if (parsed.role === "user") {
+      userTurnCount++;
+      if (!firstUser) firstUser = { content: parsed.content, ts: parsed.ts || firstTs };
+    } else if (parsed.role === "assistant") {
+      assistantTurnCount++;
+      if (!firstAssistant) firstAssistant = { content: parsed.content, ts: parsed.ts || firstTs, model: parsed.model };
+    }
+  }
+  if (!firstUser && !firstAssistant) return null;
+  const titleRaw = firstUser?.content?.trim() ?? firstAssistant?.content?.trim() ?? "(empty session)";
+  const title = titleRaw.length > 80 ? titleRaw.slice(0, 79) + "…" : titleRaw;
+  const ts = firstTs || nowIso();
+  const lastActivityTs = lastTs || ts;
+  const turnCount = userTurnCount + assistantTurnCount;
+  // Selector fields are best-effort — only `model` is reliably emitted by
+  // Claude Code in the assistant line. `effort` and `permissionMode` are
+  // CLI flags the JSONL doesn't normally carry.
+  return {
+    id: sessionId,
+    title,
+    model: firstAssistant?.model ?? null,
+    effort: null,
+    permissionMode: null,
+    createdAt: ts,
+    lastActivity: lastActivityTs,
+    turnCount,
+    archived: false,
+    source: "claude-code",
+  };
+}
+
+/**
+ * Read `~/.claude/history.jsonl` and return summaries for entries whose
+ * `project` (encoded path) matches the given `projectRoot`. Used as a
+ * fallback when the JSONL transcript for a session has been cleaned up.
+ */
+function readHistoryFallbacks(projectRoot: string): ChatSessionSummary[] {
+  const historyPath = claudeHistoryPath();
+  if (!historyPath || !existsSync(historyPath)) return [];
+  let raw: string;
+  try {
+    raw = readFileSync(historyPath, "utf-8");
+  } catch {
+    return [];
+  }
+  const encoded = encodeClaudeProjectDir(projectRoot);
+  const out: ChatSessionSummary[] = [];
+  const seen = new Set<string>();
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const obj = JSON.parse(trimmed) as Record<string, unknown>;
+      if (!obj || typeof obj !== "object") continue;
+      const project = typeof obj.project === "string" ? obj.project : "";
+      if (project !== encoded) continue;
+      const sid = typeof obj.sessionId === "string" ? obj.sessionId : "";
+      if (!sid || seen.has(sid)) continue;
+      seen.add(sid);
+      const display = typeof obj.display === "string" ? obj.display : "(empty session)";
+      const title = display.trim().length > 80 ? display.trim().slice(0, 79) + "…" : display.trim();
+      const tsRaw = typeof obj.timestamp === "string" && obj.timestamp
+        ? obj.timestamp
+        : (typeof obj.lastAccessed === "string" ? obj.lastAccessed : "");
+      const ts = tsRaw || nowIso();
+      out.push({
+        id: sid,
+        title: title || "(empty session)",
+        model: null,
+        effort: null,
+        permissionMode: null,
+        createdAt: ts,
+        lastActivity: ts,
+        turnCount: 0,
+        archived: false,
+        source: "history-fallback",
+      });
+    } catch {
+      /* skip unparseable line */
+    }
+  }
+  return out;
+}
+
+/**
+ * Discover Claude Code sessions that belong to `projectRoot`. Each candidate
+ * JSONL under the encoded Claude project dir is summarised with bounded
+ * head+tail reads; sessions whose JSONL is missing are filled in from
+ * `~/.claude/history.jsonl`. The returned list may include both
+ * `source: "claude-code"` (real transcripts, continueable) and
+ * `source: "history-fallback"` (metadata only). The result is sorted by
+ * lastActivity desc and capped at `DISCOVERY_CAP`; missing/corrupt files are
+ * silently skipped.
+ */
+export function discoverExternalSessions(projectRoot: string): ChatSessionSummary[] {
+  const out: ChatSessionSummary[] = [];
+  const dir = claudeProjectsDir(projectRoot);
+  if (dir && existsSync(dir)) {
+    let files: string[];
+    try {
+      files = readdirSync(dir).filter((f) => f.endsWith(SESSION_EXT) && !f.startsWith("."));
+    } catch {
+      files = [];
+    }
+    for (const file of files) {
+      const id = file.slice(0, -SESSION_EXT.length);
+      if (!id) continue;
+      const filePath = join(dir, file);
+      try {
+        const summary = summariseExternalFile(filePath, id);
+        if (summary) out.push(summary);
+      } catch {
+        /* skip unreadable file */
+      }
+    }
+  }
+  // Backfill from history for sessions whose JSONL is gone.
+  const have = new Set(out.map((s) => s.id));
+  for (const fb of readHistoryFallbacks(projectRoot)) {
+    if (!have.has(fb.id)) out.push(fb);
+  }
+  out.sort((a, b) => (a.lastActivity < b.lastActivity ? 1 : -1));
+  return out;
+}
+
+/**
+ * Cap a list of summaries at `DISCOVERY_CAP`. Returns the trimmed list plus
+ * a boolean indicating whether more were available. Used by the unified list
+ * endpoint so the API response stays bounded.
+ */
+export function capSessions<T extends { lastActivity: string }>(list: T[]): { items: T[]; truncated: boolean } {
+  if (list.length <= DISCOVERY_CAP) return { items: list, truncated: false };
+  return { items: list.slice(0, DISCOVERY_CAP), truncated: true };
+}
+
+/**
+ * Absolute path to a Claude Code session JSONL for the given project/session,
+ * or null when HOME is unset. Used by the chat route to detect and adopt
+ * external sessions before sending a turn.
+ */
+export function externalSessionPath(projectRoot: string, sessionId: string): string | null {
+  const dir = claudeProjectsDir(projectRoot);
+  if (!dir) return null;
+  return join(dir, `${sessionId}${SESSION_EXT}`);
+}
+
+/** True when a Claude Code transcript exists for this session in the project's encoded dir. */
+export function isExternalSessionAvailable(projectRoot: string, sessionId: string): boolean {
+  const path = externalSessionPath(projectRoot, sessionId);
+  if (!path) return false;
+  try {
+    return existsSync(path);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Copy an externally-discovered Claude Code transcript into the OpenKan
+ * sessions dir so subsequent reads see the full history. Idempotent: when
+ * the destination already exists (the user has continued the session once
+ * before), this is a no-op. Returns true when the destination now exists
+ * (either freshly copied or pre-existing), false when the source is gone.
+ */
+export function adoptExternalSession(projectRoot: string, sessionId: string): boolean {
+  const src = externalSessionPath(projectRoot, sessionId);
+  if (!src || !existsSync(src)) return false;
+  ensureSessionsDirs(projectRoot);
+  const dest = sessionPath(projectRoot, sessionId);
+  if (existsSync(dest)) return true; // already adopted
+  try {
+    copyFileSync(src, dest);
+  } catch {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -977,7 +1341,15 @@ export async function sendTurn(
   appendTurn(projectRoot, sessionId, userTurn);
 
   const bin = resolveClaudeBin(opts.claudeBin);
-  const args = [
+  const args: string[] = [];
+  // External-session continuation: when the caller has adopted a Claude
+  // Code transcript from `~/.claude/projects/...`, tell Claude to pick up
+  // the conversation state with --resume. For brand-new internal sessions
+  // the flag stays off so we don't confuse Claude with a phantom session.
+  if (opts.resume && sessionId) {
+    args.push("--resume", sessionId);
+  }
+  args.push(
     "-p",
     opts.message,
     "--model", opts.model,
@@ -988,7 +1360,7 @@ export async function sendTurn(
     "--include-partial-messages",
     "--include-hook-events",
     "--forward-subagent-text",
-  ];
+  );
 
   const selectedAgent = opts.agent ?? OPENKAN_AGENT_ID;
   if (selectedAgent !== "default") {
@@ -1220,11 +1592,25 @@ export async function handleChatRequest(
   req: Request,
   path: string,
 ): Promise<Response> {
-  void new URL(req.url); // reserved for future query filters; suppress lint
+  const url = new URL(req.url);
   try {
-    // GET /api/chat/sessions — list every session summary
+    // GET /api/chat/sessions — list every session summary. The default
+    // response is OpenKan-only (backwards-compatible). When the caller
+    // adds `?include=external`, the response is a unified list of native
+    // + discovered Claude Code sessions, each tagged with a `source`
+    // field, plus a top-level `truncated` flag when the cap fired.
     if (req.method === "GET" && path === "/api/chat/sessions") {
-      return jsonResponse({ sessions: listSessions(projectRoot) });
+      const internal = listSessions(projectRoot);
+      const wantExternal = url.searchParams.get("include") === "external";
+      if (!wantExternal) {
+        return jsonResponse({ sessions: internal, truncated: false });
+      }
+      const external = discoverExternalSessions(projectRoot);
+      const combined = [...internal, ...external].sort(
+        (a, b) => (a.lastActivity < b.lastActivity ? 1 : -1),
+      );
+      const capped = capSessions(combined);
+      return jsonResponse({ sessions: capped.items, truncated: capped.truncated });
     }
 
     // GET /api/chat/sessions/:sid — full transcript
@@ -1346,6 +1732,19 @@ export async function handleChatRequest(
       const sessionId = typeof body.sessionId === "string" && body.sessionId
         ? body.sessionId
         : generateSessionId();
+      // External-session continuation: when the caller supplied a sessionId
+      // that lives in the Claude Code project dir, adopt the JSONL into
+      // OpenKan's storage (idempotent) and resume that session in Claude
+      // so the new turn inherits prior context. Without this, sending a
+      // turn on a session the user picked from the discovery list would
+      // start a fresh conversation.
+      let resume = false;
+      if (typeof body.sessionId === "string" && body.sessionId && isExternalSessionAvailable(projectRoot, sessionId)) {
+        if (!adoptExternalSession(projectRoot, sessionId)) {
+          return errResponse(`External session ${sessionId} could not be adopted (source file unreadable).`, 500);
+        }
+        resume = true;
+      }
       try {
         // Start immediately and return an acknowledgement. The browser can now
         // subscribe to this session before Claude's first streamed event,
@@ -1353,6 +1752,7 @@ export async function handleChatRequest(
         broadcastChatSession(projectRoot, sessionId, "chat.status", { sessionId, phase: "thinking", label: "Thinking" });
         const running = sendTurn(projectRoot, {
           sessionId,
+          resume,
           message: agentMessage,
           displayMessage: message,
           taskMentions,

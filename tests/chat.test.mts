@@ -654,7 +654,7 @@ test("chat transcripts are isolated even when projects reuse a session id", asyn
 
   assert.deepEqual(firstSessions.sessions, [{
     id: sessionId, title: "first project", model: null, effort: null, permissionMode: null,
-    createdAt: "2026-09-04T10:00:00.000Z", lastActivity: "2026-09-04T10:00:00.000Z", turnCount: 1, archived: false,
+    createdAt: "2026-09-04T10:00:00.000Z", lastActivity: "2026-09-04T10:00:00.000Z", turnCount: 1, archived: false, source: "openkan",
   }]);
   assert.equal(secondSessions.sessions[0]?.title, "second project");
   assert.equal(readSession(first, sessionId)[0]?.content, "first project");
