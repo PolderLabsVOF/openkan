@@ -1028,89 +1028,24 @@
   }
 
   // ─── Render task header metadata strip ──────────────────────────────────────
-  // Clean, scannable dl/dt/dd grid with tag chips and assignees below.
+  // Tightened layout (tsk-KNQwScRg): primary context — assignees + tags +
+  // stale warning — stays front and center. Secondary context (column,
+  // category, priority, effort, runner, source, timestamps) is collapsed
+  // behind a native <details> "Show details" toggle so the panel reads
+  // cleanly at a glance. Priority duplicates the header status pill, so it
+  // is moved to the details section too. Nothing is deleted — every field
+  // remains reachable.
   function renderMetadata(root, task, lastActivity) {
     root.innerHTML = "";
     const meta = el("div", "task-header-meta");
 
-    // ── Definition list — label/value pairs in a clean grid ──────────────
-    const dl = el("dl", "meta-dl");
-
-    // Column → human label
-    if (task.column) {
-      const lbl = el("dt", null, { text: "Column" });
-      const val = el("dd", null, { text: COLUMN_LABEL[task.column] || task.column });
-      dl.append(lbl, val);
-    }
-
-    // Category
-    const cat = String(task.category || "").toLowerCase();
-    if (cat) {
-      const lbl = el("dt", null, { text: "Category" });
-      const catCls = CATEGORIES.has(cat) ? `tag-chip category c-${cat}` : "tag-chip category";
-      const val = el("dd", null, {});
-      val.append(el("span", catCls, { text: cat, title: `category: ${cat}` }));
-      dl.append(lbl, val);
-    }
-
-    // Priority
-    const p = PRIORITY_META[task.priority];
-    if (p && task.priority) {
-      const lbl = el("dt", null, { text: "Priority" });
-      const val = el("dd", null, {});
-      val.append(el("span", `tag-chip priority priority-${task.priority}`, {
-        text: `${p.code} ${p.label}`,
-        title: `priority: ${p.label}`,
-      }));
-      dl.append(lbl, val);
-    }
-
-    // Effort
-    if (task.effort) {
-      const effortText = String(task.effort).toUpperCase();
-      const lbl = el("dt", null, { text: "Effort" });
-      const val = el("dd", null, {});
-      val.append(el("span", "tag-chip effort", { text: effortText, title: `effort: ${effortText}` }));
-      dl.append(lbl, val);
-    }
-
-    // Agent / model
-    if (task.agent || task.model) {
-      const lbl = el("dt", null, { text: "Runner" });
-      const val = el("dd", "runner-value", {});
-      if (task.agent) val.append(el("span", "runner-agent", { text: task.agent }));
-      if (task.agent && task.model) val.append(el("span", "runner-sep", { text: " · " }));
-      if (task.model) val.append(el("span", "runner-model", { text: task.model }));
-      dl.append(lbl, val);
-    }
-
-    // Source path (where it was imported from). Render as a clickable link
-    // so the user can jump straight to the file. The path is repo-relative
-    // (e.g. "docs/roadmap.mdx"), so we prefix with "/" for an absolute path
-    // that the dev server will serve.
-    if (task.source?.path) {
-      const lbl = el("dt", null, { text: "Source" });
-      const val = el("dd", "source-dd", {});
-      const path = String(task.source.path);
-      const line = task.source.line ?? "?";
-      const link = el("a", "source-link", {
-        href: `/${path}`,
-        target: "_blank",
-        rel: "noopener",
-        title: `Open ${path}:${line} in a new tab`,
-      });
-      link.append(
-        el("span", "source-link-icon", { text: "📄", "aria-hidden": "true" }),
-        el("span", "source-link-text", { text: `${path}:${line}` }),
-      );
-      val.append(link);
-      dl.append(lbl, val);
-    }
+    // ── Always-visible: primary context ─────────────────────────────────
+    const dl = el("dl", "meta-dl meta-dl-primary");
 
     // Stale — surfaces when the server detected the source file has changed
     // since import. The user can re-derive tags via the organize endpoint
     // (kind: "rederive"). Falls back to /api/tasks/:id/organize if Thor's
-    // per-task endpoint ships first.
+    // per-task endpoint ships first. Always shown (rare, but critical).
     if (task.stale === true) {
       const lbl = el("dt", null, { text: "Stale" });
       const val = el("dd", "meta-stale", {});
@@ -1157,7 +1092,7 @@
       dl.append(lbl, val);
     }
 
-    // Assignees
+    // Assignees — visible by default (action-driving context).
     const assigneesList = getAssignees(task);
     if (assigneesList.length > 0) {
       const lbl = el("dt", null, { text: "Assignees" });
@@ -1173,26 +1108,21 @@
       dl.append(lbl, val);
     }
 
-    // Created / updated timestamps
-    if (task.createdAt) {
-      const lbl = el("dt", null, { text: "Created" });
-      const val = el("dd", null, { text: shortDate(task.createdAt), title: task.createdAt });
-      dl.append(lbl, val);
-    }
-    if (task.updatedAt && task.updatedAt !== task.createdAt) {
-      const lbl = el("dt", null, { text: "Updated" });
-      const val = el("dd", null, { text: relativeTime(task.updatedAt), title: task.updatedAt });
-      dl.append(lbl, val);
-    }
+    // Last activity — recent-activity is the user-named "front and center"
+    // content, so we promote it out of the collapsed details. Compact
+    // relative time so it doesn't add visual weight.
     if (lastActivity) {
-      const lbl = el("dt", null, { text: "Last activity" });
-      const val = el("dd", null, { text: relativeTime(lastActivity), title: lastActivity });
+      const lbl = el("dt", null, { text: "Activity" });
+      const val = el("dd", "meta-last-activity", {
+        text: relativeTime(lastActivity),
+        title: lastActivity,
+      });
       dl.append(lbl, val);
     }
 
     if (dl.children.length > 0) meta.append(dl);
 
-    // ── Tag chips row — below the dl ────────────────────────────────────
+    // ── Tag chips row — also always-visible ─────────────────────────────
     const tags = Array.isArray(task.tags) ? task.tags : [];
     if (tags.length > 0) {
       const tagRow = el("div", "meta-tag-row");
@@ -1200,6 +1130,106 @@
       tagRow.append(tagLabel);
       for (const t of tags) tagRow.append(makeTagChip(t));
       meta.append(tagRow);
+    }
+
+    // ── Collapsed secondary metadata behind a native <details> toggle ────
+    const detailDl = el("dl", "meta-dl meta-dl-details");
+    let hasDetailItem = false;
+    const pushDetail = (lblText, valueEl) => {
+      detailDl.append(
+        el("dt", null, { text: lblText }),
+        valueEl,
+      );
+      hasDetailItem = true;
+    };
+
+    // Column → human label
+    if (task.column) {
+      pushDetail("Column", el("dd", null, { text: COLUMN_LABEL[task.column] || task.column }));
+    }
+
+    // Category
+    const cat = String(task.category || "").toLowerCase();
+    if (cat) {
+      const catCls = CATEGORIES.has(cat) ? `tag-chip category c-${cat}` : "tag-chip category";
+      const val = el("dd", null, {});
+      val.append(el("span", catCls, { text: cat, title: `category: ${cat}` }));
+      pushDetail("Category", val);
+    }
+
+    // Priority — moved here from the always-visible dl; it duplicates the
+    // pill in the header status column, but stays reachable.
+    const p = PRIORITY_META[task.priority];
+    if (p && task.priority) {
+      const val = el("dd", null, {});
+      val.append(el("span", `tag-chip priority priority-${task.priority}`, {
+        text: `${p.code} ${p.label}`,
+        title: `priority: ${p.label}`,
+      }));
+      pushDetail("Priority", val);
+    }
+
+    // Effort
+    if (task.effort) {
+      const effortText = String(task.effort).toUpperCase();
+      const val = el("dd", null, {});
+      val.append(el("span", "tag-chip effort", { text: effortText, title: `effort: ${effortText}` }));
+      pushDetail("Effort", val);
+    }
+
+    // Agent / model
+    if (task.agent || task.model) {
+      const val = el("dd", "runner-value", {});
+      if (task.agent) val.append(el("span", "runner-agent", { text: task.agent }));
+      if (task.agent && task.model) val.append(el("span", "runner-sep", { text: " · " }));
+      if (task.model) val.append(el("span", "runner-model", { text: task.model }));
+      pushDetail("Runner", val);
+    }
+
+    // Source path (where it was imported from). Render as a clickable link
+    // so the user can jump straight to the file. The path is repo-relative
+    // (e.g. "docs/roadmap.mdx"), so we prefix with "/" for an absolute path
+    // that the dev server will serve.
+    if (task.source?.path) {
+      const val = el("dd", "source-dd", {});
+      const path = String(task.source.path);
+      const line = task.source.line ?? "?";
+      const link = el("a", "source-link", {
+        href: `/${path}`,
+        target: "_blank",
+        rel: "noopener",
+        title: `Open ${path}:${line} in a new tab`,
+      });
+      link.append(
+        el("span", "source-link-icon", { text: "📄", "aria-hidden": "true" }),
+        el("span", "source-link-text", { text: `${path}:${line}` }),
+      );
+      val.append(link);
+      pushDetail("Source", val);
+    }
+
+    // Created / updated timestamps (long-form).
+    if (task.createdAt) {
+      pushDetail(
+        "Created",
+        el("dd", null, { text: shortDate(task.createdAt), title: task.createdAt }),
+      );
+    }
+    if (task.updatedAt && task.updatedAt !== task.createdAt) {
+      pushDetail(
+        "Updated",
+        el("dd", null, { text: relativeTime(task.updatedAt), title: task.updatedAt }),
+      );
+    }
+
+    if (hasDetailItem) {
+      const details = el("details", "task-meta-details");
+      const summary = el("summary", "task-meta-details-toggle", {
+        text: "Show details",
+        "aria-label": "Show secondary metadata (column, category, priority, effort, runner, source, timestamps)",
+      });
+      details.append(summary, detailDl);
+      meta.append(details);
     }
 
     root.append(meta);

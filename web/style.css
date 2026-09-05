@@ -2445,6 +2445,87 @@ button.tag-chip {
   color: var(--text-mute);
 }
 
+/* ---------- Task meta "Show details" toggle (tsk-KNQwScRg) ----------
+   Collapses the secondary metadata (column, category, priority, effort,
+   runner, source, created/updated timestamps) behind a native <details>
+   toggle. Priority is hidden behind the toggle too because the header
+   status column already shows a priority pill next to the title — keeping
+   it in two places was the loudest piece of chrome in the panel. The
+   primary dl (stale warning + assignees + last activity) and the tag row
+   stay above the fold. */
+
+/* Smaller visual gap between the always-visible primary dl and the tags
+   row — they read as one block. */
+.task-header-meta .meta-dl-primary {
+  margin-bottom: 0;
+}
+
+/* Native <details>/<summary> defaults — strip the disclosure marker and
+   render a small caret that rotates when open. Keyboard accessible (Enter
+   and Space toggle) and announced correctly by screen readers via the
+   implicit role. */
+.task-header-meta .task-meta-details {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-2);
+}
+.task-header-meta .task-meta-details-toggle {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-mute);
+  padding: 2px 0;
+  user-select: none;
+}
+.task-header-meta .task-meta-details-toggle::-webkit-details-marker {
+  display: none;
+}
+.task-header-meta .task-meta-details-toggle::marker {
+  display: none;
+  content: "";
+}
+.task-header-meta .task-meta-details-toggle::before {
+  content: "▸";
+  display: inline-block;
+  font-size: 10px;
+  color: var(--text-mute);
+  transition: transform var(--transition);
+}
+.task-header-meta .task-meta-details[open] > .task-meta-details-toggle::before {
+  transform: rotate(90deg);
+}
+.task-header-meta .task-meta-details-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.task-header-meta .task-meta-details-toggle:hover {
+  color: var(--text);
+}
+
+/* The collapsed dl sits inside the <details> body with a small indent so
+   it visually nests under the toggle label. Uses the existing meta-dl
+   grid from above. */
+.task-header-meta .meta-dl-details {
+  margin-top: var(--space-2);
+  padding-left: var(--space-4);
+  border-left: 2px solid var(--border);
+}
+
+/* Compact relative-time styling for the "Activity" cell in the primary
+   dl — it stays front-and-center but at lower visual weight than the
+   assignees row. */
+.task-header-meta .meta-dl dd.meta-last-activity {
+  font-size: 12px;
+  color: var(--text-mute);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Keep the old class names as no-op aliases so any inline usage elsewhere
    still renders. New code should use the dl/dt/dd structure above. */
 .task-header-meta .meta-label {
