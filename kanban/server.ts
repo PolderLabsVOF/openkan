@@ -1,19 +1,20 @@
 // OpenKan — HTTP API server.
 
-import { readFileSync, existsSync, statSync, writeFileSync, readdirSync, unlinkSync, mkdirSync, rmSync } from "fs";
+import { readFileSync, existsSync, statSync, writeFileSync, readdirSync, unlinkSync, mkdirSync, rmSync, cpSync } from "fs";
 import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import { join, extname, resolve } from "path";
 import { constants as fs_constants, openSync, closeSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import type { BoardContext } from "./board.ts";
+import type { BoardContext, Board } from "./board.ts";
 import {
   type Task,
   type ColumnId,
   type TaskStatus,
   type TaskState,
   type TaskArtifacts,
+  DEFAULT_COLUMNS,
   withWrite,
   getBoard,
   renormalizeOrder,
@@ -49,6 +50,8 @@ import {
   removeProject,
   getActiveProjectRoot,
   autoDetectProjects,
+  findProject,
+  resolveKanbanDir,
   type ProjectEntry,
   type AutoDetectScanResult,
 } from "./projects.ts";
@@ -1525,6 +1528,255 @@ export async function apiOrganize(_ctx: BoardContext, req: Request): Promise<Res
   return jsonResponse({ applied, skipped, summary });
 }
 
+// ─── Cross-project move ───────────────────────────────────────────────────────
+
+interface MoveResultMoved { sourceId: string; id: string; title: string; column: string; }
+interface MoveResultSkipped { id: string; reason: string; }
+
+/**
+ * Move one or more selected tasks from the active project into another
+ * registered project. Each task is cloned into the target `.ok/`
+ * directory with a freshly-minted id, its source-side copy is removed,
+ * and parent/child links are re-established inside the target board.
+ *
+ * Body: { taskIds: string[] }
+ * Returns: 200 with { moved, skipped }.
+ */
+export async function apiMoveTasksToProject(targetProjectId: string, req: Request): Promise<Response> {
+  interface MoveBody { taskIds: unknown; }
+  let body: MoveBody;
+  try { body = await req.json(); } catch { return errorResponse("invalid JSON body"); }
+  if (!Array.isArray(body.taskIds) || body.taskIds.length === 0) {
+    return errorResponse("taskIds must be a non-empty array", 400);
+  }
+  const taskIds = body.taskIds.map((id) => String(id)).filter((s) => s.length > 0);
+  if (taskIds.length === 0) return errorResponse("taskIds must be a non-empty array", 400);
+
+  // Resolve target via the project registry.
+  const target = findProject(targetProjectId);
+  if (!target) return errorResponse(`Unknown project: ${targetProjectId}`, 404);
+
+  // Compute the target's `.ok/` directory. Falls back to `<root>/.ok`
+  // when the registry entry does not yet have a `.ok/` on disk.
+  const targetKanbanDir = (() => {
+    const resolved = resolveKanbanDir(target.root);
+    return resolved ?? join(target.root, ".ok");
+  })();
+  ensureDir(targetKanbanDir);
+  ensureDir(join(targetKanbanDir, "tasks"));
+
+  // Load the active board from memory; this is the source of truth for
+  // what is being moved.
+  const sourceBoard = await getBoard();
+  const sourceKanbanDir = KANBAN_DIR;
+
+  // Load the target board directly from disk so we don't disturb the
+  // server's in-memory `_board` cache. The server stays bound to the
+  // active project; the target is just an external file we mutate.
+  const targetBoardFile = join(targetKanbanDir, "board.json");
+  const targetBoard: TargetBoardShape = (() => {
+    const fallback: TargetBoardShape = { version: 1, columns: [...DEFAULT_COLUMNS], tasks: [], sessions: {} };
+    if (!existsSync(targetBoardFile)) return fallback;
+    try {
+      const parsed = JSON.parse(readFileSync(targetBoardFile, "utf-8")) as Partial<TargetBoardShape>;
+      return {
+        version: 1,
+        columns: Array.isArray(parsed.columns) && parsed.columns.length ? parsed.columns : [...DEFAULT_COLUMNS],
+        tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
+        sessions: parsed.sessions ?? {},
+      };
+    } catch {
+      return fallback;
+    }
+  })();
+
+  const movingIdSet = new Set(taskIds);
+
+  // Resolve the target column for a (sourceColumnId, sourceColumnTitle)
+  // pair. Tries id, then case-insensitive title, then the first column.
+  const resolveTargetColumn = (sourceColumnId: string, sourceColumnTitle?: string): string => {
+    if (sourceColumnId) {
+      const byId = targetBoard.columns.find((c) => c.id === sourceColumnId);
+      if (byId) return byId.id;
+    }
+    if (sourceColumnTitle) {
+      const lower = sourceColumnTitle.toLowerCase();
+      const byTitle = targetBoard.columns.find((c) => c.title && c.title.toLowerCase() === lower);
+      if (byTitle) return byTitle.id;
+    }
+    return targetBoard.columns[0]!.id;
+  };
+
+  const moved: MoveResultMoved[] = [];
+  const skipped: MoveResultSkipped[] = [];
+
+  // Stage 1: clone each requested task into the in-memory target snapshot.
+  // The cloning is done against the source id so we can copy artifacts
+  // from disk before mutating the source.
+  interface StageRecord {
+    sourceId: string;
+    newId: string;
+    newColumn: string;
+    newTask: Task;
+  }
+  const stages: StageRecord[] = [];
+  for (const taskId of taskIds) {
+    const src = sourceBoard.tasks.find((t) => t.id === taskId);
+    if (!src) {
+      skipped.push({ id: taskId, reason: "not found" });
+      continue;
+    }
+    const freshId = newId("tsk");
+    const srcCol = sourceBoard.columns?.find((c) => c.id === src.column);
+    const newColumn = resolveTargetColumn(src.column, srcCol?.title);
+    const orderCount = targetBoard.tasks.filter((t) => t.column === newColumn && !t.archived).length;
+
+    const now = nowIso();
+    const arts = taskArtifacts(freshId);
+    const cloned: Task = {
+      ...src,
+      id: freshId,
+      column: newColumn as ColumnId,
+      sessionId: null,
+      sessionArtifact: null,
+      subtaskIds: [],
+      parentId: null, // resolved in stage 2
+      artifacts: arts,
+      order: orderCount,
+      createdAt: now,
+      updatedAt: now,
+    };
+    stages.push({ sourceId: src.id, newId: freshId, newColumn, newTask: cloned });
+    targetBoard.tasks.push(cloned);
+  }
+
+  // Stage 2: re-establish parent/child links using the source->new id
+  // mapping. Only relink when both ends are being moved; orphaned
+  // references fall back to null/undefined so the rest of the system
+  // treats the task as a top-level entry.
+  for (const stage of stages) {
+    const src = sourceBoard.tasks.find((t) => t.id === stage.sourceId);
+    if (!src) continue;
+
+    // parent: if the source parent is moving, use the new parent id.
+    if (src.parentId && movingIdSet.has(src.parentId)) {
+      const parentStage = stages.find((s) => s.sourceId === src.parentId);
+      if (parentStage) {
+        stage.newTask.parentId = parentStage.newId;
+        const parentCopy = targetBoard.tasks.find((t) => t.id === parentStage.newId);
+        if (parentCopy && !parentCopy.subtaskIds.includes(stage.newId)) {
+          parentCopy.subtaskIds = [...parentCopy.subtaskIds, stage.newId];
+        }
+      }
+    }
+
+    // subtasks: map each source subtask id to its new id (when moving)
+    // and register it on the cloned parent.
+    const childNewIds: string[] = [];
+    for (const childSrcId of src.subtaskIds ?? []) {
+      const childStage = stages.find((s) => s.sourceId === childSrcId);
+      if (childStage) childNewIds.push(childStage.newId);
+    }
+    if (childNewIds.length) {
+      const parentCopy = targetBoard.tasks.find((t) => t.id === stage.newId);
+      if (parentCopy) {
+        const seen = new Set(parentCopy.subtaskIds);
+        for (const c of childNewIds) seen.add(c);
+        parentCopy.subtaskIds = [...seen];
+      }
+    }
+  }
+
+  // Stage 3: copy per-task artifact directories from source to target.
+  // If a copy fails we roll the cloned record back out of the target
+  // board and surface it as a skipped entry so the response reflects
+  // the true outcome.
+  const successful: StageRecord[] = [];
+  for (const stage of stages) {
+    const srcDir = join(sourceKanbanDir, "tasks", stage.sourceId);
+    const destDir = join(targetKanbanDir, "tasks", stage.newId);
+    ensureDir(destDir);
+    try {
+      cpSync(srcDir, destDir, { recursive: true });
+      successful.push(stage);
+    } catch (e) {
+      skipped.push({ id: stage.sourceId, reason: `copy failed: ${(e as Error)?.message ?? e}` });
+      targetBoard.tasks = targetBoard.tasks.filter((t) => t.id !== stage.newId);
+      // Also drop this id from any parent's subtaskIds on the cloned
+      // target so the on-disk board stays self-consistent.
+      for (const t of targetBoard.tasks) {
+        if (t.subtaskIds.includes(stage.newId)) t.subtaskIds = t.subtaskIds.filter((x) => x !== stage.newId);
+      }
+    }
+  }
+
+  // Build the public `moved` summary from the records that survived
+  // every stage.
+  for (const stage of successful) {
+    moved.push({
+      sourceId: stage.sourceId,
+      id: stage.newId,
+      title: stage.newTask.title,
+      column: stage.newTask.column,
+    });
+  }
+
+  // Persist the target board atomically and re-render its MDX mirror.
+  ensureDir(targetKanbanDir);
+  writeFileAtomic(targetBoardFile, JSON.stringify(targetBoard, null, 2));
+  writeBoardMdx(targetBoard as unknown as Board, targetKanbanDir);
+
+  // Finally, remove the source tasks from the active board and clean
+  // their per-task directories. We do this last so a target-write
+  // failure above doesn't leave the source board in a half-moved state.
+  const successfulSourceIds = new Set(successful.map((s) => s.sourceId));
+  if (successfulSourceIds.size > 0) {
+    selfWriteUntil = Date.now() + 250;
+    await withWrite(async (board) => {
+      for (const sid of successfulSourceIds) {
+        const idx = board.tasks.findIndex((t) => t.id === sid);
+        if (idx === -1) continue;
+        const removed = board.tasks[idx];
+        if (removed.parentId) {
+          const parent = board.tasks.find((t) => t.id === removed.parentId);
+          if (parent) parent.subtaskIds = parent.subtaskIds.filter((x) => x !== sid);
+        }
+        board.tasks.splice(idx, 1);
+      }
+      board.tasks = renormalizeOrder(board.tasks);
+    });
+
+    for (const sid of successfulSourceIds) {
+      removeDir(join(sourceKanbanDir, "tasks", sid));
+    }
+
+    const refreshed = await getBoard();
+    await writeBoardMdx(refreshed, sourceKanbanDir);
+    broadcast("board.updated", {});
+
+    recordEvent(sourceKanbanDir, "task.deleted", {
+      author: "user",
+      summary: `moved ${successfulSourceIds.size} task(s) to project '${targetProjectId}'`,
+      payload: { taskIds: [...successfulSourceIds], targetProjectId },
+    });
+  }
+
+  return jsonResponse({ moved, skipped });
+}
+
+/**
+ * Minimal board shape used for ad-hoc target-side mutations. The
+ * cross-project move endpoint writes to a different project's `.ok/`
+ * directly without swapping the server's in-memory board cache, so we
+ * only need the fields we touch.
+ */
+interface TargetBoardShape {
+  version: 1;
+  columns: Array<{ id: string; title: string }>;
+  tasks: Task[];
+  sessions: Record<string, unknown>;
+}
+
 // ─── Import ──────────────────────────────────────────────────────────────────
 
 export async function apiImport(_ctx: BoardContext, req: Request): Promise<Response> {
@@ -2864,6 +3116,12 @@ async function handleRequest(req: Request): Promise<Response> {
 
   // POST /api/tasks/bulk
   if (path === "/api/tasks/bulk" && req.method === "POST") return apiBulk({ directory: KANBAN_DIR, client: null as any, log: async () => {} }, req);
+
+  // POST /api/projects/:projectId/tasks/move
+  const moveTasksMatch = path.match(/^\/api\/projects\/([^/]+)\/tasks\/move$/);
+  if (moveTasksMatch && req.method === "POST") {
+    return apiMoveTasksToProject(decodeURIComponent(moveTasksMatch[1]), req);
+  }
 
   // GET /api/template
   if (path === "/api/template" && req.method === "GET") return apiGetTemplate();
