@@ -241,8 +241,16 @@ test("provides a preview-first MDX docs workspace backed by the native renderer"
   const css = read("web/style.css");
   assert.match(docs, /\/api\/docs\/render/);
   assert.match(docs, /docs-mdx-preview/);
-  assert.match(docs, /sourceOpen:false/);
-  assert.match(docs, /source-open/);
+  // The docs overhaul renamed `sourceOpen` → `editing` so the read/edit mode
+  // distinction reads more clearly. The state shape still initialises it on
+  // mount and the workspace class still toggles between reading/editing.
+  assert.match(docs, /editing:false/);
+  // The template renders `docs-workspace docs-workspace--${... ? "editing" : "reading"}`.
+  // Both `editing` and `reading` must appear in the source so the toggle has
+  // both arms defined.
+  assert.match(docs, /"editing"/);
+  assert.match(docs, /"reading"/);
+  assert.match(docs, /docs-workspace--/);
   assert.match(docs, /data-doc-format/);
   assert.match(server, /async function apiRenderDoc/);
   assert.match(server, /path === "\/api\/docs\/render"/);
@@ -272,7 +280,10 @@ test("renders Docs navigation as a persistent expandable folder tree", () => {
 
 test("uses scoped custom scrollbars for Docs panes", () => {
   const css = read("web/style.css");
-  assert.match(css, /\.docs-file-list,\n\.docs-stage,\n\.docs-source-panel textarea/);
+  // After the docs overhaul the in-place editor lives in `.docs-editor-shell`
+  // (textarea) instead of the old `.docs-source-panel`. The selector list
+  // here mirrors the docs CSS scrollbar rule and must stay in sync.
+  assert.match(css, /\.docs-file-list,\n\.docs-stage,\n\.docs-editor-shell textarea/);
   assert.match(css, /\.docs-stage::\-webkit-scrollbar/);
   assert.match(css, /\.docs-file-list::\-webkit-scrollbar-thumb/);
 });
