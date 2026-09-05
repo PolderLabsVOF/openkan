@@ -662,6 +662,12 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   const { cmd, positionals, flags } = parseArgs(argv);
 
   if (["task", "plan", "prd", "goal", "progress", "doctor", "index", "migrate-from-openkan"].includes(cmd)) {
+    // Help and bare invocations: print the command's help line instead of
+    // forwarding to runPlanning (which would throw a generic "Usage: …").
+    if (argv.length === 1 || argv[1] === "-h" || argv[1] === "--help") {
+      printHelp(cmd);
+      return;
+    }
     process.exitCode = await runPlanning(argv);
     return;
   }
