@@ -1326,6 +1326,10 @@
           label: `Move ${selectedIds.size} selected task${selectedIds.size === 1 ? "" : "s"} here`,
           action: () => bulkMoveSelectedTo(colId),
         });
+        items.push({
+          label: `Move ${selectedIds.size} selected task${selectedIds.size === 1 ? "" : "s"} to other project…`,
+          action: () => openCrossProjectMoveDialog([...selectedIds]),
+        });
         items.push({ kind: "divider" });
       }
       // Archive-all in this column
@@ -1607,6 +1611,141 @@
         renderBoard();
       })
       .catch((e) => alert(`Move failed: ${e.message}`));
+  }
+
+  /**
+   * Cross-project bulk move. We build a one-off modal rather than reuse
+   * the project-add modal so the copy stays close to the menu it serves.
+   * The picker is intentionally minimal: list of target projects plus a
+   * disabled-until-confirmed move button.
+   */
+  let crossProjectMoveResolver = null;
+  function crossProjectMoveModal() {
+    let backdrop = document.getElementById("cross-project-move-backdrop");
+    if (backdrop && backdrop._wired) return backdrop;
+    if (!backdrop) {
+      backdrop = document.createElement("div");
+      backdrop.id = "cross-project-move-backdrop";
+      backdrop.className = "modal-backdrop";
+      backdrop.hidden = true;
+      backdrop.innerHTML = `
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cross-project-move-title">
+          <header class="modal-header">
+            <h2 id="cross-project-move-title">Move to project</h2>
+            <button class="btn-icon" type="button" data-close-cross-move aria-label="Close">&times;</button>
+          </header>
+          <div class="modal-body">
+            <p id="cross-project-move-subtitle" class="muted">Pick a target project.</p>
+            <label class="field">
+              <span>Target project</span>
+              <select id="cross-project-move-select"></select>
+            </label>
+            <p id="cross-project-move-status" class="error" hidden></p>
+          </div>
+          <footer class="modal-footer">
+            <button type="button" class="btn" data-close-cross-move>Cancel</button>
+            <button type="button" class="btn btn-primary" id="cross-project-move-confirm">Move</button>
+          </footer>
+        </div>`;
+      document.body.appendChild(backdrop);
+    }
+    backdrop._wired = true;
+    return backdrop;
+  }
+  function openCrossProjectMoveDialog(taskIds) {
+    const ids = Array.isArray(taskIds) ? taskIds.map((s) => String(s)).filter(Boolean) : [];
+    if (ids.length === 0) return;
+    const backdrop = crossProjectMoveModal();
+    const subtitle = backdrop.querySelector("#cross-project-move-subtitle");
+    const status = backdrop.querySelector("#cross-project-move-status");
+    const select = backdrop.querySelector("#cross-project-move-select");
+    const confirmBtn = backdrop.querySelector("#cross-project-move-confirm");
+    if (subtitle) subtitle.textContent = `${ids.length} task${ids.length === 1 ? "" : "s"} will move to the matching column in the chosen project.`;
+    if (status) { status.hidden = true; status.textContent = ""; }
+
+    if (select) {
+      select.innerHTML = "";
+      const others = (projectSwitcher.list || []).filter((p) => !(projectSwitcher.active && p.id === projectSwitcher.active.id));
+      if (others.length === 0) {
+        // No other registered projects. Still render the empty option so
+        // the Move button stays predictable.
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "(no other projects registered)";
+        select.appendChild(opt);
+        confirmBtn.disabled = true;
+      } else {
+        for (const p of others) {
+          const opt = document.createElement("option");
+          opt.value = p.id;
+          opt.textContent = p.name || p.id;
+          select.appendChild(opt);
+        }
+        confirmBtn.disabled = false;
+        // One-click shortcut: when exactly one other project is available,
+        // pre-select it so the user can confirm immediately.
+        if (others.length === 1) select.value = others[0].id;
+      }
+    }
+
+    const close = () => {
+      backdrop.hidden = true;
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = "Move";
+      if (status) { status.hidden = true; status.textContent = ""; }
+      crossProjectMoveResolver = null;
+    };
+    const onCancel = () => close();
+    let busy = false;
+    const onConfirm = async () => {
+      if (busy) return;
+      const targetId = select && select.value;
+      if (!targetId) {
+        if (status) { status.hidden = false; status.textContent = "Pick a target project first."; }
+        return;
+      }
+      busy = true;
+      confirmBtn.disabled = true;
+      const previousLabel = confirmBtn.textContent;
+      confirmBtn.textContent = "Moving…";
+      if (status) { status.hidden = true; status.textContent = ""; }
+      try {
+        const result = await api("POST", `/api/projects/${encodeURIComponent(targetId)}/tasks/move`, { taskIds: ids });
+        const movedCount = Array.isArray(result?.moved) ? result.moved.length : 0;
+        const skippedCount = Array.isArray(result?.skipped) ? result.skipped.length : 0;
+        const targetName = (projectSwitcher.list || []).find((p) => p.id === targetId)?.name || targetId;
+        selectedIds.clear();
+        if (movedCount > 0) {
+          renderBoard();
+          toast(`Moved ${movedCount} task${movedCount === 1 ? "" : "s"} to ${targetName}`);
+        } else if (skippedCount > 0) {
+          toast(`Could not move any of the selected tasks (${skippedCount} skipped)`, true);
+        }
+        close();
+      } catch (e) {
+        busy = false;
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = previousLabel;
+        if (status) { status.hidden = false; status.textContent = `Move failed: ${e?.message || e}`; }
+      }
+    };
+
+    backdrop.addEventListener("click", (e) => {
+      if (e.target === backdrop) onCancel();
+    }, { once: true });
+    backdrop.querySelectorAll("[data-close-cross-move]").forEach((b) =>
+      b.addEventListener("click", onCancel, { once: true }),
+    );
+    document.addEventListener("keydown", function onEsc(e) {
+      if (e.key === "Escape" && !backdrop.hidden) {
+        onCancel();
+        document.removeEventListener("keydown", onEsc);
+      }
+    });
+    confirmBtn.addEventListener("click", onConfirm);
+
+    backdrop.hidden = false;
+    crossProjectMoveResolver = onConfirm;
   }
   function archiveAllInColumn(columnId) {
     const ids = [...tasks.values()].filter((t) => t.column === columnId && t.archived).map((t) => t.id);

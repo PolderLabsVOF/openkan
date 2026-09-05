@@ -198,6 +198,48 @@ export function projectKanbanDir(p: ProjectEntry): string | null {
   return join(p.root, ".ok");
 }
 
+/**
+ * Resolve a project kanban directory by either project id (`openkan`,
+ * `sample-kanban-project`) or absolute project root path. Returns null
+ * when no matching registered project exists. This is the supported
+ * cross-project lookup used by cross-project task move.
+ */
+export function resolveProjectKanbanDir(ref: string): string | null {
+  // Try by id first.
+  const byId = listProjects().find((p) => p.id === ref);
+  if (byId) return projectKanbanDir(byId);
+  // Fall back to root path match.
+  const normalised = resolve(ref);
+  const byRoot = listProjects().find((p) => resolve(p.root) === normalised);
+  if (byRoot) return projectKanbanDir(byRoot);
+  return null;
+}
+
+/** Find a registered project entry by id (case-insensitive). Returns null when missing. */
+export function findProject(id: string): ProjectEntry | null {
+  if (!id) return null;
+  return listProjects().find((p) => p.id === id) ?? null;
+}
+
+/**
+ * Resolve a target `.ok/` directory from a project id, project root path,
+ * or an already-absolute `.ok/` directory. When the supplied ref points
+ * directly at a directory that already contains a `.ok/` subdir, that
+ * subdir wins — callers usually want the kanban root, not the project
+ * root. Falls back to the conventional `<root>/.ok` layout.
+ */
+export function resolveKanbanDir(ref: string): string {
+  if (!ref) return ref;
+  const nested = join(ref, ".ok");
+  if (existsSync(nested) && statSync(nested).isDirectory()) return nested;
+  // Registry lookup by id or root path.
+  const resolved = resolveProjectKanbanDir(ref);
+  if (resolved) return resolved;
+  // Bare `.ok/` path.
+  if (existsSync(ref) && statSync(ref).isDirectory()) return ref;
+  return nested;
+}
+
 // ─── Auto-detect interfaces ────────────────────────────────────────────────────
 
 export interface ScanOptions {
