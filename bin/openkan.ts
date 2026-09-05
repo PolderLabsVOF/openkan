@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // OpenKan — standalone CLI entrypoint.
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, appendFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, appendFileSync, statSync } from "node:fs";
 import { join, dirname, resolve, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, execSync } from "node:child_process";
@@ -146,10 +146,21 @@ async function cmdInit(): Promise<void> {
 // ─── Subcommand: import ───────────────────────────────────────────────────────
 
 async function cmdImport(ctx: BoardContext, argv: string[]): Promise<void> {
-  const args = parseArgs(argv);
+  // parseArgs treats argv[0] as the command name, so prefix before parsing
+  // or our flags end up stored as `cmd` instead of `flags`.
+  const args = parseArgs(["import", ...argv]);
   const pathFlag = args.flags["path"] as string | undefined;
   const includeFlag = args.flags["include"] as string | undefined;
   const excludeFlag = args.flags["exclude"] as string | undefined;
+
+  // Surface typos in flag names — npm/wget behaviour. The import surface is
+  // small and stable: only --path, --include, --exclude.
+  const KNOWN_IMPORT_FLAGS = new Set(["path", "include", "exclude"]);
+  for (const flag of Object.keys(args.flags)) {
+    if (!KNOWN_IMPORT_FLAGS.has(flag)) {
+      console.warn(`openkan import: warning: unknown flag --${flag} (known: ${[...KNOWN_IMPORT_FLAGS].map(f => `--${f}`).join(", ")})`);
+    }
+  }
 
   // ctx.directory must be set
   if (!ctx.directory) {
@@ -315,8 +326,30 @@ async function cmdStatus(ctx: BoardContext): Promise<void> {
 // ─── Subcommand: open ─────────────────────────────────────────────────────────
 
 async function cmdOpen(ctx: BoardContext): Promise<void> {
+  // Mirror cmdStatus: refuse to open the browser when no server is up so the
+  // user gets a clear error instead of staring at a blank tab.
+  const pidFile = join(ctx.directory, ".ok", "server.pid");
+  if (!existsSync(pidFile)) {
+    console.error("No server.pid found — is the server running? Start it with `openkan start`.");
+    process.exit(1);
+  }
+  const raw = readFileSync(pidFile, "utf-8").trim();
+  const [pidStr, portStr] = raw.split(":");
+  const pid = parseInt(pidStr, 10);
+  if (isNaN(pid)) {
+    console.error("Invalid PID in server.pid");
+    process.exit(1);
+  }
+  let alive = false;
+  try { process.kill(pid, 0); alive = true; } catch { alive = false; }
+  if (!alive) {
+    console.error("Server is not running (stale PID). Start it with `openkan start`.");
+    process.exit(1);
+  }
+
   const cfg = loadConfig();
-  const url = `http://${cfg.host}:${cfg.port}/`;
+  const port = portStr ? parseInt(portStr, 10) : cfg.port;
+  const url = `http://${cfg.host}:${port}/`;
   openUrl(url);
 }
 
@@ -508,8 +541,18 @@ async function cmdAgentContext(argv: string[]): Promise<void> {
 async function cmdAgent(argv: string[]): Promise<void> {
   const sub = argv[0] ?? "capabilities";
   if (sub === "install") {
-    const args = parseArgs(argv.slice(1));
-    if (args.flags.provider && args.flags.provider !== "claude") throw new Error("Only the Claude provider is currently supported");
+    // parseArgs treats argv[0] as the command name, so prefix before parsing.
+    const args = parseArgs(["install", ...argv.slice(1)]);
+    // Validate the provider through whichever channel it arrived: the
+    // explicit --provider flag or a positional argument. Without this,
+    // `agent install bogus` silently falls through to the default provider.
+    const SUPPORTED_PROVIDERS = new Set(["claude"]);
+    const providerFromFlag = typeof args.flags.provider === "string" ? args.flags.provider : undefined;
+    const providerFromPositional = args.positionals.find((p) => !p.startsWith("-"));
+    const provider = providerFromFlag ?? providerFromPositional;
+    if (provider !== undefined && !SUPPORTED_PROVIDERS.has(provider)) {
+      throw new Error(`Only the Claude provider is currently supported (got: ${provider})`);
+    }
     const result = installAgent({ force: args.flags.force === true, ...(typeof args.flags.target === "string" ? { configDir: resolve(args.flags.target) } : {}) });
     console.log(JSON.stringify(result, null, 2));
     return;
@@ -547,14 +590,27 @@ async function cmdAgent(argv: string[]): Promise<void> {
 // ─── Subcommand: reset ───────────────────────────────────────────────────────
 
 async function cmdReset(ctx: BoardContext, argv: string[]): Promise<void> {
-  const args = parseArgs(argv);
+  // parseArgs treats argv[0] as the command name, so prefix before parsing
+  // or our flags end up stored as `cmd` instead of `flags`.
+  const args = parseArgs(["reset", ...argv]);
   const hard = args.flags["hard"] === true || args.flags["hard"] === "true";
+  const yes = args.flags["yes"] === true || args.flags["yes"] === "true";
 
-  process.stderr.write("Type 'yes' to confirm: ");
-  const answer = await new Promise<string>(resolve => {
-    process.stdin.once("data", d => resolve(d.toString().trim()));
-  });
-  if (answer !== "yes") { console.log("Aborted."); return; }
+  // In a non-interactive shell (CI, piped input), the stdin "data" listener
+  // never resolves — Node exits with the Promise pending and the user gets
+  // no feedback. Require an explicit flag in non-TTY mode.
+  if (!process.stdin.isTTY && !hard && !yes) {
+    console.error("openkan reset: non-interactive shell requires --yes (or --hard). Refusing to prompt.");
+    process.exit(1);
+  }
+
+  if (process.stdin.isTTY && !hard && !yes) {
+    process.stderr.write("Type 'yes' to confirm: ");
+    const answer = await new Promise<string>(resolve => {
+      process.stdin.once("data", d => resolve(d.toString().trim()));
+    });
+    if (answer !== "yes") { console.log("Aborted."); return; }
+  }
 
   // Stop if running
   try { await cmdStop(ctx); } catch { /* ignore */ }
@@ -627,6 +683,12 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   const { cmd, positionals, flags } = parseArgs(argv);
 
   if (["task", "plan", "prd", "goal", "progress", "doctor", "index", "migrate-from-openkan"].includes(cmd)) {
+    // Help and bare invocations: print the command's help line instead of
+    // forwarding to runPlanning (which would throw a generic "Usage: …").
+    if (argv.length === 1 || argv[1] === "-h" || argv[1] === "--help") {
+      printHelp(cmd);
+      return;
+    }
     process.exitCode = await runPlanning(argv);
     return;
   }
@@ -636,6 +698,18 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     if (!["all", "claude", "codex"].includes(agent)) throw new Error("--agent must be codex, claude, or all");
     const targets = typeof flags.target === 'string' ? [resolve(flags.target)] : (agent === 'all' ? ['claude', 'codex'] : [agent]).map(name => join(homedir(), `.${name}`, 'skills', 'openkan'));
     for (const target of targets) {
+      if (!existsSync(target)) {
+        // cpSync would create parents and silently succeed; reject early so
+        // the user does not end up with a target at a typo'd path.
+        throw new Error(`--target ${target} does not exist`);
+      }
+      const st = statSync(target);
+      if (!st.isDirectory()) throw new Error(`--target ${target} is not a directory`);
+      // Probe writability with a temp file rather than access() — file-mode
+      // checks are unreliable on WSL/macOS sandbox paths.
+      const probe = join(target, `.openkan-write-probe-${process.pid}`);
+      try { writeFileSync(probe, ""); } catch { throw new Error(`--target ${target} is not writable`); }
+      try { rmSync(probe, { force: true }); } catch { /* best effort */ }
       if (existsSync(target) && !flags.force) throw new Error(`${target} already exists; use --force to update`);
     }
     for (const target of targets) { cpSync(join(OPENKAN_ROOT, 'skills', 'openkan'), target, { recursive: true }); console.log(`Installed openkan skill: ${target}`); }
