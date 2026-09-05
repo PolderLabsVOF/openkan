@@ -232,6 +232,107 @@ the source repo to be public; this was the last unblocker.
   transport.
 - Merge the npm-rename worktree once trusted publisher is configured.
 
+## Polish + bug-fix wave 0.4.4 — shipped (2026-09-05)
+
+User asked to clear the backlog and pause the chat-daemon task. Five
+worktree-isolated agents dispatched in parallel, all merged into
+`main`, and pushed via trusted publishing. Registry now at
+`@polderlabs/openkan@0.4.4` (auto-bumped from `0.4.3` by
+`scripts/release.mjs` since stable releases patch-bump from the
+registry's `latest` tag).
+
+### Branches merged (in order)
+
+| OpenKan task | Title | Branch | Commit | Files |
+| --- | --- | --- | --- | --- |
+| `tsk-4ath_-aw` | status indicators show idle | `wt/mike-status-indicators` | `2422583` | +178/-7 |
+| `tsk-7yrCk46m` | remove cringey text | `worktree-agent-a668f12ac4805ab44` | `eabc6f2` | +61/-4 |
+| `tsk-WAAfaaL7` | custom scrollbar | `worktree-agent-af2f50aaaa2dc35a9` | `2188ceb` | +118/0 |
+| `tsk-KNQwScRg` | opened-task panel tighten | `worktree-agent-a93a5f653a25751de` | `1ec70a7` | +343/-90 |
+| `tsk-GgEUW8tD` | full docs overhaul | `worktree-agent-a28116f9d71fb7031` | `a939149` | +880/-51 |
+
+All 5 merges resolved cleanly via git's ort strategy with auto-merge
+on the small CSS / `index.html` / `task-view.js` overlaps. No manual
+conflict resolution required.
+
+### Status indicator fix (`tsk-4ath_-aw`)
+
+Every task on the board rendered an "idle" pill because the server
+defaults `state` to `"idle"` for any task that has not been claimed
+by an agent, and the web client read the literal `state` field
+instead of deriving it from the column. Introduced
+`web/status.js` exposing `window.OpenKanStatus.displayState()` that
+mirrors `kanban/board.ts:mapColumnToStatus()`. Delegated from
+`web/app.js`, `web/task-view.js`, and `web/contributors-view.js`.
+Added CSS rules for `.status-dot.{pending,in_progress,review}` and
+`.state-pill.state-{pending,in_progress,review}` using existing
+colour tokens (`--idle`, `--running`, `--warn`).
+
+### Cringey text removal (`tsk-7yrCk46m`)
+
+Removed "Move work forward.", "Plan, coordinate, and review every
+task…", "See the work before it becomes noise.", and footer "·
+local-first workspace" from the board and home views.
+
+### Custom scrollbar (`tsk-WAAfaaL7`)
+
+Added `::-webkit-scrollbar-*` + Firefox `scrollbar-width: thin` /
+`scrollbar-color` rules for `.column-body` (and friends) using brand
+tokens. CSS-only; no JS.
+
+### Opened-task panel tighten (`tsk-KNQwScRg`)
+
+Reduced panel chrome ~30%: secondary metadata moved behind a
+`<details>` toggle, action bar trimmed, status/priority pills
+right-anchored to the title row. All functionality preserved.
+
+### Docs page overhaul (`tsk-GgEUW8tD`)
+
+- New inline MDX parser at `kanban/mdx-render.ts` (sanitiser
+  allow-list, 91 lines) so docs render `**bold**`, headings, lists,
+  code, and `{...}` expressions correctly instead of leaking literal
+  syntax.
+- `web/docs-view.js` (+65 lines): preview-first workspace with an
+  in-place edit toggle that writes back through the existing API.
+- `web/style.css` (+215 lines): docs layout, banner removed, max-
+  width content column, responsive `@media`.
+- Banner removed from the docs page header.
+- 47 new sanity-check entries (8 → 55 tasks scanned).
+
+### Paused
+
+- `tsk-KBumlNUh` (chat daemon + openkan serve) — moved back to
+  `backlog` with a `[PAUSED 2026-09-05 per user request]` marker.
+  Research + plan remain merged at `d7f86a6`
+  (`docs/chat-daemon-plan.md`).
+
+### Verification (integrated main)
+
+- `npm run check`: 55 tasks scanned, 0 errors, 0 warnings
+- `npm test`: 707 tests / 121 suites, 707 pass, 0 fail
+  (was 653/118; +54 new tests across the 5 branches)
+- `npm run build`: clean
+- Pushed; workflow run `33984078464` → success
+- `@polderlabs/openkan@0.4.4` published via trusted publishing with
+  `--provenance` + OIDC
+- `dist-tags.latest = 0.4.4`
+- GitHub release `v0.4.4` at
+  <https://github.com/PolderLabsVOF/openkan/releases/tag/v0.4.4>
+- `@polderlabs/openkan@0.4.3` deprecated with pointer to `0.4.4`
+- Local install refreshed: `npm install -g @polderlabs/openkan@0.4.4`
+  → `openkan -v` shows `@polderlabs/openkan 0.4.4`,
+  `openkan update --check` exits 0
+
+### Version note
+
+`release.mjs` writes the bumped version into `package.json` for the
+duration of the publish and restores the original in a `finally`
+block. So `package.json` on `main` represents the "next dev cycle"
+version, not the last published one. Local `package.json` is at
+`0.4.3`; registry `latest` is `0.4.4`. Both are correct under the
+release driver.
+
+
 ## `openkan update` + `openkan -v` — shipped (2026-09-05)
 
 User asked for a self-update path on the CLI. Shipped at commit
