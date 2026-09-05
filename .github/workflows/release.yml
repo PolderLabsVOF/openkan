@@ -109,5 +109,5 @@ jobs:
           RELEASE_CHANNEL: ${{ needs.source.outputs.channel }}
           RELEASE_SHA: ${{ needs.source.outputs.sha }}
           RELEASE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
-          RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version }}
+          RELEASE_VERSION: ${{ inputs.version || '' }}
         run: node scripts/release.mjs
