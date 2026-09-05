@@ -416,7 +416,10 @@ export function summariseSession(
 }
 
 /** List every session (active first, then archived) in last-activity order. */
-export function listSessions(projectRoot: string): ChatSessionSummary[] {
+export function listSessions(
+  projectRoot: string,
+  options?: { includeExternal?: boolean },
+): ChatSessionSummary[] {
   const summaries: ChatSessionSummary[] = [];
   if (!existsSync(sessionsDir(projectRoot))) return summaries;
   const activeEntries = readdirSync(sessionsDir(projectRoot))
@@ -437,6 +440,12 @@ export function listSessions(projectRoot: string): ChatSessionSummary[] {
       const turns = readTurnsFile(archivedSessionPath(projectRoot, id));
       summaries.push(summariseSession(id, turns, true));
     }
+  }
+  // External Claude Code sessions are appended (and merged by `source`) when
+  // the caller opts in via `options.includeExternal`. The HTTP route also
+  // accepts `?include=external` and applies the same cap before responding.
+  if (options?.includeExternal) {
+    summaries.push(...discoverExternalSessions(projectRoot));
   }
   // Sort by lastActivity desc. Active before archived ties are not guaranteed
   // (the caller can filter); we sort by timestamp only and rely on the UI to
@@ -1583,11 +1592,25 @@ export async function handleChatRequest(
   req: Request,
   path: string,
 ): Promise<Response> {
-  void new URL(req.url); // reserved for future query filters; suppress lint
+  const url = new URL(req.url);
   try {
-    // GET /api/chat/sessions — list every session summary
+    // GET /api/chat/sessions — list every session summary. The default
+    // response is OpenKan-only (backwards-compatible). When the caller
+    // adds `?include=external`, the response is a unified list of native
+    // + discovered Claude Code sessions, each tagged with a `source`
+    // field, plus a top-level `truncated` flag when the cap fired.
     if (req.method === "GET" && path === "/api/chat/sessions") {
-      return jsonResponse({ sessions: listSessions(projectRoot) });
+      const internal = listSessions(projectRoot);
+      const wantExternal = url.searchParams.get("include") === "external";
+      if (!wantExternal) {
+        return jsonResponse({ sessions: internal, truncated: false });
+      }
+      const external = discoverExternalSessions(projectRoot);
+      const combined = [...internal, ...external].sort(
+        (a, b) => (a.lastActivity < b.lastActivity ? 1 : -1),
+      );
+      const capped = capSessions(combined);
+      return jsonResponse({ sessions: capped.items, truncated: capped.truncated });
     }
 
     // GET /api/chat/sessions/:sid — full transcript
