@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@drb0rk/openkan"><img src="https://img.shields.io/npm/v/%40drb0rk%2Fopenkan?color=6366f1" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/@polderlabs/openkan"><img src="https://img.shields.io/npm/v/%40drb0rk%2Fopenkan?color=6366f1" alt="npm version"></a>
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%3E%3D22-339933" alt="Node.js 22 or newer"></a>
   <a href="https://github.com/PolderLabsVOF/openkan/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-64748b" alt="MIT license"></a>
 </p>
@@ -34,7 +34,7 @@ JavaScript, so installation needs neither TypeScript nor a build step. Claude Co
 is optional and only needed for Claude-powered features.
 
 ```sh
-npm install -g @drb0rk/openkan
+npm install -g @polderlabs/openkan
 
 cd /path/to/your/project
 openkan init
@@ -58,8 +58,8 @@ automatically. Keep the server process running while using the dashboard.
 Run these commands from your project directory:
 
 ```sh
-npx --package @drb0rk/openkan openkan init
-npx --package @drb0rk/openkan openkan start
+npx --package @polderlabs/openkan openkan init
+npx --package @polderlabs/openkan openkan start
 ```
 
 </details>
@@ -69,7 +69,7 @@ npx --package @drb0rk/openkan openkan start
 
 ```sh
 openkan stop
-npm install -g @drb0rk/openkan@latest
+npm install -g @polderlabs/openkan@latest
 openkan start
 ```
 
@@ -79,7 +79,7 @@ If you installed the agent skill, refresh it separately:
 openkan skill install --agent all --force
 ```
 
-The package name is **`@drb0rk/openkan`**. Its executables are **`openkan`** and
+The package name is **`@polderlabs/openkan`**. Its executables are **`openkan`** and
 **`ok`**; use the scoped name when installing or updating.
 
 </details>

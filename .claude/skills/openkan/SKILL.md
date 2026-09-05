@@ -12,7 +12,7 @@ Run from the project root or a child directory of an existing `.ok/` workspace.
 ## Install and discover
 
 ```sh
-npm install -g @drb0rk/openkan
+npm install -g @polderlabs/openkan
 openkan skill install --agent all
 openkan init
 openkan task list --json
