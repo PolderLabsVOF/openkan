@@ -2181,7 +2181,20 @@
     if (!task) return;
     const snapshot = { ...task };
     tasks.delete(task.id);
+    selectedIds.delete(task.id);
     renderBoard();
+    // Fire-and-forget DELETE so the server actually forgets the task.
+    // Without this the next board snapshot re-adds it and the UI looks
+    // like the menu action no-op'd. Mirror archiveWithUndo's error path:
+    // rollback the optimistic local remove and surface a toast.
+    api("DELETE", `/api/tasks/${task.id}`).then(
+      () => {},
+      (err) => {
+        tasks.set(snapshot.id, snapshot);
+        renderBoard();
+        toast(`Delete failed: ${err.message}`, true);
+      },
+    );
     showUndoToast(`Deleted "${task.title}".`, () => {
       // Recreate: there's no /api/tasks/recreate endpoint, so we use the
       // POST /api/tasks route with the original fields. Strip server-side
