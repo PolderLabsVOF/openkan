@@ -180,7 +180,32 @@ export async function migrateFromOpenkan(root: string): Promise<MigrateResult> {
 
 /** Thin CLI wrapper used by `bin/ok.ts migrate-from-openkan`. */
 export async function cmdMigrateFromOpenkan(argv: string[]): Promise<number> {
-  const root = argv[0] ?? process.cwd();
+  // Accept `--path <dir>` (or `--path=<dir>`) as an explicit alias for the
+  // positional `root`. Reject a bare `--path` token (no value) with a clear
+  // error so a missing value cannot silently become the source directory.
+  const positionals: string[] = [];
+  let pathFlag: string | undefined;
+  for (let i = 0; i < argv.length; i++) {
+    const tok = argv[i];
+    if (tok === "--path") {
+      const next = argv[i + 1];
+      if (next === undefined || next.startsWith("--")) {
+        throw new Error("--path requires a directory argument");
+      }
+      pathFlag = next;
+      i++;
+      continue;
+    }
+    if (tok.startsWith("--path=")) {
+      pathFlag = tok.slice("--path=".length);
+      continue;
+    }
+    if (tok.startsWith("--") && tok !== "--list") {
+      throw new Error(`unknown flag: ${tok}`);
+    }
+    positionals.push(tok);
+  }
+  const root = pathFlag ?? positionals[0] ?? process.cwd();
   const res = await migrateFromOpenkan(root);
   process.stdout.write(`migrated ${res.imported} tasks from ${res.fromOpenkan} (skipped ${res.skipped} already in .ok/)\n`);
   if (argv.includes("--list")) {

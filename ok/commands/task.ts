@@ -93,7 +93,12 @@ function titleFromArgs(positionals: string[]): string {
 async function cmdTaskAdd(args: string[]): Promise<number> {
   const { positionals, flags } = parseArgs(args);
   const title = titleFromArgs(positionals);
+  if (!title || title.trim().length === 0) {
+    throw new Error("ok task add: title must be a non-empty, non-whitespace string");
+  }
   if (title.length > 200) throw new Error("title must be <= 200 chars");
+
+  const status = parseStatus(flagString(flags, "status")) ?? "pending";
 
   const p = await paths();
   const cfg = (await readConfig(p))!;
@@ -102,7 +107,7 @@ async function cmdTaskAdd(args: string[]): Promise<number> {
     schema: "ok.task.v1",
     id: newId("tsk"),
     title,
-    status: "pending",
+    status,
     createdAt: now,
     updatedAt: now,
   };
