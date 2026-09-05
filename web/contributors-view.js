@@ -198,7 +198,7 @@
       const list = el("div", "contributor-tasks");
       for (const t of tasks) {
         const item = el("div", "contributor-task", { "data-id": t.id });
-        const dot = el("span", `task-status-dot state-${t.state ?? t.status ?? "idle"}`);
+        const dot = el("span", `task-status-dot state-${window.OpenKanStatus?.displayState(t) ?? "pending"}`);
         item.append(dot);
         item.append(el("span", "task-title-text", { text: t.title || "(untitled)" }));
         item.append(el("span", "task-column-text", { text: t.column || "" }));

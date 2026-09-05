@@ -49,7 +49,7 @@
   }
 
   function effectiveState(t) {
-    return t.state ?? t.status ?? "idle";
+    return window.OpenKanStatus?.displayState(t) ?? "pending";
   }
 
   // Build a clickable tag chip. When the user clicks one in the task view,

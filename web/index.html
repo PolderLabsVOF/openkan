@@ -445,6 +445,9 @@
     <script src="cross-tab.js" defer></script>
     <script src="images.js" defer></script>
     <script src="mdx-viewer.js" defer></script>
+    <!-- status.js exposes window.OpenKanStatus used by task-view.js, app.js,
+         and contributors-view.js. Must load before any of them. -->
+    <script src="status.js" defer></script>
     <script src="task-view.js" defer></script>
     <script src="settings.js" defer></script>
     <script src="changelog-view.js" defer></script>
