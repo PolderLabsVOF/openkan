@@ -1,13 +1,66 @@
 ---
 name: openkan
-description: Manage project tasks, goals, plans, progress and agent work through the OpenKan CLI. Use when a project contains .ok/ or the user asks to track project work with OpenKan.
+description: Use the OpenKan CLI (`openkan` or `ok`) for every project task, goal, plan, progress, board, comment, and agent operation in a project that contains .ok/. Do not curl the dashboard, do not edit .ok/ JSON or MDX directly, do not bypass the CLI. Fall back to `openkan api /api/PATH` only when the CLI genuinely lacks the operation.
 ---
 
 # OpenKan project workflow
 
-Use `openkan` commands, not handwritten HTTP requests or direct JSON edits.
-`.ok/` is the durable workspace; `.openkan/` is legacy import input only.
-Run from the project root or a child directory of an existing `.ok/` workspace.
+## Default behavior — read first
+
+This is a **default-behavior contract**, not a tip. The rules below apply
+before any command lookup, before any HTTP request, and before any file
+edit.
+
+1. **Default to `openkan` for everything that touches project state** —
+   tasks, goals, plans, progress, boards, comments, docs, agents,
+   imports. The CLI is the source of truth and writes `.ok/` atomically.
+
+2. **Never send raw `curl` or `wget` to the dashboard.** If you find
+   yourself writing `curl http://127.0.0.1:7777/...` or
+   `wget http://127.0.0.1:7777/...`, stop — that is a bug. Reach for
+   `openkan api /api/PATH` or one of the dedicated subcommands instead.
+
+3. **Never edit `.ok/board.json`, `.ok/tasks/<id>/state.json`, or any
+   `.ok/**/*.mdx` directly.** Do not write to `.ok/chat/*.jsonl` by hand.
+   Run the CLI; it owns the schema, the indexes, the watchers, and the
+   mirror hooks.
+
+4. **If a CLI subcommand appears to be missing, use
+   `openkan api /api/PATH`** with `--method`, `--data`, `--data-file`,
+   or `--json` — never `curl`. The `openkan api` escape hatch targets
+   the dashboard's selected project, not necessarily `cwd`.
+
+5. **Native Claude runtime state is observational.** Read `.claude/`,
+   `~/.claude/`, and Claude control-plane endpoints when investigating;
+   never mutate them to fake progress or override the planner.
+
+If any of the rules above conflict with a faster-looking shortcut, the
+rules win. The shortcut is almost always wrong: a `curl` POST bypasses
+the lock and mirror hooks; a hand edit to `.ok/board.json` desynchronizes
+the indexes; a write to `.claude/` lies to the user.
+
+## Decision rules
+
+Pattern-match on what you need, then run the matching CLI. These are the
+common shapes — always reach for `openkan <command> --help` first when
+the flag set is unclear.
+
+| If you need to… | Run |
+| --- | --- |
+| Read or list tasks, plans, PRDs, goals, progress | `openkan <noun> list --json` |
+| Show one entity | `openkan <noun> show <id> --json` |
+| Create | `openkan <noun> add ...` |
+| Mutate | `openkan <noun> update <id> ...` |
+| Add a board card (visual board, not planning) | `openkan board add ...` (not `task add`) |
+| Comment on a board card | `openkan board comment <id> ...` |
+| Move a board card between columns | `openkan board move <id> <column>` |
+| React to a missing subcommand | `openkan api /api/PATH --method ...` (never `curl`) |
+| Run an agent on a board card | `openkan agent start <id> --agent ... --model ...` |
+| Inspect capability, model, or schema state | `openkan agent capabilities`, `openkan agent context` |
+
+Below is the full command reference. Reach for `openkan <command> --help`
+first; everything below assumes you've already established the default
+above.
 
 ## Install and discover
 
