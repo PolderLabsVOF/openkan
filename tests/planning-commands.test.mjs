@@ -44,7 +44,11 @@ test('help and skill installation do not create a workspace', () => {
   const root = mkdtempSync(join(tmpdir(), 'openkan-help-'));
   try {
     assert.match(run(root, '--help'), /goal/);
-    run(root, 'skill', 'install', '--target', join(root, 'skill'));
+    // The CLI requires the --target dir to already exist (typo guard); create
+    // it before invoking so this test exercises the install path. Pass
+    // --force so the existence check on the freshly-created target passes.
+    mkdirSync(join(root, 'skill'), { recursive: true });
+    run(root, 'skill', 'install', '--target', join(root, 'skill'), '--force');
     assert.ok(existsSync(join(root, 'skill', 'SKILL.md')));
     assert.equal(existsSync(join(root, '.ok')), false);
   } finally { rmSync(root, { recursive: true, force: true }); }

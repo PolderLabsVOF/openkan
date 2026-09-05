@@ -44,6 +44,10 @@ function runInstaller(root: string) {
       AGENTS_HOME: join(home, ".agents"),
       OPENKAN_BIN_DIR: binDir,
       OPENKAN_SKIP_DEPENDENCIES: "1",
+      // Force agent install on. CI workflows set OPENKAN_SKIP_AGENT_INSTALL=1
+      // globally to suppress postinstall side effects; this test asserts the
+      // full install path including the agent copy.
+      OPENKAN_SKIP_AGENT_INSTALL: "0",
     },
   });
 }
