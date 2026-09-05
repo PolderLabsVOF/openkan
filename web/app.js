@@ -719,7 +719,7 @@
   }
 
   function effectiveState(t) {
-    return t.state ?? t.status ?? "idle";
+    return window.OpenKanStatus?.displayState(t) ?? "pending";
   }
 
   function makeTagChip(tag, opts = {}) {
