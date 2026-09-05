@@ -243,6 +243,42 @@
     }
   }
 
+  // Debounced incremental markdown render while a chat stream is in flight.
+  // The server-side /api/chat/render-markdown endpoint returns sanitized
+  // HTML, so it can be assigned to innerHTML directly. Each flush captures
+  // the text snapshot at debounce-fire time (not at schedule time) so we
+  // render the latest accumulated content. A monotonically-increasing
+  // token guards against late responses overwriting a newer render or the
+  // final render produced by finalizeLiveBubble().
+  const STREAM_RENDER_DEBOUNCE_MS = 120;
+  let streamRenderTimer = null;
+  let streamRenderToken = 0;
+  function scheduleStreamRender(bubble) {
+    if (!bubble) return;
+    if (streamRenderTimer) clearTimeout(streamRenderTimer);
+    const token = ++streamRenderToken;
+    streamRenderTimer = setTimeout(() => {
+      streamRenderTimer = null;
+      // Snapshot at flush time — never re-read after the await.
+      const snapshot = bubble.textContent || "";
+      if (!snapshot) return;
+      const renderToken = token;
+      renderMarkdown(snapshot).then((html) => {
+        // Drop the result if a newer flush already ran, the stream
+        // finalised while we were awaiting, or the bubble is no longer the
+        // live bubble in the DOM.
+        if (renderToken !== streamRenderToken) return;
+        if (!bubble.isConnected) return;
+        if (bubble.dataset.streaming !== "1") return;
+        bubble.innerHTML = html || esc(snapshot);
+      }).catch(() => { /* ignored — next flush or final render will recover */ });
+    }, STREAM_RENDER_DEBOUNCE_MS);
+  }
+  function cancelStreamRender() {
+    if (streamRenderTimer) { clearTimeout(streamRenderTimer); streamRenderTimer = null; }
+    streamRenderToken++;
+  }
+
   /* ----------------------------------------------------------------------
    * DOM construction
    *
@@ -768,14 +804,18 @@
           bubble = row.querySelector("[data-bubble-body]");
         }
         if (!bubble) return;
-        // Stream into the last text block — DO NOT re-render markdown per
-        // token; the final render runs at message-done time.
+        // Stream into the last text block; schedule a debounced incremental
+        // markdown re-render so formatting appears progressively rather than
+        // only at message-done time. The token-level `append` keeps the
+        // streaming text on screen between debounced renders, so there is
+        // no flash of unformatted content.
         if (bubble.dataset.streaming === "1") {
           bubble.append(text);
         } else {
           bubble.textContent = text;
           bubble.dataset.streaming = "1";
         }
+        scheduleStreamRender(bubble);
         ensureStreamingIndicator();
         // Auto-scroll if user is near the bottom.
         maybeAutoScroll(transcript);
@@ -858,6 +898,7 @@
       try { state.sessionSse.close(); } catch (_err) { /* ignore */ }
       state.sessionSse = null;
     }
+    cancelStreamRender();
     state.liveChips = null;
     state.liveActivity = [];
     state.liveBubble = null;
@@ -1068,11 +1109,18 @@
     const bubble = transcript?.querySelector(".chat-bubble-row-assistant:last-child .chat-bubble-body");
     if (bubble && bubble.dataset.streaming === "1") {
       const text = bubble.textContent || "";
+      // Cancel any pending incremental render so it cannot race the final
+      // pass and overwrite the cache with stale content.
+      cancelStreamRender();
+      // Mark as no longer streaming BEFORE the await so any late response
+      // from a scheduled flush is dropped (token check + dataset check).
+      bubble.removeAttribute("data-streaming");
       // Render markdown now that the stream is final.
-      renderMarkdown(text).then((html) => {
-        bubble.innerHTML = html;
-        bubble.removeAttribute("data-streaming");
-      });
+      if (text) {
+        renderMarkdown(text).then((html) => {
+          if (bubble.isConnected) bubble.innerHTML = html || esc(text);
+        });
+      }
     }
     removeStreamingIndicator();
     transcript?.querySelector(":scope > .chat-live-activity")?.remove();
