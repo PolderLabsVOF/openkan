@@ -10,6 +10,8 @@ import { startOrAttach, getServer } from "../kanban/server.ts";
 import { addProject, setActiveProject } from "../kanban/projects.ts";
 import { initBoard, getBoard, KANBAN_DIR, setProjectRoot } from "../kanban/board.ts";
 import { writeTaskMdx, writeBoardMdx } from "../kanban/mdx.ts";
+import { createInterface } from "node:readline";
+import { createTray, defaultIconDir, TrayUnavailableError } from "./tray.ts";
 
 // Resolve the openkan repo's web/ folder so the static UI is served no matter
 // where the user invokes the CLI from. `import.meta.url` → bin/openkan.ts →
@@ -223,13 +225,34 @@ async function cmdImport(ctx: BoardContext, argv: string[]): Promise<void> {
 
 // ─── Subcommand: start ───────────────────────────────────────────────────────
 
+// Valid server modes. `foreground` keeps the CLI process alive; `background`
+// returns immediately and lets the HTTP server keep the process alive via
+// its listeners; `tray` keeps the CLI alive AND surfaces a tray icon so the
+// user can close the terminal without losing the server.
+type StartMode = "foreground" | "background" | "tray";
+
+function parseMode(raw: unknown): StartMode {
+  const v = typeof raw === "string" ? raw.toLowerCase() : "";
+  if (v === "" || v === "background" || v === "bg" || v === "2") return "background";
+  if (v === "foreground" || v === "fg" || v === "1") return "foreground";
+  if (v === "tray" || v === "3") return "tray";
+  throw new Error(`openkan: --mode must be foreground, background, or tray (got: ${String(raw)})`);
+}
+
 async function cmdStart(ctx: BoardContext, argv: string[]): Promise<void> {
   const args = parseArgs(argv);
+  if (argv.includes("-h") || argv.includes("--help")) {
+    printHelp("start");
+    return;
+  }
   const host = (args.flags["host"] as string) ?? loadConfig().host;
   const port = parseInt((args.flags["port"] as string) ?? String(loadConfig().port), 10);
   const noOpen = args.flags["no-open"] === true || args.flags["no-open"] === "true";
   const foreground = args.flags["foreground"] === true || args.flags["foreground"] === "true";
   const noAutoDetect = args.flags["no-auto-detect"] === true || args.flags["no-auto-detect"] === "true";
+  const mode: StartMode = args.flags["mode"] !== undefined
+    ? parseMode(args.flags["mode"])
+    : (foreground ? "foreground" : "background");
 
   // --project flag: switch the active project before starting
   const projectFlag = args.flags["project"] as string | undefined;
@@ -247,25 +270,188 @@ async function cmdStart(ctx: BoardContext, argv: string[]): Promise<void> {
 
   const result = await startOrAttach(ctx, { host, port, webRoot: OPENKAN_WEB, _autoDetect: !noAutoDetect });
 
-  if (foreground) {
+  // The tray mode hides the terminal — never auto-open the browser because
+  // the user already chose to hide. Foreground keeps the existing behaviour
+  // (open unless --no-open). Background also auto-opens by default.
+  const effectiveNoOpen = noOpen || mode === "tray";
+
+  if (mode === "foreground") {
     console.log(`OpenKan server running at ${result.url} (pid=${result.pid})`);
     // Keep process alive
     await new Promise(() => {});
+  } else if (mode === "tray") {
+    return cmdStartTray(ctx, result);
   } else {
     // Write PID and log files. Format: "pid:port" so status can read both
     // without re-probing. The port may differ from the config if the
     // configured port was busy.
     const pidFile = join(ctx.directory, ".ok", "server.pid");
     writeFileSync(pidFile, `${result.pid}:${result.port}`, "utf-8");
-    const logFile = join(ctx.directory, ".ok", "server.log");
-    const logStream = appendFileSync ? appendFileSync : (() => {}) as any;
 
     console.log(`OpenKan server at ${result.url} (pid=${result.pid})`);
 
-    if (!noOpen) {
+    if (!effectiveNoOpen) {
       openUrl(result.url);
     }
   }
+}
+
+// Start a tray icon for the running in-process server. Falls back to plain
+// background mode (with a one-line warning) when the tray subsystem is
+// unavailable — Linux without libappindicator, headless CI, etc.
+async function cmdStartTray(
+  ctx: BoardContext,
+  result: { pid: number; port: number; url: string },
+): Promise<void> {
+  console.log(`OpenKan server at ${result.url} (pid=${result.pid})`);
+  console.log("Initializing system tray icon…");
+
+  const iconDir = defaultIconDir();
+
+  let tray;
+  try {
+    tray = await createTray({
+      url: result.url,
+      iconDir,
+      initialState: "running",
+      onOpen: async () => {
+        // Open dashboard in the OS browser. Reuse cmdOpen so we get the same
+        // .ok/server.pid liveness checks the CLI uses.
+        try {
+          await cmdOpen(ctx);
+        } catch {
+          // cmdOpen already prints errors to stderr; failures here must not
+          // crash the tray process.
+        }
+      },
+      onStatus: async () => {
+        try {
+          await cmdStatus(ctx);
+        } catch {
+          // cmdStatus exits non-zero on missing pid; we want to keep the
+          // tray alive even if the pid file is gone.
+        }
+      },
+      onStop: async () => {
+        // Reuse cmdStop so the .ok/server.pid lifecycle stays consistent.
+        await cmdStop(ctx).catch(() => {
+          // best effort — even if cmdStop fails, exit so the tray does not
+          // linger.
+        });
+        process.exit(0);
+      },
+    });
+  } catch (e) {
+    if (e instanceof TrayUnavailableError) {
+      console.warn(
+        `openkan serve: system tray unavailable (${e.message}). Falling back to background mode.`,
+      );
+    } else {
+      console.warn(
+        `openkan serve: system tray init failed (${(e as Error).message}). Falling back to background mode.`,
+      );
+    }
+    // Background fallback: keep the server running (the HTTP listener does
+    // that for us) and exit cleanly. The pid file was already written by
+    // startOrAttach.
+    return;
+  }
+
+  // The tray process stays alive while the tray subprocess is alive. Block
+  // here so cmdStart doesn't return to main(); otherwise main() would exit
+  // and we'd take the process down with us.
+  await new Promise<void>(() => {
+    // never resolves — the tray's onStop / onExit handlers will call
+    // process.exit() when the user asks to quit.
+  });
+}
+
+// ─── Subcommand: serve ──────────────────────────────────────────────────────
+//
+// `openkan serve` is the explicit form of "start OpenKan and let me choose
+// how it should run." Bare `openkan` (no args) and `openkan serve` both
+// dispatch here. When stdin is a TTY we prompt for the run mode; in any
+// non-TTY session (CI, piped scripts) we default to background unless the
+// caller explicitly asked for tray mode, in which case we fail with a
+// clear message — tray needs a desktop session.
+
+async function promptModeInteractive(): Promise<StartMode> {
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  // Show the prompt and read once. Re-prompt exactly once on invalid input,
+  // then fall through to the default so a misclick never hangs the CLI.
+  const ask = (): Promise<string> => new Promise((resolve) => {
+    rl.question("Choice [1/2/3]: ", (answer) => resolve(answer.trim()));
+  });
+
+  process.stderr.write("How would you like OpenKan to run?\n");
+  process.stderr.write("  1. Stay interactive (foreground — Ctrl+C to stop)\n");
+  process.stderr.write("  2. Continue in background (terminal returns; server keeps running)\n");
+  process.stderr.write("  3. Hide to tray (system tray icon; terminal returns)\n");
+
+  let raw = await ask();
+  if (raw === "") raw = "2"; // default to background
+
+  const first = normalizeInput(raw);
+  if (first === null) {
+    process.stderr.write(`Unrecognised choice: "${raw}". `);
+    raw = await ask();
+    if (raw === "") raw = "2";
+  }
+
+  rl.close();
+
+  const normalized = normalizeInput(raw);
+  return normalized ?? "background";
+}
+
+function normalizeInput(raw: string): StartMode | null {
+  const v = raw.toLowerCase();
+  if (v === "1" || v === "foreground" || v === "fg") return "foreground";
+  if (v === "2" || v === "background" || v === "bg") return "background";
+  if (v === "3" || v === "tray") return "tray";
+  return null;
+}
+
+async function cmdServe(ctx: BoardContext, argv: string[]): Promise<void> {
+  if (argv.includes("-h") || argv.includes("--help")) {
+    printHelp("serve");
+    return;
+  }
+  const args = parseArgs(["serve", ...argv]);
+  const host = (args.flags["host"] as string) ?? loadConfig().host;
+  const port = parseInt((args.flags["port"] as string) ?? String(loadConfig().port), 10);
+  const noOpen = args.flags["no-open"] === true || args.flags["no-open"] === "true";
+  const noAutoDetect = args.flags["no-auto-detect"] === true || args.flags["no-auto-detect"] === "true";
+  const projectFlag = args.flags["project"] as string | undefined;
+
+  let mode: StartMode;
+  if (args.flags["mode"] !== undefined) {
+    // Explicit --mode always wins. Validate it here so an unknown value
+    // gives a clear error rather than silently picking background.
+    mode = parseMode(args.flags["mode"]);
+    if (mode === "tray" && !process.stdin.isTTY && !process.stdout.isTTY) {
+      console.error("openkan serve: --mode=tray requires a TTY. Run from a terminal.");
+      process.exit(1);
+    }
+  } else if (process.stdin.isTTY) {
+    mode = await promptModeInteractive();
+  } else {
+    // Non-interactive fallback. Skip the prompt and use background so CI,
+    // piped scripts, and double-clicked installers always succeed.
+    console.log("openkan serve: non-interactive shell — defaulting to background mode.");
+    mode = "background";
+  }
+
+  // Delegate to cmdStart with the resolved mode. cmdStart already handles
+  // --foreground / --mode plumbing, --no-open, and --project switching.
+  const forwarded: string[] = ["start", `--mode=${mode}`];
+  if (host !== loadConfig().host) forwarded.push("--host", host);
+  if (port !== loadConfig().port) forwarded.push("--port", String(port));
+  if (noOpen) forwarded.push("--no-open");
+  if (noAutoDetect) forwarded.push("--no-auto-detect");
+  if (projectFlag) forwarded.push("--project", projectFlag);
+
+  await cmdStart(ctx, forwarded);
 }
 
 // ─── Subcommand: stop ─────────────────────────────────────────────────────────
@@ -277,8 +463,26 @@ async function cmdStop(ctx: BoardContext): Promise<void> {
     process.exit(1);
   }
 
-  const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
+  const raw = readFileSync(pidFile, "utf-8").trim();
+  const [pidStr] = raw.split(":");
+  const pid = parseInt(pidStr, 10);
   if (isNaN(pid)) { console.error("Invalid PID in server.pid"); process.exit(1); }
+
+  // If the server lives in this very process (foreground CLI / tray mode),
+  // self-SIGTERM would skip the graceful HTTP shutdown and the pidfile
+  // cleanup. Use the in-process server handle instead — it closes the
+  // HTTP server, releases the lock, and removes the pidfile deterministically.
+  if (pid === process.pid) {
+    const server = getServer();
+    if (server && typeof server.stop === "function") {
+      await server.stop();
+      console.log("Server stopped.");
+      return;
+    }
+    // No in-process server reference (e.g. attach-only): fall through to
+    // the SIGTERM-self path which Node executes alongside the rest of
+    // this function synchronously until the runtime kills us.
+  }
 
   try {
     process.kill(pid, "SIGTERM");
@@ -808,7 +1012,8 @@ function openUrl(url: string): void {
 function printHelp(cmd?: string): void {
   const msgs: Record<string, string> = {
     init: "init                             Create .ok/ directory (idempotent)",
-    start: "start [--port N] [--host H] [--no-open] [--no-auto-detect] [--foreground] [--project /abs/path]  Start the server",
+    start: "start [--port N] [--host H] [--no-open] [--no-auto-detect] [--foreground] [--mode foreground|background|tray] [--project /abs/path]  Start the server",
+    serve: "serve [--mode foreground|background|tray] [--port N] [--host H] [--no-open]  Start the server and ask how to run it",
     import: "import [--path DIR] [--include PATTERN] [--exclude PATTERN]  Import checkboxes as tasks",
     stop: "stop                             Stop the running server",
     status: "status                          Show server status, port, pid, uptime",
@@ -840,8 +1045,14 @@ function printHelp(cmd?: string): void {
 }
 
 export async function main(argv = process.argv.slice(2)): Promise<void> {
-  if (argv.length === 0 || argv[0] === "-h" || argv[0] === "--help") {
-    printHelp(argv[0] === "-h" || argv[0] === "--help" ? argv[1] : undefined);
+  // Bare `openkan` (no subcommand) is the friendly entry point: start the
+  // server and ask how to run it. We strip the explicit-help branch first so
+  // `openkan --help` still prints usage.
+  if (argv.length === 0) {
+    argv = ["serve"];
+  }
+  if (argv[0] === "-h" || argv[0] === "--help") {
+    printHelp(argv[1]);
     return;
   }
   // `openkan -v` / `openkan --version` — print the installed package's name
@@ -929,6 +1140,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   switch (cmd) {
     case "init":    await cmdInit(); process.exitCode = await runPlanning(['init']); return;
     case "start":   return cmdStart(ctx, argv.slice(1));
+    case "serve":   return cmdServe(ctx, argv.slice(1));
     case "import":  return cmdImport(ctx, argv.slice(1));
     case "stop":    return cmdStop(ctx);
     case "status":  return cmdStatus(ctx);

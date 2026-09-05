@@ -26,6 +26,7 @@
   },
   "files": [
     "bin/*.mjs",
+    "bin/assets",
     "dist",
     "agents",
     "skills/openkan",
@@ -60,6 +61,7 @@
     "nanoid": "^5.0.0",
     "sanitize-html": "^2.13.0",
     "sucrase": "^3.34.0",
+    "systray": "^1.0.5",
     "ws": "^8.21.1"
   },
   "devDependencies": {
