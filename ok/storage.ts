@@ -72,7 +72,10 @@ export async function readJson<T>(p: string, narrow: (v: unknown) => v is T): Pr
     throw new Error(`invalid JSON in ${p}: ${e.message}`);
   }
   if (!narrow(parsed)) {
-    throw new Error(`invalid shape in ${p} (failed schema check)`);
+    throw new Error(
+      `invalid shape in ${p} (failed schema check). ` +
+      `If this file was created by a bug or external tool, you can remove it with: rm "${p}"`,
+    );
   }
   return parsed;
 }
