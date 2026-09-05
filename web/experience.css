@@ -40,6 +40,9 @@
 .chat-sidebar .chat-bubble-body p { margin: 0 0 12px; }
 .chat-sidebar .chat-bubble-body pre { max-width: 100%; overflow: auto; padding: 14px; border-radius: 10px; font-size: 12px; line-height: 1.65; }
 .chat-sidebar .chat-bubble-body table { display: block; max-width: 100%; overflow: auto; }
+/* Preserve the bubble height between debounced incremental markdown renders
+   so the message-done swap doesn't visibly reflow the transcript. */
+.chat-sidebar .chat-bubble-body-stream { min-height: 1.4em; }
 .chat-sidebar .chat-bubble-meta { gap: 8px; font-size: 10px; letter-spacing: .025em; color: var(--text-mute); margin-bottom: 10px; }
 .chat-sidebar .chat-copy-button { width: 30px; height: 30px; font-size: 19px; border-radius: 6px; color: var(--text-dim); }
 .chat-sidebar .chat-bubble-streaming-indicator { min-height: 30px; gap: 10px; margin: 4px 0 18px; }
