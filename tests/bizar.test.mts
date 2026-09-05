@@ -34,6 +34,18 @@ function fixture() {
   const root = mkdtempSync(join(tmpdir(), "openkan-bizar-"));
   roots.push(root);
   mkdirSync(join(root, ".ok"), { recursive: true });
+  mkdirSync(join(root, ".claude", "agents"), { recursive: true });
+  writeFileSync(join(root, ".claude", "agents", "mike.md"), `---
+name: mike
+description: Orchestrator agent fixture for bizzar snapshot tests.
+model: inherit
+---
+
+# Mike
+
+Test fixture for \`getBizarSnapshot\` so the project-root \`.claude/agents\`
+path is exercised.
+`, "utf8");
   const log = join(root, "bizar-args.jsonl");
   const fake = join(root, "bizar");
   writeFileSync(log, "");

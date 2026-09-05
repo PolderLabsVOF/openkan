@@ -77,7 +77,7 @@ export function resolveBizarConfig(openkanProjectRoot: string): BizarConfig {
  * prefer `/api/claude/*`.
  */
 export async function getBizarSnapshot(openkanProjectRoot: string): Promise<any> {
-  const snapshot: SnapshotPayload = await readClaudeSnapshot(homedir());
+  const snapshot: SnapshotPayload = await readClaudeSnapshot(openkanProjectRoot);
   return {
     version: 1,
     projectRoot: openkanProjectRoot,
