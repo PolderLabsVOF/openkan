@@ -4,7 +4,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, appendFileSync, statSync } from "node:fs";
 import { join, dirname, resolve, basename } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn, execSync } from "node:child_process";
+import { spawn, spawnSync, execSync } from "node:child_process";
 import type { BoardContext } from "../kanban/board.ts";
 import { startOrAttach, getServer } from "../kanban/server.ts";
 import { addProject, setActiveProject } from "../kanban/projects.ts";
@@ -62,6 +62,34 @@ const AGENT_CAPABILITIES = Object.freeze({
 
 function configPath(): string {
   return join(process.cwd(), ".ok", "openkan.json");
+}
+
+// Resolve the running package's package.json so version/installed-from stays
+// accurate even when bin/openkan.mjs is the entrypoint and the .ts/.js lives
+// one or two levels below the package root (src vs dist).
+function installedPackageJson(): { name: string; version: string } | null {
+  const here = __dirname;
+  for (const dir of [here, join(here, ".."), join(here, "..", "..")]) {
+    const candidate = join(dir, "package.json");
+    if (existsSync(candidate)) {
+      try {
+        const parsed = JSON.parse(readFileSync(candidate, "utf8"));
+        if (typeof parsed?.name === "string" && typeof parsed?.version === "string") {
+          return { name: parsed.name, version: parsed.version };
+        }
+      } catch { /* fall through to next candidate */ }
+    }
+  }
+  return null;
+}
+
+function printInstalledVersion(): void {
+  const pkg = installedPackageJson();
+  if (!pkg) {
+    console.log("openkan: version unavailable (no package.json found above the entrypoint)");
+    return;
+  }
+  console.log(`${pkg.name} ${pkg.version}`);
 }
 
 function loadConfig(): Config {
@@ -629,6 +657,141 @@ async function cmdReset(ctx: BoardContext, argv: string[]): Promise<void> {
   console.log("Reset complete.");
 }
 
+// ─── Subcommand: update ────────────────────────────────────────────────────────
+
+async function cmdUpdate(positionals: string[], flags: Record<string, string | boolean>): Promise<void> {
+  // Reject unknown flags instead of silently forwarding them to npm — keeps
+  // the surface small and predictable.
+  const KNOWN_FLAGS = new Set(["check", "yes", "version", "help", "h"]);
+  if (flags.help === true || flags.h === true) {
+    console.log("Usage: openkan update [--check] [--yes] [--version <semver>]");
+    console.log("");
+    console.log("  --check          Report installed vs latest, exit non-zero if outdated, do not install.");
+    console.log("  --yes            Skip the interactive confirmation prompt.");
+    console.log("  --version <v>    Pin the upgrade to a specific semver instead of `latest`.");
+    console.log("  -h, --help       Show this help.");
+    return;
+  }
+  for (const flag of Object.keys(flags)) {
+    if (!KNOWN_FLAGS.has(flag)) {
+      console.error(`openkan update: unknown flag --${flag} (known: ${[...KNOWN_FLAGS].map(f => `--${f}`).join(", ")})`);
+      process.exit(2);
+    }
+  }
+  if (positionals.length > 0) {
+    console.error(`openkan update: unexpected positional ${positionals[0]} (this command takes no arguments)`);
+    process.exit(2);
+  }
+
+  const pkg = installedPackageJson();
+  if (!pkg) {
+    console.error("openkan update: cannot determine the installed package (no package.json found above the entrypoint)");
+    process.exit(1);
+  }
+
+  // --version <semver> lets scripted callers pin to a known target (e.g.
+  // nightly); skip the registry query in that case.
+  const pinned = typeof flags.version === "string" ? flags.version : null;
+  let target = pinned;
+
+  if (!target) {
+    // Query the registry for the latest version on the `latest` dist-tag.
+    // We intentionally do not cache or background this; `openkan update`
+    // is explicit, infrequent, and the user wants to see the decision.
+    target = await npmLatestVersion(pkg.name);
+    if (!target) {
+      console.error(`openkan update: failed to query the latest version of ${pkg.name} from npm`);
+      process.exit(1);
+    }
+  }
+
+  if (target === pkg.version) {
+    console.log(`${pkg.name} ${pkg.version} is already up to date.`);
+    return;
+  }
+
+  console.log(`${pkg.name}: installed ${pkg.version}, latest ${target}`);
+
+  if (flags.check) {
+    // Just report; the user can re-run without --check to actually upgrade.
+    process.exitCode = 1;
+    return;
+  }
+
+  // Skip the confirmation prompt when --yes was passed (CI / scripted use).
+  if (!flags.yes) {
+    const proceed = await confirm(`Install ${pkg.name}@${target} now? [Y/n] `);
+    if (!proceed) {
+      console.log("Cancelled.");
+      return;
+    }
+  }
+
+  console.log(`Running: npm install -g ${pkg.name}@${target}`);
+  const result = spawnSync("npm", ["install", "-g", `${pkg.name}@${target}`], { stdio: "inherit" });
+  process.exit(result.status ?? 1);
+}
+
+async function npmLatestVersion(name: string): Promise<string | null> {
+  // `npm view <pkg> dist-tags.latest` prints the bare semver string; with
+  // --json it wraps that single value in a JSON array. Handle both shapes
+  // because some npm versions (and some package fields) emit array output
+  // even for scalar fields.
+  const stdout = await new Promise<string>((resolve) => {
+    const child = spawn("npm", ["view", name, "dist-tags.latest"], { stdio: ["ignore", "pipe", "pipe"] });
+    let out = "";
+    child.stdout.on("data", (d) => { out += d.toString(); });
+    child.on("error", () => resolve(""));
+    child.on("close", (code) => { if (code === 0) resolve(out); else resolve(""); });
+  }).then(async (text) => {
+    if (text.trim()) return text;
+    // Fall back to --json and parse, in case the bare call failed (older
+    // npm prints only via --json for dotted paths).
+    return await new Promise<string>((resolve) => {
+      const child = spawn("npm", ["view", name, "dist-tags.latest", "--json"], { stdio: ["ignore", "pipe", "pipe"] });
+      let out = "";
+      child.stdout.on("data", (d) => { out += d.toString(); });
+      child.on("error", () => resolve(""));
+      child.on("close", () => resolve(out));
+    });
+  });
+
+  const trimmed = stdout.trim();
+  if (!trimmed) return null;
+
+  // Accept `"0.4.1"` (bare) or `["0.4.1"]` (json-wrapped).
+  if (trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed) && typeof parsed[0] === "string") return parsed[0];
+    } catch { return null; }
+    return null;
+  }
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    try { return JSON.parse(trimmed) as string; } catch { return null; }
+  }
+  return trimmed;
+}
+
+async function confirm(question: string): Promise<boolean> {
+  if (!process.stdin.isTTY) {
+    // No TTY → assume yes in the rare case the user piped `openkan update`
+    // without --yes; the alternative is silent failure which surprises more.
+    return true;
+  }
+  process.stdout.write(question);
+  return await new Promise<boolean>((resolve) => {
+    const onData = (data: Buffer) => {
+      const answer = data.toString().trim().toLowerCase();
+      process.stdin.removeListener("data", onData);
+      process.stdin.pause();
+      resolve(answer === "" || answer === "y" || answer === "yes");
+    };
+    process.stdin.resume();
+    process.stdin.once("data", onData);
+  });
+}
+
 // ─── URL opener ────────────────────────────────────────────────────────────────
 
 function openUrl(url: string): void {
@@ -650,6 +813,7 @@ function printHelp(cmd?: string): void {
     stop: "stop                             Stop the running server",
     status: "status                          Show server status, port, pid, uptime",
     open: "open                             Open the kanban UI in browser",
+    update: "update [--check] [--yes] [--version <v>]  Upgrade to the latest @polderlabs/openkan from npm",
     config: "config list|get <key>|set <key> <value>  Manage config",
     logs: "logs [--tail N] [--follow]       Print server logs",
     api: "api <path> [--method M] [--data JSON|--data-file FILE]  Call any local OpenKan REST feature",
@@ -671,12 +835,20 @@ function printHelp(cmd?: string): void {
     console.log("Usage: openkan <command> [args...]\n");
     Object.values(msgs).forEach(m => console.log(`  ${m}`));
     console.log("\nFlags: --flag=value or --flag value, can appear before or after positionals.");
+    console.log("\nVersion: `openkan -v` or `openkan --version` prints the installed package name and version.");
   }
 }
 
 export async function main(argv = process.argv.slice(2)): Promise<void> {
   if (argv.length === 0 || argv[0] === "-h" || argv[0] === "--help") {
     printHelp(argv[0] === "-h" || argv[0] === "--help" ? argv[1] : undefined);
+    return;
+  }
+  // `openkan -v` / `openkan --version` — print the installed package's name
+  // and version from its own package.json so the user always sees the truth,
+  // even when the shim is rebuilt separately from the TS source.
+  if (argv[0] === "-v" || argv[0] === "--version") {
+    printInstalledVersion();
     return;
   }
 
@@ -717,6 +889,11 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   }
 
   // Resolve nested invocations without creating a second workspace.
+  // `openkan update` runs npm itself; it must NOT chdir into the nearest
+  // .ok/ workspace, must NOT initialise the board, and must NOT need a
+  // running server. Handle it before the project-resolution / initBoard paths.
+  if (cmd === 'update') return cmdUpdate(positionals, flags);
+
   if (cmd !== 'init') {
     let directory = process.cwd();
     while (!existsSync(join(directory, '.ok')) && dirname(directory) !== directory) directory = dirname(directory);
