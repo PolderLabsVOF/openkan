@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { writeFileAtomic, ensureDir, cleanupStaleTmp, removeDir } from "./io.ts";
 import type { Priority, Effort, Category } from "./tags.ts";
-import { writeTask, readConfig, writeConfig, paths as okPaths, rebuildIndex } from "../ok/storage.ts";
+import { writeTask, readTask as readOkTask, readConfig, writeConfig, paths as okPaths, rebuildIndex } from "../ok/storage.ts";
 import { nowIso as okNowIso } from "../ok/ids.ts";
 import type { Task as OkTask } from "../ok/schemas.ts";
 
@@ -344,6 +344,93 @@ async function mirrorToOkStore(board: Board): Promise<void> {
   }
   // Best-effort index rebuild (non-fatal if it fails).
   try { await rebuildIndex(p); } catch { /* swallow */ }
+}
+
+/**
+ * Map a planning-system `ok.task.v1` entry onto the engine Task schema.
+ * Used when the source of truth for a task lives in `.ok/tasks/<id>.json`
+ * (e.g. an agent invoked `ok task add` directly). The reverse direction
+ * is `toPlanningTask` above; together they keep both stores coherent.
+ */
+function fromPlanningTask(ok: OkTask): Task | null {
+  if (!ok.id || !/^tsk-[A-Za-z0-9_-]+$/.test(ok.id)) return null;
+  const column: Task["column"] =
+    ok.status === "done" ? "done" :
+    ok.status === "review" ? "review" :
+    ok.status === "in_progress" ? "doing" :
+    ok.status === "cancelled" ? "backlog" :
+    ok.status === "pending" ? "todo" :
+    "todo";
+  const state: Task["state"] =
+    ok.status === "done" ? "done" :
+    ok.status === "cancelled" ? "cancelled" :
+    ok.status === "in_progress" ? "running" :
+    "idle";
+  const arts = taskArtifacts(ok.id);
+  return {
+    id: ok.id,
+    title: ok.title ?? "untitled",
+    description: ok.description ?? "",
+    column,
+    order: 0,
+    sessionId: null,
+    agent: ok.owner ?? "",
+    model: null,
+    status: state,
+    state,
+    lastError: null,
+    createdAt: ok.createdAt,
+    updatedAt: ok.updatedAt,
+    artifact: arts.mdxPath,
+    sessionArtifact: null,
+    pendingInputs: [],
+    artifacts: arts,
+    tags: ok.scopes ? [...ok.scopes] : [],
+    category: "task",
+    priority: (ok.priority ?? "p3") as Task["priority"],
+    effort: null,
+    archived: ok.status === "cancelled",
+    assignees: ok.owner ? [ok.owner] : [],
+    images: [],
+    parentId: null,
+    subtaskIds: [],
+  };
+}
+
+/**
+ * Reconcile a single `.ok/tasks/<id>.json` entry into the engine board.
+ * Called by the SSE watcher when an agent (e.g. via `ok task add`) writes
+ * a planning task while a dashboard server is running. No-op when the
+ * board already has the task (subsequent edits flow through the existing
+ * HTTP PATCH path); returns the inserted task for broadcasting.
+ *
+ * The function intentionally mirrors the `apiCreateTask` shape so the
+ * dashboard's broadcast and write-quote semantics stay consistent.
+ */
+export async function reconcileOkTask(taskId: string, kanbanDir: string = KANBAN_DIR): Promise<Task | null> {
+  if (!/^tsk-[A-Za-z0-9_-]+$/.test(taskId)) return null;
+  if (!kanbanDir) return null;
+  const projectRoot = join(kanbanDir, "..");
+  const p = okPaths(projectRoot);
+  const ok = await readOkTask(p, taskId);
+  if (!ok) return null;
+  // Skip if the board already has this id — the HTTP path owns updates.
+  if (_board && _board.tasks.some(t => t.id === ok.id)) return null;
+  const task = fromPlanningTask(ok);
+  if (!task) return null;
+  let inserted: Task | undefined;
+  await withWrite(async (board) => {
+    // Re-check after queueing; another reconcile could have won.
+    if (board.tasks.some(t => t.id === task.id)) {
+      inserted = board.tasks.find(t => t.id === task.id);
+      return;
+    }
+    const colTasks = board.tasks.filter(t => t.column === task.column);
+    task.order = colTasks.length;
+    board.tasks.push(task);
+    inserted = task;
+  });
+  return inserted ?? null;
 }
 
 export async function persist(board: Board): Promise<void> {
