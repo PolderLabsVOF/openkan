@@ -473,6 +473,31 @@ body.chat-sidebar-resizing {
   flex-direction: column;
   gap: 8px;
   scrollbar-width: thin;
+  /* Firefox thumb + track — thumb uses the muted --border-strong so the
+     scrollbar disappears into the column chrome until hovered. */
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+/* Webkit/Blink override (Chrome / Safari / Edge). The base ::-webkit-scrollbar
+   rule near the top of this file targets the whole page; .column-body is the
+   only task-list scroll container, so we scope and shrink it here. Width is
+   intentional: 8px wide with a 2px transparent border on the thumb yields a
+   ~4px visible pill, subtle against the column body surface. */
+.column-body::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.column-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.column-body::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+.column-body::-webkit-scrollbar-thumb:hover {
+  background: var(--border);
 }
 
 .column-empty {
