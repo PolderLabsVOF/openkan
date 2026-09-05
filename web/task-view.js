@@ -117,21 +117,46 @@
   }
 
   // ─── Inline editing ─────────────────────────────────────────────────────────
-  // Wire a contenteditable element (title or description) to auto-save on
-  // blur (debounced 800ms) or Enter (Shift+Enter inserts a newline). Shows
-  // a "✓ Saved" toast on success. Returns a cleanup function.
-  function wireInlineEdit(el_, task, field) {
+  // Wire a contenteditable element (title or description) to persist ONLY on
+  // explicit user actions. The previous input-debounced save fired after
+  // every typing pause, which threw the user out of the edit context before
+  // they finished a sentence. Now:
+  //   - Input events toggle the dirty indicator only — never save.
+  //   - Enter commits and exits (Shift+Enter inserts a newline in desc).
+  //   - Ctrl/Cmd+Enter always commits and exits, regardless of shift.
+  //   - Escape cancels and exits — text reverts to lastSaved, no PATCH.
+  //   - Blur starts a quiet-period timer (DEFAULT_INLINE_EDIT_BLUR_QUIET_MS);
+  //     if focus returns or input fires before the timer expires, the save
+  //     is cancelled. This still saves when the user truly walks away
+  //     (alt-tab, click elsewhere) but ignores focus→blur→focus loops.
+  //   - A visible "Save" button commits explicitly.
+  const DEFAULT_INLINE_EDIT_BLUR_QUIET_MS = 1500;
+  function wireInlineEdit(el_, task, field, opts = {}) {
     if (!el_) return () => {};
-    let timer = null;
+    const QUIET_MS = Number.isFinite(opts.blurQuietMs) ? opts.blurQuietMs : DEFAULT_INLINE_EDIT_BLUR_QUIET_MS;
+    let blurTimer = null;
     let lastSaved = String(el_.dataset?.original ?? el_.textContent ?? "");
+    let doneBtn = null;
+
+    const disarmBlurTimer = () => {
+      if (blurTimer) { clearTimeout(blurTimer); blurTimer = null; }
+    };
+    const armBlurTimer = (setTimeoutImpl = setTimeout, clearTimeoutImpl = clearTimeout) => {
+      disarmBlurTimer();
+      blurTimer = setTimeoutImpl(() => {
+        blurTimer = null;
+        flush();
+      }, QUIET_MS);
+    };
 
     const flush = async () => {
-      if (timer) { clearTimeout(timer); timer = null; }
+      disarmBlurTimer();
       const newVal = String(el_.textContent || "").trim();
       if (newVal === lastSaved) return;
       if (field === "title" && !newVal) {
-        // Title is required — revert on empty.
+        // Title is required — revert on empty and stay in edit mode.
         el_.textContent = lastSaved;
+        el_.classList.remove("dirty");
         return;
       }
       try {
@@ -151,31 +176,52 @@
       }
     };
 
-    const debouncedFlush = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(flush, 800);
+    const cancelEdits = () => {
+      disarmBlurTimer();
+      el_.textContent = lastSaved;
+      el_.classList.remove("dirty");
+      el_.blur();
     };
 
     const onInput = () => {
       el_.classList.toggle("dirty", String(el_.textContent || "").trim() !== lastSaved);
       el_.classList.remove("placeholder");
-      debouncedFlush();
+      // Any new keystroke cancels a pending blur-window save — the user
+      // clearly hasn't finished walking away.
+      disarmBlurTimer();
     };
     const onKeydown = (e) => {
-      if (field === "title" && e.key === "Enter") {
+      // Ctrl/Cmd+Enter is always an explicit save regardless of shift state.
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
         e.preventDefault();
+        disarmBlurTimer();
         flush();
         el_.blur();
-      } else if (field === "description" && e.key === "Enter" && !e.shiftKey) {
+        return;
+      }
+      if (e.key === "Escape") {
         e.preventDefault();
+        cancelEdits();
+        return;
+      }
+      if (e.key === "Enter" && !(field === "description" && e.shiftKey)) {
+        // Plain Enter commits — for a title it's the only way to enter
+        // a newline-free commit; for a description Shift+Enter inserts a
+        // newline instead.
+        e.preventDefault();
+        disarmBlurTimer();
         flush();
         el_.blur();
       }
     };
     const onBlur = () => {
-      flush();
+      // Defer the actual save: a focus→blur→focus loop (e.g. tabbing
+      // between title and description) must not trigger persistence.
+      armBlurTimer();
     };
     const onFocus = () => {
+      // Coming back into the field cancels any pending quiet-period save.
+      disarmBlurTimer();
       el_.classList.add("editing");
     };
     const onFocusout = () => {
@@ -188,14 +234,48 @@
     el_.addEventListener("focus", onFocus);
     el_.addEventListener("focusout", onFocusout);
 
+    // Explicit "Save" affordance so the user always has a visible commit
+    // gesture independent of keyboard timing.
+    doneBtn = el("button", "inline-edit-done", {
+      type: "button",
+      text: "Save",
+      title: "Save changes (Ctrl/Cmd+Enter)",
+      "aria-label": "Save inline edit",
+    });
+    doneBtn.hidden = true;
+    // Prevent the button's mousedown from stealing focus; we drive the
+    // save+blur ourselves so the input never loses focus during typing.
+    doneBtn.addEventListener("mousedown", (e) => e.preventDefault());
+    doneBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      disarmBlurTimer();
+      flush();
+      el_.blur();
+    });
+    if (el_.parentElement) el_.parentElement.appendChild(doneBtn);
+    const showDoneBtn = () => { if (doneBtn) doneBtn.hidden = false; };
+    const hideDoneBtn = () => { if (doneBtn) doneBtn.hidden = true; };
+    el_.addEventListener("focus", showDoneBtn);
+    // Hide on the next tick so a focus→blur flicker doesn't toggle the
+    // button visibly during quick focus shifts.
+    el_.addEventListener("blur", () => { setTimeout(hideDoneBtn, 0); });
+
     return () => {
-      if (timer) clearTimeout(timer);
+      disarmBlurTimer();
       el_.removeEventListener("input", onInput);
       el_.removeEventListener("keydown", onKeydown);
       el_.removeEventListener("blur", onBlur);
       el_.removeEventListener("focus", onFocus);
       el_.removeEventListener("focusout", onFocusout);
+      el_.removeEventListener("focus", showDoneBtn);
+      if (doneBtn && doneBtn.parentElement) doneBtn.parentElement.removeChild(doneBtn);
     };
+  }
+
+  // Exported for regression tests — see tests/inline-edit.test.mts.
+  // Not part of the public TaskView surface used by app.js.
+  if (typeof window !== "undefined") {
+    window.OpenKanInlineEdit = { wire: wireInlineEdit };
   }
 
   // ─── Right-click context menu on the MDX slot ──────────────────────────────
