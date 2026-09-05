@@ -541,8 +541,18 @@ async function cmdAgentContext(argv: string[]): Promise<void> {
 async function cmdAgent(argv: string[]): Promise<void> {
   const sub = argv[0] ?? "capabilities";
   if (sub === "install") {
-    const args = parseArgs(argv.slice(1));
-    if (args.flags.provider && args.flags.provider !== "claude") throw new Error("Only the Claude provider is currently supported");
+    // parseArgs treats argv[0] as the command name, so prefix before parsing.
+    const args = parseArgs(["install", ...argv.slice(1)]);
+    // Validate the provider through whichever channel it arrived: the
+    // explicit --provider flag or a positional argument. Without this,
+    // `agent install bogus` silently falls through to the default provider.
+    const SUPPORTED_PROVIDERS = new Set(["claude"]);
+    const providerFromFlag = typeof args.flags.provider === "string" ? args.flags.provider : undefined;
+    const providerFromPositional = args.positionals.find((p) => !p.startsWith("-"));
+    const provider = providerFromFlag ?? providerFromPositional;
+    if (provider !== undefined && !SUPPORTED_PROVIDERS.has(provider)) {
+      throw new Error(`Only the Claude provider is currently supported (got: ${provider})`);
+    }
     const result = installAgent({ force: args.flags.force === true, ...(typeof args.flags.target === "string" ? { configDir: resolve(args.flags.target) } : {}) });
     console.log(JSON.stringify(result, null, 2));
     return;
