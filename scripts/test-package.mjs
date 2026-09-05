@@ -40,7 +40,9 @@ try {
   const prd = run('prd', 'add', 'Installed PRD', '--vision', 'Portable', '--goals', 'Install');
   run('goal', 'update', prd, 'g1', '--status', 'met');
   assert.equal(JSON.parse(run('progress', '--json')).goals.met, 1);
-  run('skill', 'install', '--target', join(home, 'skill'));
+  // skill install --target requires the dir to already exist (typo guard).
+  mkdirSync(join(home, 'skill'), { recursive: true });
+  run('skill', 'install', '--target', join(home, 'skill'), '--force');
   assert.ok(existsSync(join(home, 'skill/SKILL.md')));
   assert.match(execFileSync(process.execPath, [ok, 'task', 'list', '--json'], { cwd: project, env, encoding: 'utf8' }), /Installed task/);
 
