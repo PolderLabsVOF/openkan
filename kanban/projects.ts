@@ -92,10 +92,61 @@ function distinctProjects(projects: ProjectEntry[]): ProjectEntry[] {
   });
 }
 
+/** Soft cap: bail out of a recursive scan once a directory grows past this
+ *  many entries. Prevents a runaway `.ok/tasks/` from stalling the selector. */
+const ACTIVITY_SCAN_CAP = 5000;
+
+/**
+ * Collect every file path under `dir` (relative to `root`) that we want to
+ * statSync for the activity scan. Recurses into subdirectories so that
+ * per-file mtimes under `.ok/tasks/`, `.ok/plans/`, `.ok/prds/`, and
+ * `.ok/locks/` are surfaced even when the directory's own mtime is stale.
+ * Returns `false` when a directory exceeds {@link ACTIVITY_SCAN_CAP}
+ * entries, signalling the caller to stop collecting from that subtree and
+ * fall back on the latest mtime seen so far.
+ */
+function collectActivityFilesRecursive(root: string, dir: string, out: string[]): boolean {
+  let entries;
+  try {
+    entries = readdirSync(join(root, dir), { withFileTypes: true });
+  } catch {
+    return true; // missing dir is fine — caller treats this as "done"
+  }
+  if (entries.length >= ACTIVITY_SCAN_CAP) return false;
+  for (const entry of entries) {
+    const rel = `${dir}/${entry.name}`;
+    if (entry.isFile()) out.push(rel);
+    else if (entry.isDirectory()) {
+      if (!collectActivityFilesRecursive(root, rel, out)) return false;
+    }
+  }
+  return true;
+}
+
 function projectActivity(project: ProjectEntry): number {
   let latest = Date.parse(project.lastOpenedAt || project.addedAt) || 0;
-  const files = [".ok/board.json", ".ok/tasks", ".ok/plans", ".ok/prds", ".ok/changelog.jsonl", ".git/index", ".git/logs/HEAD"];
+  // Flat files: cheap statSync each. These are the single-file signals that
+  // move when an agent rebuilds the index, writes config, or mirrors the
+  // board view. The agent-driven directories are scanned recursively below
+  // because directory mtimes are unreliable on ext4/APFS/btrfs.
+  const files: string[] = [
+    ".ok/board.json",
+    ".ok/board.mdx",
+    ".ok/index.json",
+    ".ok/config.json",
+    ".ok/changelog.jsonl",
+    ".git/index",
+    ".git/logs/HEAD",
+  ];
+  // Recurse into entity directories so that adding `.ok/tasks/tsk-NEW.json`
+  // (or any nested legacy `tasks/<id>/task.mdx`) bumps activity even when
+  // the directory's own mtime is stale.
+  for (const dir of [".ok/tasks", ".ok/plans", ".ok/prds", ".ok/locks"]) {
+    if (!collectActivityFilesRecursive(project.root, dir, files)) break;
+  }
   // Session turns append to existing files; inspect mtimes, never transcript contents.
+  // Sessions are flat JSONL files at the top level of `.ok/sessions/`, so a
+  // single readdirSync is sufficient and an append updates the file's mtime.
   try { for (const name of readdirSync(join(project.root, ".ok/sessions"))) files.push(`.ok/sessions/${name}`); } catch { /* no sessions */ }
   for (const file of files) {
     try { latest = Math.max(latest, statSync(join(project.root, file)).mtimeMs); } catch { /* optional activity source */ }
