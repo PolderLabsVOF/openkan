@@ -26,6 +26,7 @@
 import {
   appendFileSync,
   closeSync,
+  copyFileSync,
   existsSync,
   openSync,
   readdirSync,
@@ -157,6 +158,15 @@ export interface SendTurnOptions extends ChatSelectors {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   claudeBin?: string;
+  /**
+   * When true, pass `--resume <sessionId>` to Claude so the subprocess
+   * inherits the conversation state Claude already has for this id. Set by
+   * the chat route when the caller is continuing an externally-discovered
+   * session (one whose transcript lives in `~/.claude/projects/...`). For
+   * brand-new internal sessions the flag stays false so Claude starts a
+   * clean session.
+   */
+  resume?: boolean;
   /** Callback invoked for each parsed event and the non-duplicated effect it had. */
   onStreamEvent?: (event: StreamEvent, applied: StreamApplyResult) => void;
   signal?: AbortSignal;
@@ -722,6 +732,49 @@ export function capSessions<T extends { lastActivity: string }>(list: T[]): { it
 }
 
 /**
+ * Absolute path to a Claude Code session JSONL for the given project/session,
+ * or null when HOME is unset. Used by the chat route to detect and adopt
+ * external sessions before sending a turn.
+ */
+export function externalSessionPath(projectRoot: string, sessionId: string): string | null {
+  const dir = claudeProjectsDir(projectRoot);
+  if (!dir) return null;
+  return join(dir, `${sessionId}${SESSION_EXT}`);
+}
+
+/** True when a Claude Code transcript exists for this session in the project's encoded dir. */
+export function isExternalSessionAvailable(projectRoot: string, sessionId: string): boolean {
+  const path = externalSessionPath(projectRoot, sessionId);
+  if (!path) return false;
+  try {
+    return existsSync(path);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Copy an externally-discovered Claude Code transcript into the OpenKan
+ * sessions dir so subsequent reads see the full history. Idempotent: when
+ * the destination already exists (the user has continued the session once
+ * before), this is a no-op. Returns true when the destination now exists
+ * (either freshly copied or pre-existing), false when the source is gone.
+ */
+export function adoptExternalSession(projectRoot: string, sessionId: string): boolean {
+  const src = externalSessionPath(projectRoot, sessionId);
+  if (!src || !existsSync(src)) return false;
+  ensureSessionsDirs(projectRoot);
+  const dest = sessionPath(projectRoot, sessionId);
+  if (existsSync(dest)) return true; // already adopted
+  try {
+    copyFileSync(src, dest);
+  } catch {
+    return false;
+  }
+  return true;
+}
+
+/**
  * Archive an active session by moving its JSONL file to `.archived/`.
  * Returns true on success, false if the session was not active.
  */
@@ -1279,7 +1332,15 @@ export async function sendTurn(
   appendTurn(projectRoot, sessionId, userTurn);
 
   const bin = resolveClaudeBin(opts.claudeBin);
-  const args = [
+  const args: string[] = [];
+  // External-session continuation: when the caller has adopted a Claude
+  // Code transcript from `~/.claude/projects/...`, tell Claude to pick up
+  // the conversation state with --resume. For brand-new internal sessions
+  // the flag stays off so we don't confuse Claude with a phantom session.
+  if (opts.resume && sessionId) {
+    args.push("--resume", sessionId);
+  }
+  args.push(
     "-p",
     opts.message,
     "--model", opts.model,
@@ -1290,7 +1351,7 @@ export async function sendTurn(
     "--include-partial-messages",
     "--include-hook-events",
     "--forward-subagent-text",
-  ];
+  );
 
   const selectedAgent = opts.agent ?? OPENKAN_AGENT_ID;
   if (selectedAgent !== "default") {
@@ -1648,6 +1709,19 @@ export async function handleChatRequest(
       const sessionId = typeof body.sessionId === "string" && body.sessionId
         ? body.sessionId
         : generateSessionId();
+      // External-session continuation: when the caller supplied a sessionId
+      // that lives in the Claude Code project dir, adopt the JSONL into
+      // OpenKan's storage (idempotent) and resume that session in Claude
+      // so the new turn inherits prior context. Without this, sending a
+      // turn on a session the user picked from the discovery list would
+      // start a fresh conversation.
+      let resume = false;
+      if (typeof body.sessionId === "string" && body.sessionId && isExternalSessionAvailable(projectRoot, sessionId)) {
+        if (!adoptExternalSession(projectRoot, sessionId)) {
+          return errResponse(`External session ${sessionId} could not be adopted (source file unreadable).`, 500);
+        }
+        resume = true;
+      }
       try {
         // Start immediately and return an acknowledgement. The browser can now
         // subscribe to this session before Claude's first streamed event,
@@ -1655,6 +1729,7 @@ export async function handleChatRequest(
         broadcastChatSession(projectRoot, sessionId, "chat.status", { sessionId, phase: "thinking", label: "Thinking" });
         const running = sendTurn(projectRoot, {
           sessionId,
+          resume,
           message: agentMessage,
           displayMessage: message,
           taskMentions,
