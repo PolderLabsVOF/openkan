@@ -969,6 +969,85 @@
     meta.append(left, right);
     card.append(meta);
 
+    // Subtasks disclosure — collapses to a "Subtasks (N)" summary row by
+    // default; expanding reveals each child as a checkbox row so the user
+    // can mark it done without leaving the board. The subtasks are pulled
+    // straight from the in-memory `tasks` map so we always render the
+    // freshest title/state for each child (no stale copy from the parent
+    // payload). Subtask rows are deliberately NOT draggable — the parent
+    // card owns the drag handle and moves the whole unit.
+    const subtaskIds = Array.isArray(t.subtaskIds) ? t.subtaskIds : [];
+    if (subtaskIds.length > 0) {
+      const children = subtaskIds
+        .map((id) => tasks.get(id))
+        .filter((c) => c && !c.archived);
+      if (children.length > 0) {
+        const details = el("details", "card-subtasks");
+        const summary = el("summary", "card-subtasks-summary", {
+          text: `Subtasks (${children.length})`,
+          "aria-label": `Show ${children.length} subtask${children.length === 1 ? "" : "s"}`,
+        });
+        details.append(summary);
+        const list = el("div", "card-subtasks-list");
+        for (const c of children) {
+          const isDone = effectiveState(c) === "done";
+          const row = el("label", "card-subtask-row" + (isDone ? " card-subtask-row-done" : ""), {
+            // Subtask rows are NOT draggable — only the parent card is.
+            // Setting draggable="false" explicitly prevents the row from
+            // participating in the parent's drag when the user presses on
+            // it (browsers vary on whether descendants of a draggable
+            // ancestor initiate drag on their own).
+            draggable: "false",
+          });
+          // The label spans the checkbox + the title; clicking anywhere on
+          // the row toggles the checkbox. Native browser semantics handle
+          // keyboard activation (Space) for free.
+          const checkbox = el("input", "card-subtask-checkbox", {
+            type: "checkbox",
+            "data-subtask-id": c.id,
+            "aria-label": `Mark "${c.title || "(untitled)"}" done`,
+          });
+          if (isDone) checkbox.checked = true;
+          checkbox.addEventListener("change", async (ev) => {
+            const next = checkbox.checked ? "done" : "idle";
+            try {
+              const updated = await api("PATCH", `/api/tasks/${c.id}`, { state: next });
+              if (updated && updated.id) {
+                tasks.set(updated.id, updated);
+                renderBoard();
+              }
+            } catch (err) {
+              // Roll back the optimistic checkbox toggle on failure.
+              checkbox.checked = !checkbox.checked;
+              toast(`Subtask update failed: ${err.message || err}`, true);
+            }
+          });
+          // Stop the row's click from bubbling to the parent card — the
+          // parent card opens the task view on click, and we don't want
+          // toggling a subtask to also open the parent's detail panel.
+          row.addEventListener("click", (ev) => ev.stopPropagation());
+          // Drag safety: even with `draggable="false"`, some browsers
+          // initiate a drag on the parent card when the user mouses down on
+          // a descendant. Cancel that propagation so the parent card stays
+          // stationary while the user is interacting with the subtask row.
+          row.addEventListener("dragstart", (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+          });
+          row.append(
+            checkbox,
+            el("span", "card-subtask-row-title", {
+              text: c.title || "(untitled)",
+              title: c.title || "(untitled)",
+            }),
+          );
+          list.append(row);
+        }
+        details.append(list);
+        card.append(details);
+      }
+    }
+
     // Drag — v1.1: also handle multi-card drag (selected set) and ghost preview.
     card.addEventListener("dragstart", (e) => {
       // Compose the dragged id list: this card + any selected ones.
@@ -1072,10 +1151,14 @@
       filter.archive !== "active" ||
       filter.search !== "";
 
-    // Group by column, apply filter, sort.
+    // Group by column, apply filter, sort. Subtasks are intentionally
+    // excluded from the top-level board — they live inside their parent's
+    // card via the `card-subtasks` disclosure. Skipping them here is what
+    // guarantees a subtask never renders as a sibling card in any column.
     const byColumn = new Map();
     for (const col of COLUMNS) byColumn.set(col.id, []);
     for (const t of tasks.values()) {
+      if (t.parentId) continue;
       const list = byColumn.get(t.column);
       if (list) list.push(t);
     }
