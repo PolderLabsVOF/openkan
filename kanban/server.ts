@@ -23,6 +23,7 @@ import {
   KANBAN_DIR,
   taskArtifacts,
   ensureBoardForProject,
+  reconcileOkTask,
 } from "./board.ts";
 import { extractMetadata } from "./tags.ts";
 import {
@@ -2826,15 +2827,31 @@ export async function startOrAttach(
 
   // ─── File watcher (SSE broadcaster) ───────────────────────────────────────
   // Watch the project root so we also catch changes to source files (e.g. docs/*.mdx)
-  // that are tracked as task sources. Events from .ok subdirs are filtered out
-  // to avoid the existing board.json / task.mdX event spam.
+  // that are tracked as task sources. Inside .ok/ we filter the engine's own mirror
+  // writes (board.json, board.mdx, tasks.json, per-task task.mdx + comments/inputs/
+  // state.json) to avoid double-broadcasts, but `.ok/tasks/<id>.json` (the
+  // planning-system store populated by the ok CLI) MUST pass through so an
+  // agent's `ok task add` is visible to the dashboard without a restart.
   const projectRoot = join(dir, "..");
   watcherHandle = watch({
     root: projectRoot,
-    ignore: (p) =>
-      /server\.(lock|log|pid)$/.test(p) ||
-      p.endsWith(".tmp") ||
-      p.replace(/\\/g, "/").includes("/.ok/"),
+    ignore: (p) => {
+      const norm = p.replace(/\\/g, "/");
+      if (/server\.(lock|log|pid)$/.test(norm)) return true;
+      if (norm.endsWith(".tmp")) return true;
+      if (norm.includes("/.ok/")) {
+        // Engine-owned mirror writes — suppress; selfWriteUntil already
+        // covers them but explicit ignore here removes cross-talk noise.
+        if (norm.endsWith("/.ok/board.json")) return true;
+        if (norm.endsWith("/.ok/board.mdx")) return true;
+        if (norm.endsWith("/.ok/tasks.json")) return true;
+        if (/\/\.ok\/tasks\/[^/]+\/task\.mdx$/.test(norm)) return true;
+        if (/\/\.ok\/tasks\/[^/]+\/(comments|inputs|state)\.json$/.test(norm)) return true;
+        if (norm.endsWith("/.ok/changelog.jsonl")) return true;
+        return false; // per-task JSONs and config/index files pass through
+      }
+      return false;
+    },
   });
 
   // Periodic drift sweep — every 60 s, re-check all source hashes.
@@ -2874,6 +2891,28 @@ export async function startOrAttach(
       } else if (ev.path.includes("/tasks/") && ev.path.endsWith("state.json")) {
         const taskId = ev.path.match(/\/tasks\/([^/]+)\//)?.[1];
         if (taskId) broadcast("task.state.changed", { taskId });
+      } else if ((ev.path.includes("/.ok/tasks/") || ev.path.startsWith(".ok/tasks/")) && ev.path.endsWith(".json")) {
+        // Planning-system per-task write (e.g. `ok task add`). Reconcile into
+        // the in-memory board when the id is new; mirror-engine no-op when
+        // the task already lives here. Event paths emitted by the watcher
+        // are project-root-relative, so they can start with ".ok/" directly.
+        const okIdMatch = ev.path.match(/(?:\/|^)\.ok\/tasks\/([^/]+)\.json$/);
+        const okTaskId = okIdMatch?.[1];
+        if (okTaskId && /^tsk-[A-Za-z0-9_-]+$/.test(okTaskId)) {
+          try {
+            const inserted = await reconcileOkTask(okTaskId, dir);
+            if (inserted) {
+              broadcast("task.created", inserted);
+              await writeTaskMdx(inserted, dir, await getBoard());
+            } else {
+              // Existing task — treat the planning write as a metadata
+              // nudge. The HTTP PATCH path stays the canonical owner.
+              broadcast("ok.task.synced", { taskId: okTaskId, path: ev.path });
+            }
+          } catch (e: any) {
+            process.stderr.write(`reconcileOkTask(${okTaskId}) failed: ${e?.message ?? e}\n`);
+          }
+        }
       } else if (ev.path.match(/\/tasks\/([^/]+)\/images\//)) {
         const taskId = ev.path.match(/\/tasks\/([^/]+)\/images\//)?.[1];
         if (taskId) broadcast("task.image.changed", { taskId });

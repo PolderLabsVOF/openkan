@@ -157,6 +157,91 @@ heartbeat), `--evidence` (complete; required), `--reason` (cancel;
 required). Run `ok <subcommand> --help` or `ok help` to confirm a flag;
 unknown flags fail the call.
 
+## Creating tasks from agents (live dashboard)
+
+When you (or any sub-agent) need to record work to be done, **always create
+the task through the `ok` or `openkan` CLI from the project root**. The
+dashboard server reconciles the planning-system write into its in-memory
+board in real time — every new task shows up at `http://127.0.0.1:7777/`
+within ~100 ms and is broadcast to any open SSE listener.
+
+### Project root resolution
+
+The CLI uses the **current working directory**, not the home directory or
+the agent's install path. Pre-flight before any `ok` command:
+
+```sh
+# Confirm you are in the project root; .ok/ should already exist if a server
+# is running, and the dashboard pin will name it.
+pwd
+ls .ok/openkan.json 2>/dev/null     # written when the dashboard attached this project
+ok doctor --json                    # exits 0 + lists tasks only when .ok/ is ready
+```
+
+If `pwd` is not the project root, `cd` there first. The same rule applies
+to every sub-agent you spawn: pass `cwd` explicitly so its shell lands at
+the repo root.
+
+### Recommended flow for an agent
+
+1. **Detect the project root.** Resolve `$PROJECT_ROOT` (often `$PWD`).
+   Optionally call `ok doctor --json` to confirm `.ok/` is initialised; if
+   not, run `ok init` once (idempotent).
+2. **Create the task.** From the project root:
+
+   ```sh
+   ok task add "Short actionable title" \
+     --owner <your-agent-name> \
+     --priority p1 \
+     --description "One paragraph: scope, dependencies, verification." \
+     --scope <tag1,tag2>
+   # -> prints: tsk-XXXXXXXX
+   ```
+
+   The printed id is your handle for every subsequent operation. Capture it.
+
+   **Alternative** (requires the dashboard server to be reachable AND the
+   project to be the active one):
+
+   ```sh
+   openkan board add "Short actionable title" --column todo
+   ```
+
+   `openkan board add` posts directly to `POST /api/tasks` and is the
+   fastest path when the dashboard is running. Use `ok task add` when the
+   server may be down (it is offline-first and survives restarts).
+
+3. **Watch it appear.** Either keep the dashboard open in a browser, or
+   if you need programmatic confirmation, hit the same endpoint the
+   dashboard uses:
+
+   ```sh
+   curl -s http://127.0.0.1:7777/api/board | jq '.tasks[] | select(.id=="tsk-XXXXXXXX")'
+   ```
+
+   The new task is in column `todo` (status=`pending`). Subsequent `ok
+   task claim` / `complete` / `update` calls flow through the same
+   reconcile path and the same SSE broadcast channel.
+
+4. **Claim and complete** (when you start the work):
+
+   ```sh
+   ok task claim    <tsk-id> --owner <your-agent-name> --lease-ms 3600000
+   # ... do the work ...
+   ok task complete <tsk-id> --owner <your-agent-name> --evidence "command + result"
+   ```
+
+   State transitions: `pending` → `in_progress` → `done`. Each step is
+   pushed to the dashboard via the same watcher; refresh the browser tab
+   (or its SSE listener) to see the move live.
+
+### Why not write files directly?
+
+`.ok/board.json` and `.ok/tasks/<id>.json` are owned by the runtime.
+Writing them by hand risks clobbering the in-memory cache and silently
+losing subsequent server edits. The CLI is the only sanctioned entry
+point; the dashboard reflects it automatically.
+
 Prefer existing architecture and utilities; justify new abstractions. Record
 non-goals and tradeoffs when they prevent scope creep. Order work by dependencies
 and risk, not just the size of the change. Separate discovery, implementation, and
