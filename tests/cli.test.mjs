@@ -130,7 +130,7 @@ describe("CLI", () => {
     it("documents the generic API bridge in help output", () => {
       const out = runOk("--help", tmpdir());
       assert.ok(out.includes("api <path>"));
-      assert.ok(out.includes("agent capabilities|context|call|start|abort"));
+      assert.ok(out.includes("agent install|capabilities|context|call|start|abort"));
     });
 
     it("prints subcommand help without treating it as a failed agent action", () => {

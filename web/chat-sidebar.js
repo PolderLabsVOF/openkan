@@ -31,8 +31,10 @@
     open: "ok.chat.open",
     selectors: "ok.chat.selectors",
     width: "ok.chat.width",
+    draft: "ok.chat.draft",
   };
   const DEFAULT_SELECTORS = Object.freeze({
+    agent: "openkan",
     model: "default",
     effort: "high",
     permissionMode: "bypassPermissions",
@@ -148,6 +150,8 @@
    * -------------------------------------------------------------------- */
   const state = {
     mounted: false,
+    requestEpoch: 0,
+    dismissController: null,
     open: false,
     root: null,
     sessions: [],
@@ -313,16 +317,21 @@
       </div>
 
       <section class="chat-sidebar__transcript chat-sidebar-transcript" id="chat-sidebar-transcript"
-               aria-live="polite" aria-label="Chat transcript"></section>
+               aria-label="Chat transcript" tabindex="0"></section>
       <button type="button" class="chat-sidebar-new-messages" id="chat-sidebar-new-messages"
-              hidden>New messages</button>
+              hidden>Jump to latest ↓</button>
 
       <footer class="chat-sidebar__composer chat-sidebar-composer">
         <div class="chat-sidebar__composer-surface">
           <div class="chat-sidebar__mention-tray" id="chat-sidebar-mention-tray" hidden aria-live="polite" aria-label="Task references"></div>
           <textarea id="chat-sidebar-input" class="chat-sidebar__composer-input"
-                    rows="1" placeholder="Message OpenKan" aria-label="Message OpenKan"></textarea>
+                    rows="1" placeholder="Ask about this project…" aria-label="Message OpenKan" aria-describedby="chat-sidebar-input-help"></textarea>
           <div class="chat-sidebar__composer-footer">
+            <button type="button" class="chat-sidebar__composer-agent" data-chat-action="open-agent-picker"
+                    aria-label="Choose agent" aria-haspopup="true" aria-expanded="false" title="Choose an agent for this conversation">
+              <span id="chat-sidebar-agent-label">OpenKan</span>
+              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="m2 4 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
+            </button>
             <button type="button" class="chat-sidebar__composer-attach" data-chat-action="open-attach-menu"
                     aria-label="Add context or start a new chat" aria-haspopup="true" aria-expanded="false" title="Add context">
               <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
@@ -354,7 +363,9 @@
             </button>
           </div>
         </div>
-        <p class="chat-sidebar__disclaimer" id="chat-sidebar-disclaimer">OpenKan can make mistakes. Review important changes.</p>
+        <div class="chat-sidebar__input-help" id="chat-sidebar-input-help"><span>Shift + Enter for a new line</span><span>Drop a task to reference it</span></div>
+        <p class="chat-sidebar__feedback" id="chat-sidebar-feedback" role="status" hidden></p>
+        <p class="chat-sidebar__disclaimer" id="chat-sidebar-disclaimer">Review important changes before applying them.</p>
       </footer>
 
       <section class="chat-sidebar__activity chat-sidebar-activity" id="chat-sidebar-activity"
@@ -412,7 +423,7 @@
     const label = state.root.querySelector("#chat-sidebar-session-title");
     if (!label) return;
     const cur = (state.sessions || []).find((s) => s.id === state.currentSessionId);
-    label.textContent = cur?.title || cur?.id || "New session";
+    label.textContent = cur?.title || cur?.id || "New chat";
   }
 
   function updateModelPill() {
@@ -421,6 +432,8 @@
     if (!label) return;
     const raw = state.selectors.model || "default";
     label.textContent = raw === "default" ? "Default" : String(raw).replace(/^.*?\//, "");
+    const agentLabel = state.root.querySelector("#chat-sidebar-agent-label");
+    if (agentLabel) agentLabel.textContent = state.selectors.agent === "openkan" ? "OpenKan" : state.selectors.agent === "default" ? "Claude Code" : state.selectors.agent;
     const effortLabel = state.root.querySelector("#chat-sidebar-effort-label");
     if (effortLabel) effortLabel.textContent = `${String(state.selectors.effort || "high").replace(/^./, (c) => c.toUpperCase())} effort`;
   }
@@ -444,11 +457,11 @@
     return Number.isNaN(date.getTime()) ? "Now" : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
   function bubbleMetaHTML(turn) {
-    const label = turn.role === "user" ? "You" : turn.role === "assistant" ? "Claude Code" : "OpenKan";
+    const label = turn.role === "user" ? "You" : turn.role === "assistant" ? (turn.agent === "openkan" ? "OpenKan" : !turn.agent || turn.agent === "default" ? "Claude Code" : turn.agent) : "OpenKan";
     const copy = turn.role !== "system"
-      ? `<button type="button" class="chat-copy-button" data-chat-copy="${esc(turn.ts || "")}" aria-label="Copy ${label} message" title="Copy message">⧉</button>`
+      ? `<button type="button" class="chat-copy-button" data-chat-copy="${esc(turn.ts || "")}" aria-label="Copy ${esc(label)} message" title="Copy message">⧉</button>`
       : "";
-    return `<div class="chat-bubble-meta ${turn.role === "assistant" ? "chat-bubble-meta-assistant" : ""}">${turn.role === "assistant" ? copy : ""}<span>${label} · ${formatTurnTime(turn.ts)}</span>${turn.role !== "assistant" ? copy : ""}</div>`;
+    return `<div class="chat-bubble-meta ${turn.role === "assistant" ? "chat-bubble-meta-assistant" : ""}">${turn.role === "assistant" ? copy : ""}<span>${esc(label)} · ${formatTurnTime(turn.ts)}</span>${turn.role !== "assistant" ? copy : ""}</div>`;
   }
   function bubbleHTML(turn) {
     const role = turn.role || "assistant";
@@ -675,6 +688,7 @@
       const html = await renderMarkdown(turn.content || "");
       el.innerHTML = html || esc(turn.content || "(No text returned)");
     }
+    if (!state.scrolledUp) node.scrollTop = node.scrollHeight;
     // A completed mark plays only for the newly-finished assistant turn.
     // Historical turns render in their settled state instead of re-running.
     if (completionTs && !state.completedMotionTs.has(completionTs)) {
@@ -719,7 +733,7 @@
             if (userAdded || assistantAdded) void renderTranscript({ completionTs: assistantAdded ? (assistantTurn?.ts || "") : "" });
             removeStreamingIndicator();
             stopSessionStream();
-            hideNewMessagesPill();
+            composerFeedback("Response complete.");
           }
         } catch (_err) { /* ignore */ }
       });
@@ -1082,6 +1096,9 @@
     }
     const label = status.label || (status.phase === "tool" ? "Using a tool" : "Thinking");
     const motion = window.OpenKanChatMotion?.render?.(status) || "";
+    if (node.dataset.statusLabel === label) return;
+    node.querySelectorAll("[data-chat-status-motion]").forEach(mark => window.OpenKanChatMotion?.stop?.(mark));
+    node.dataset.statusLabel = label;
     node.innerHTML = `${motion}<span>${esc(label)}</span>`;
     window.OpenKanChatMotion?.animateWithin?.(node);
     maybeAutoScroll(transcript);
@@ -1240,6 +1257,7 @@
     // untouched means a drop never injects a long, surprising prompt line.
     state.taskMentions.set(task.id, task);
     renderTaskMentionTray();
+    saveDraft(); updateAbortButton();
     input.focus();
     state.root?.classList.add("chat-sidebar--task-dropped");
     setTimeout(() => state.root?.classList.remove("chat-sidebar--task-dropped"), 520);
@@ -1250,6 +1268,7 @@
     if (!input || !taskId) return;
     state.taskMentions.delete(taskId);
     renderTaskMentionTray();
+    saveDraft(); updateAbortButton();
     input.focus();
   }
 
@@ -1287,6 +1306,7 @@
       if (!state.root.contains(e.relatedTarget)) state.root.classList.remove("chat-sidebar--task-drop");
     });
     state.root.addEventListener("dragover", (e) => {
+      if (e.dataTransfer?.types?.includes("Files")) e.preventDefault();
       if (readDraggedTask(e)) {
         e.preventDefault();
         if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
@@ -1301,28 +1321,21 @@
       state.root.classList.remove("chat-sidebar--task-drop");
       insertTaskMention(task);
     });
-    // Drag-drop: dropped files are routed through the M1 import endpoint.
-    state.root.addEventListener("dragover", (e) => { e.preventDefault(); });
-    state.root.addEventListener("drop", async (e) => {
-      const files = Array.from(e.dataTransfer?.files || []);
-      if (!files.length) return;
+    state.root.addEventListener("drop", (e) => {
+      if (!e.dataTransfer?.files?.length) return;
       e.preventDefault();
-      const a = api();
-      if (!a) return;
-      for (const file of files) {
-        try {
-          const text = await file.text();
-          await a("POST", "/api/import", { body: { content: text, filename: file.name } });
-        } catch (_err) { /* ignore */ }
-      }
-      await refreshSessions();
+      composerFeedback("File attachments are not supported here. Paste text into your message, or reference a task.");
     });
+
   }
 
   /** Global click-away: close any open popover when the user clicks
    *  outside the sidebar's interactive elements. Registered on mount. */
   function bindGlobalDismiss() {
-    document.addEventListener("mousedown", (e) => {
+    state.dismissController?.abort();
+    state.dismissController = new AbortController();
+    const options = { signal: state.dismissController.signal };
+    document.addEventListener("pointerdown", (e) => {
       if (!state.root || !state.popoverId) return;
       const target = e.target;
       if (!(target instanceof Element)) return;
@@ -1330,14 +1343,15 @@
       const trigger = state.root.querySelector("[data-popover-open='1']");
       if (popover?.contains(target) || trigger?.contains(target)) return;
       closePopover();
-    });
+    }, options);
     document.addEventListener("keydown", (e) => {
       if (!state.popoverId) return;
       if (e.key === "Escape") {
         e.preventDefault();
-        closePopover();
+        const trigger = state.root?.querySelector("[data-popover-open=\'1\']");
+        closePopover(); trigger?.focus();
       }
-    });
+    }, options);
   }
 
   function onClick(e) {
@@ -1362,7 +1376,7 @@
       if (input) {
         input.value = prompt.getAttribute("data-chat-prompt") || "";
         input.focus();
-        autoResize();
+        autoResize(); saveDraft(); updateAbortButton();
       }
       return;
     }
@@ -1377,8 +1391,10 @@
     else if (action === "new") { closePopover(); void onNewSession(); }
     else if (action === "archive") { closePopover(); void onArchive(); }
     else if (action === "toggle-activity") { closePopover(); toggleActivity(); setActiveTab(state.activityOpen ? "activity" : null); }
+    else if (action === "open-agent-picker") { openAgentPicker(); return; }
     else if (action === "open-model-picker") { void openModelPicker(); return; }
     else if (action === "open-effort-picker") { void openEffortPicker(); return; }
+    else if (action === "reference-task") { void openTaskReferencePicker(); return; }
     else if (action === "open-attach-menu") { openAttachMenu(); return; }
     else if (action === "open-session-menu") { openSessionMenu(); return; }
     else if (action === "import-file") { void onImportFileClick(); return; }
@@ -1452,10 +1468,27 @@
     }
   }
 
-  function onInput(_e) {
-    if (!state.root) return;
-    autoResize();
-    renderTaskMentionTray();
+  function draftKey() { return `${projectStorageKey(STORAGE_KEYS.draft)}:${state.currentSessionId || "new"}`; }
+  function saveDraft() {
+    const input = state.root?.querySelector("#chat-sidebar-input");
+    if (input) saveJSON(draftKey(), { text: input.value, tasks: [...state.taskMentions.values()] });
+  }
+  function restoreDraft() {
+    const draft = loadJSON(draftKey());
+    const input = state.root?.querySelector("#chat-sidebar-input");
+    if (input) input.value = typeof draft?.text === "string" ? draft.text : "";
+    state.taskMentions = new Map((Array.isArray(draft?.tasks) ? draft.tasks : []).map(normaliseDroppedTask).filter(Boolean).map(task => [task.id, task]));
+    renderTaskMentionTray(); autoResize(); updateAbortButton();
+  }
+  function composerFeedback(message = "", error = false) {
+    const node = state.root?.querySelector("#chat-sidebar-feedback");
+    if (!node) return;
+    node.textContent = message; node.hidden = !message;
+    node.classList.toggle("is-error", error);
+  }
+  function onInput(e) {
+    if (!state.root || e.target?.id !== "chat-sidebar-input") return;
+    autoResize(); saveDraft(); updateAbortButton();
   }
 
   function autoResize() {
@@ -1465,8 +1498,7 @@
     // Reset to a single line, then expand up to ~6 lines. Past that we
     // let the textarea scroll internally.
     ta.style.height = "auto";
-    const lineHeight = 18; // approximate; matches CSS line-height
-    const maxH = lineHeight * 6;
+    const maxH = Math.min(200, window.innerHeight * .25);
     const next = Math.min(ta.scrollHeight, maxH);
     ta.style.height = next + "px";
     ta.style.overflowY = ta.scrollHeight > maxH ? "auto" : "hidden";
@@ -1481,7 +1513,7 @@
     const isMod = e.metaKey || e.ctrlKey;
     if (!isMod) return;
     const k = (e.key || "").toLowerCase();
-    if (k !== "k") return;
+    if (k !== "l" || !e.shiftKey) return;
     if (!state.open || !state.mounted) return;
     const composer = state.root?.querySelector("#chat-sidebar-input");
     if (!composer) return;
@@ -1499,7 +1531,7 @@
   async function copyToClipboard(ts) {
     const turn = state.transcript.find((t) => t.ts === ts);
     if (!turn) return;
-    try { await navigator.clipboard.writeText(turn.content || ""); } catch (_err) { /* ignore */ }
+    try { await navigator.clipboard.writeText(turn.content || ""); composerFeedback("Message copied."); } catch (_err) { composerFeedback("Could not copy. Select the message text and copy it manually.", true); }
   }
 
   async function retryLastTurn() {
@@ -1508,7 +1540,9 @@
     if (!lastUser) return;
     if (!state.root) return;
     const input = state.root.querySelector("#chat-sidebar-input");
+    if (state.inFlight) return;
     if (input) input.value = lastUser.content || "";
+    state.taskMentions = new Map((lastUser.taskMentions || []).map(task => [task.id, task]));
     void onSend();
   }
 
@@ -1518,12 +1552,17 @@
     if (!input) return;
     const message = (input.value || "").trim();
     const taskMentions = [...state.taskMentions.values()];
+    const selectors = { ...state.selectors };
     if ((!message && taskMentions.length === 0) || state.inFlight) return;
 
+    const epoch = ++state.requestEpoch;
+    let accepted = false;
+    composerFeedback();
     state.inFlight = true;
     updateAbortButton();
     input.value = "";
     state.taskMentions.clear();
+    saveDraft();
     renderTaskMentionTray();
     autoResize();
 
@@ -1536,12 +1575,14 @@
       content: message,
       taskMentions,
       ts: localTs,
-      model: state.selectors.model,
-      effort: state.selectors.effort,
-      permissionMode: state.selectors.permissionMode,
+      agent: selectors.agent,
+      model: selectors.model,
+      effort: selectors.effort,
+      permissionMode: selectors.permissionMode,
       __status: "sending",
     });
     state.liveChips = [];
+    state.scrolledUp = false;
     await renderTranscript();
     updateLiveStatus({ phase: "thinking", label: "Starting Claude Code" });
 
@@ -1556,20 +1597,24 @@
           sessionId: state.currentSessionId || undefined,
           message,
           taskMentions,
-          model: state.selectors.model,
-          effort: state.selectors.effort,
-          permissionMode: state.selectors.permissionMode,
+          agent: selectors.agent,
+      model: selectors.model,
+          effort: selectors.effort,
+          permissionMode: selectors.permissionMode,
         },
         { signal: state.abortController.signal },
       );
+      if (epoch !== state.requestEpoch) return;
       if (result?.sessionId) {
         state.currentSessionId = result.sessionId;
         saveString(projectStorageKey(STORAGE_KEYS.lastSession), state.currentSessionId);
         // A newly created session could not subscribe before its ID existed.
         // Subscribe as soon as the server acknowledges it, while the turn runs.
         startSessionStream();
+        saveDraft();
       }
       if (result?.accepted) {
+        accepted = true;
         state.transcript = state.transcript.filter((t) => t.ts !== localTs);
         appendTurnIfNew(result.userTurn);
         await renderTranscript();
@@ -1585,54 +1630,67 @@
       bindChipChips();
       await refreshSessions();
     } catch (err) {
-      appendTurnIfNew({
-        role: "system",
-        content: `(send failed: ${(err && err.message) || "unknown error"})`,
-        ts: new Date().toISOString(),
-        status: "error",
-        error: (err && err.message) || String(err),
-      });
+      if (epoch !== state.requestEpoch) return;
+      state.transcript = state.transcript.filter(turn => turn.ts !== localTs);
+      input.value = input.value ? `${message}\n\n${input.value}` : message;
+      for (const task of taskMentions) state.taskMentions.set(task.id, task);
+      saveDraft(); renderTaskMentionTray(); autoResize();
+      removeStreamingIndicator();
+      composerFeedback(`Message not sent. ${err?.message || "Check your connection"}. Your draft is preserved.`, true);
       await renderTranscript();
     } finally {
-      state.inFlight = false;
-      state.abortController = null;
-      updateAbortButton();
+      if (epoch === state.requestEpoch) {
+        if (!accepted) state.inFlight = false;
+        state.abortController = null;
+        updateAbortButton();
+        input.focus();
+      }
     }
   }
 
   async function pollForCompletion(sessionId) {
-    for (let attempt = 0; attempt < 24 && sessionId === state.currentSessionId; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 750));
+    const epoch = state.requestEpoch;
+    for (let attempt = 0; attempt < 360 && sessionId === state.currentSessionId && epoch === state.requestEpoch && state.inFlight; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, attempt < 24 ? 750 : 5000));
+      if (epoch !== state.requestEpoch || !state.inFlight) return;
       const data = await fetchSession(sessionId);
+      if (epoch !== state.requestEpoch || sessionId !== state.currentSessionId) return;
       const last = data?.turns?.at?.(-1);
       if (last?.role === "assistant" || last?.role === "system") {
         state.transcript = data.turns;
-        removeStreamingIndicator();
-        await renderTranscript();
-        bindChipChips();
-        stopSessionStream();
+        state.inFlight = false;
+        updateAbortButton(); removeStreamingIndicator();
+        await renderTranscript({ completionTs: last.ts || "" });
+        bindChipChips(); stopSessionStream();
         return;
       }
     }
   }
 
   async function onAbort() {
-    if (!state.currentSessionId) return;
-    await abortSession(state.currentSessionId);
-    if (state.abortController) state.abortController.abort();
+    if (!state.currentSessionId || !state.inFlight) return;
+    composerFeedback("Stopping the agent…");
+    try {
+      await api()("POST", `/api/chat/sessions/${encodeURIComponent(state.currentSessionId)}/abort`);
+      composerFeedback("Stop requested. Waiting for the agent to finish.");
+    } catch (error) { composerFeedback(`Could not stop: ${error.message}. Try Stop again.`, true); }
   }
 
   async function onNewSession() {
+    if (state.inFlight) return;
+    saveDraft(); ++state.requestEpoch;
     state.currentSessionId = "";
     saveString(projectStorageKey(STORAGE_KEYS.lastSession), "");
     state.transcript = [];
+    restoreDraft(); composerFeedback();
     populateSelectors();
     stopSessionStream();
     await renderTranscript();
   }
 
   async function onArchive() {
-    if (!state.currentSessionId) return;
+    if (!state.currentSessionId || state.inFlight) return;
+    saveDraft();
     await deleteSession(state.currentSessionId);
     state.currentSessionId = "";
     state.transcript = [];
@@ -1644,16 +1702,26 @@
   }
 
   async function onPickSession(value) {
+    if (state.inFlight) return;
+    saveDraft(); ++state.requestEpoch;
     if (value === "__new__") return onNewSession();
     state.currentSessionId = value;
     saveString(projectStorageKey(STORAGE_KEYS.lastSession), value);
+    restoreDraft(); composerFeedback();
+    const epoch = state.requestEpoch;
+    state.transcript = [];
+    await renderTranscript();
     const data = await fetchSession(value);
+    if (epoch !== state.requestEpoch) return;
+    if (!data) composerFeedback("Could not load this chat. Choose it again to retry.", true);
     if (data && Array.isArray(data.turns)) {
       state.transcript = data.turns;
+      state.inFlight = data.running === true;
       // Restore selectors from the most recent assistant turn when
       // available so the composer matches the saved session state.
       const lastAssistant = [...data.turns].reverse().find((t) => t.role === "assistant");
       if (lastAssistant) {
+        if (lastAssistant.agent) state.selectors.agent = lastAssistant.agent;
         if (lastAssistant.model) state.selectors.model = lastAssistant.model;
         if (lastAssistant.effort) state.selectors.effort = lastAssistant.effort;
         if (lastAssistant.permissionMode) state.selectors.permissionMode = lastAssistant.permissionMode;
@@ -1663,13 +1731,22 @@
       await renderTranscript();
       bindChipChips();
     }
-    startSessionStream();
+    startSessionStream(); updateAbortButton();
+    if (state.inFlight) { updateLiveStatus({ label: "Agent is working" }); void pollForCompletion(value); }
   }
 
   function updateAbortButton() {
     if (!state.root) return;
     const send = state.root.querySelector("#chat-sidebar-send");
     const abort = state.root.querySelector("#chat-sidebar-abort");
+    const input = state.root.querySelector("#chat-sidebar-input");
+    if (send) send.disabled = state.inFlight || (!input?.value.trim() && state.taskMentions.size === 0);
+    if (abort) abort.disabled = !state.currentSessionId;
+    for (const button of state.root.querySelectorAll('[data-chat-action="new"], [data-chat-action="open-session-menu"]')) {
+      button.disabled = state.inFlight;
+      button.title = state.inFlight ? "Stop the current response before switching chats" : "";
+    }
+    if (input) input.placeholder = state.inFlight ? "Draft your next message…" : "Ask about this project…";
     if (state.inFlight) {
       if (send) send.hidden = true;
       if (abort) abort.hidden = false;
@@ -1779,6 +1856,22 @@
     }
   }
 
+  function openAgentPicker() {
+    const trigger = state.root?.querySelector(".chat-sidebar__composer-agent");
+    const popover = ensurePopover("chat-sidebar-agent-popover");
+    if (!trigger || !popover) return;
+    if (state.popoverId === popover.id) { closePopover(); return; }
+    closePopover();
+    const agents = state.pickerOptions?.agents || [
+      { id: "openkan", label: "OpenKan", description: "Planning, structure, and project management" },
+      { id: "default", label: "Claude Code", description: "General-purpose assistant" },
+    ];
+    popover.innerHTML = `<section class="chat-sidebar__popover-section"><h3 class="chat-sidebar__popover-heading">Agent</h3><p class="chat-sidebar__popover-note">Choose who handles your next message. Model and effort are separate settings.</p><ul class="chat-sidebar__popover-list">${agents.map(agent => `<li><label class="${agent.id === state.selectors.agent ? "is-active" : ""}"><input type="radio" name="chat-picker-agent" value="${esc(agent.id)}" ${agent.id === state.selectors.agent ? "checked" : ""} /><span class="chat-agent-option"><strong>${esc(agent.label)}</strong><small>${esc(agent.description)}</small></span></label></li>`).join("")}</ul></section>`;
+    state.popoverId = popover.id; anchorPopover(popover, trigger);
+    popover.addEventListener("change", onPickerChange);
+    popover.querySelector("input:checked, input")?.focus();
+  }
+
   async function openModelPicker() {
     if (!state.root) return;
     const trigger = state.root.querySelector(".chat-sidebar__composer-model");
@@ -1790,8 +1883,8 @@
       return;
     }
     closePopover();
-    const opts = await fetchPickerOptions();
-    const models = (opts?.models || state.models.map((id) => ({ id, label: id })));
+    const opts = state.pickerOptions;
+    const models = [...new Map([...(opts?.models?.length ? opts.models : state.models.map(id => ({ id, label: id }))), ...(state.selectors.model !== "default" ? [{ id: state.selectors.model, label: state.selectors.model }] : [])].filter(model => model.id !== "default").map(model => [model.id, model])).values()];
     const modelId = state.selectors.model || "default";
 
     popover.innerHTML = `
@@ -1807,6 +1900,7 @@
     // Render before measuring so getBoundingClientRect is accurate.
     anchorPopover(popover, trigger);
     popover.addEventListener("change", onPickerChange);
+    popover.querySelector("input:checked, input, button")?.focus();
   }
 
   async function openEffortPicker() {
@@ -1816,12 +1910,13 @@
     if (!trigger || !popover) return;
     if (state.popoverId === popover.id) { closePopover(); return; }
     closePopover();
-    const opts = await fetchPickerOptions();
+    const opts = state.pickerOptions;
     const effort = state.selectors.effort || "high";
     popover.innerHTML = `<section class="chat-sidebar__popover-section"><h3 class="chat-sidebar__popover-heading">Reasoning effort</h3><p class="chat-sidebar__popover-note">Higher effort gives the agent more time to reason before responding.</p><ul class="chat-sidebar__popover-list">${(opts?.efforts || EFFORT_OPTIONS).map((e) => effortRadio(e, e, e === effort)).join("")}</ul></section>`;
     state.popoverId = popover.id;
     anchorPopover(popover, trigger);
     popover.addEventListener("change", onPickerChange);
+    popover.querySelector("input:checked, input, button")?.focus();
   }
 
   function modelRadio(value, label, checked) {
@@ -1858,7 +1953,9 @@
     if (!(t instanceof HTMLInputElement)) return;
     const name = t.name;
     const value = t.value;
-    if (name === "chat-picker-model") {
+    if (name === "chat-picker-agent") {
+      state.selectors = { ...state.selectors, agent: value };
+    } else if (name === "chat-picker-model") {
       state.selectors = { ...state.selectors, model: value };
     } else if (name === "chat-picker-effort") {
       state.selectors = { ...state.selectors, effort: value };
@@ -1888,9 +1985,9 @@
     }
     closePopover();
     popover.innerHTML = `
-      <button type="button" data-chat-action="new" data-attach="1">＋ New session</button>
-      <button type="button" data-chat-action="import-file" data-attach="1">⇪ Import from file</button>
-      <button type="button" data-chat-action="add-to-planning" data-attach="1">▦ Add to planning</button>
+      <button type="button" data-chat-action="new" data-attach="1">New chat</button>
+      <button type="button" data-chat-action="reference-task" data-attach="1">Reference a task…</button>
+      <button type="button" data-chat-action="add-to-planning" data-attach="1">Create task from draft…</button>
       <button type="button" data-chat-action="close-attach" data-attach="1">Cancel</button>
     `;
     state.popoverId = popover.id;
@@ -1921,20 +2018,43 @@
   }
 
   async function addToPlanning() {
-    const a = api();
-    if (!a) { closePopover(); return; }
-    const composer = state.root?.querySelector("#chat-sidebar-input");
-    const message = (composer?.value || "").trim();
-    if (!message) {
-      try { composer?.focus(); } catch (_err) { /* ignore */ }
-      closePopover();
-      return;
-    }
-    try {
-      const title = message.split("\n")[0].slice(0, 80) || "Untitled task";
-      await a("POST", "/api/planning/tasks", { body: { title, body: message } });
-    } catch (_err) { /* ignore */ }
+    const message = state.root?.querySelector("#chat-sidebar-input")?.value.trim();
     closePopover();
+    if (!message) { composerFeedback("Write a task description in the message box first."); state.root?.querySelector("#chat-sidebar-input")?.focus(); return; }
+    window.OpenKanCreateTask?.openFromChat?.(message);
+  }
+
+  async function openTaskReferencePicker() {
+    const popover = ensurePopover("chat-sidebar-tasks-popover");
+    const trigger = state.root?.querySelector(".chat-sidebar__composer-attach");
+    if (!popover || !trigger) return;
+    closePopover(); state.popoverId = popover.id;
+    popover.innerHTML = '<p class="chat-sidebar__popover-note">Loading tasks…</p>';
+    anchorPopover(popover, trigger);
+    try {
+      const board = await api()("GET", "/api/board");
+      if (state.popoverId !== popover.id) return;
+      const tasks = (board.tasks || []).filter(task => !task.archived);
+      popover.innerHTML = '<label class="chat-task-search">Reference a task<input type="search" placeholder="Search tasks…" aria-label="Search tasks to reference" /></label><div data-task-results></div>';
+      const results = popover.querySelector("[data-task-results]");
+      const render = (query = "") => {
+        results.replaceChildren();
+        const matches = tasks.filter(task => `${task.title} ${task.id}`.toLowerCase().includes(query.toLowerCase()));
+        if (!matches.length) { results.textContent = "No matching tasks."; return; }
+        for (const task of matches) {
+          const button = document.createElement("button");
+          button.type = "button"; button.className = "chat-task-option";
+          button.textContent = task.title; button.title = task.id;
+          button.addEventListener("click", () => { insertTaskMention(task); closePopover(); });
+          results.append(button);
+        }
+      };
+      render(); anchorPopover(popover, trigger);
+      const search = popover.querySelector("input");
+      search.addEventListener("input", () => render(search.value)); search.focus();
+    } catch (error) {
+      if (state.popoverId === popover.id) popover.textContent = `Could not load tasks: ${error.message}. Close and try again.`;
+    }
   }
 
   /* ----------------------------------------------------------------------
@@ -1952,7 +2072,7 @@
       return;
     }
     closePopover();
-    const items = [`<button type="button" data-chat-action="new" data-attach="1">＋ New session</button>`]
+    const items = [`<button type="button" data-chat-action="new" data-attach="1">New chat</button>`]
       .concat((state.sessions || []).slice(0, 20).map((s) =>
         `<button type="button" data-chat-action="pick-session" data-session-id="${esc(s.id)}" data-attach="1">${esc(s.title || s.id)}</button>`,
       ));
@@ -2146,7 +2266,7 @@
     const permissionAliases = { "bypass-permissions": "bypassPermissions", "accept-edits": "acceptEdits", default: "bypassPermissions" };
     state.selectors.permissionMode = permissionAliases[state.selectors.permissionMode] || state.selectors.permissionMode || "bypassPermissions";
     state.currentSessionId = loadString(projectStorageKey(STORAGE_KEYS.lastSession));
-    state.models = await fetchModels();
+    [state.models, state.pickerOptions] = await Promise.all([fetchModels(), fetchPickerOptions()]);
     populateSelectors();
     bindEvents();
     bindGlobalDismiss();
@@ -2162,6 +2282,7 @@
       const data = await fetchSession(state.currentSessionId);
       if (data && Array.isArray(data.turns)) {
         state.transcript = data.turns;
+        state.inFlight = data.running === true;
       } else {
         state.currentSessionId = "";
         saveString(projectStorageKey(STORAGE_KEYS.lastSession), "");
@@ -2170,11 +2291,15 @@
     await renderTranscript();
     bindChipChips();
     syncHeroState();
+    restoreDraft();
     startSessionStream();
+    if (state.inFlight) { updateLiveStatus({ label: "Agent is working" }); void pollForCompletion(state.currentSessionId); }
   }
 
   function unmount() {
     if (!state.mounted) return;
+    saveDraft(); ++state.requestEpoch; state.inFlight = false;
+    state.dismissController?.abort();
     stopLive();
     if (window.OpenKanClaude && window.OpenKanClaude.unmount) {
       try { window.OpenKanClaude.unmount(); } catch (_err) { /* ignore */ }
@@ -2215,5 +2340,10 @@
     wireTopbarToggle();
   }
 
-  window.OpenKanChatSidebar = { mount, unmount, toggle, open, close, isOpen };
+  async function mentionTask(task) {
+    if (!state.mounted) await mount(document.body);
+    open(); insertTaskMention(normaliseDroppedTask(task));
+    composerFeedback("Task referenced. Add a question or send it to discuss this task.");
+  }
+  window.OpenKanChatSidebar = { mount, unmount, toggle, open, close, isOpen, mentionTask };
 })();

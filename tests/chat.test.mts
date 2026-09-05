@@ -284,6 +284,32 @@ test("sendTurn spawns claude -p with selectors and persists both turns", async (
     assert.ok(logLine.argv.includes("--include-partial-messages"));
     assert.ok(logLine.argv.includes("--include-hook-events"));
     assert.ok(logLine.argv.includes("--forward-subagent-text"));
+    assert.equal(logLine.argv[logLine.argv.indexOf("--agent") + 1], "openkan");
+    assert.equal(turns[1].agent, "openkan");
+  } finally {
+    process.env.PATH = prevPath;
+  }
+});
+
+test("default Claude selection omits custom agent flags", async () => {
+  const { root, binDir, log } = fakeClaudeFixture();
+  const prevPath = process.env.PATH;
+  process.env.PATH = binDir + ":" + prevPath;
+  try {
+    const result = await sendTurn(root, {
+      sessionId: "ses-default-agent",
+      message: "hello",
+      agent: "default",
+      model: "default",
+      effort: "high",
+      permissionMode: "acceptEdits",
+    });
+    const logLine = JSON.parse(
+      (await import("node:fs")).readFileSync(log, "utf8").trim().split("\n").pop()!,
+    );
+    assert.equal(logLine.argv.includes("--agent"), false);
+    assert.equal(logLine.argv.includes("--agents"), false);
+    assert.equal(result.assistantTurn.agent, "default");
   } finally {
     process.env.PATH = prevPath;
   }

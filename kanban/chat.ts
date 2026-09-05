@@ -36,7 +36,9 @@ import { join, resolve } from "node:path";
 import { basename } from "node:path";
 import { randomUUID } from "node:crypto";
 import { ensureDir, writeFileAtomic } from "./io.ts";
-import { readModelRouter } from "./claude-state.ts";
+import { readAgents, readModelRouter } from "./claude-state.ts";
+
+import { OPENKAN_AGENT_ID, openkanAgentDefinition } from "./agent-profile.ts";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -45,6 +47,7 @@ export interface ChatTurn {
   ts: string;            // ISO timestamp
   role: "user" | "assistant" | "system";
   content: string;
+  agent?: string;
   model?: string;
   effort?: string;
   permissionMode?: string;
@@ -116,6 +119,7 @@ export interface ChatSessionSummary {
 
 /** Selector values submitted with a chat message. */
 export interface ChatSelectors {
+  agent?: string;
   model: string;
   effort: string;
   permissionMode: string;
@@ -451,6 +455,7 @@ export function deleteSession(projectRoot: string, sessionId: string): boolean {
 
 /** Validate a chat selector set. Throws on invalid input. */
 export function validateSelectors(selectors: ChatSelectors): void {
+  if (selectors.agent !== undefined && (typeof selectors.agent !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_:./-]{0,127}$/.test(selectors.agent))) throw new Error("Invalid agent identifier");
   const eff = selectors.effort;
   const validEffort = new Set(["low", "medium", "high", "max"]);
   if (!validEffort.has(eff)) {
@@ -480,6 +485,7 @@ export interface PickerModelOption {
 
 /** Shape returned by `GET /api/chat/picker-options`. */
 export interface PickerOptions {
+  agents: { id: string; label: string; description: string }[];
   models: PickerModelOption[];
   efforts: readonly string[];
   permissionModes: readonly string[];
@@ -519,7 +525,14 @@ export async function pickerOptions(
     seen.add(id);
     models.push({ id, label: toPickerLabel(id) });
   }
+  const profiles = await readAgents(projectRoot);
+  const agents = [
+    { id: OPENKAN_AGENT_ID, label: "OpenKan", description: "Planning, structure, goals, and project management" },
+    { id: "default", label: "Claude Code", description: "General-purpose assistant without a custom agent profile" },
+    ...profiles.filter(profile => profile.id !== OPENKAN_AGENT_ID && profile.id !== "default").map(profile => ({ id: profile.id, label: profile.id, description: String(profile.frontmatter.description || "Custom Claude agent") })),
+  ];
   return {
+    agents,
     models,
     efforts: ALLOWED_EFFORT_LEVELS,
     permissionModes: ALLOWED_PERMISSION_MODES,
@@ -923,6 +936,7 @@ export function assembleAssistantTurn(
     ts: assistantTs,
     role: status === "ok" ? "assistant" : "system",
     content,
+    agent: opts.agent ?? OPENKAN_AGENT_ID,
     model: opts.model,
     effort: opts.effort,
     permissionMode: opts.permissionMode,
@@ -954,6 +968,7 @@ export async function sendTurn(
     role: "user",
     content: opts.displayMessage ?? opts.message,
     taskMentions: opts.taskMentions,
+    agent: opts.agent ?? OPENKAN_AGENT_ID,
     model: opts.model,
     effort: opts.effort,
     permissionMode: opts.permissionMode,
@@ -975,6 +990,15 @@ export async function sendTurn(
     "--forward-subagent-text",
   ];
 
+  const selectedAgent = opts.agent ?? OPENKAN_AGENT_ID;
+  if (selectedAgent !== "default") {
+    // The bundled default also works with --ignore-scripts or a read-only home.
+    // Existing user/project profiles retain their normal Claude precedence.
+    if (selectedAgent === OPENKAN_AGENT_ID && !(await readAgents(projectRoot)).some(profile => profile.id === OPENKAN_AGENT_ID)) {
+      args.push("--agents", JSON.stringify({ [OPENKAN_AGENT_ID]: openkanAgentDefinition() }));
+    }
+    args.push("--agent", selectedAgent);
+  }
   const child = spawn(bin, args, {
     cwd: opts.cwd ?? projectRoot,
     env: opts.env ?? process.env,
@@ -1214,6 +1238,7 @@ export async function handleChatRequest(
       const archived = isSessionArchived(projectRoot, sid);
       return jsonResponse({
         session: summariseSession(sid, turns, archived),
+        running: listRunningSessions(projectRoot).includes(sid),
         turns,
       });
     }
@@ -1307,12 +1332,14 @@ export async function handleChatRequest(
       const requestedPermissionMode = typeof body.permissionMode === "string" && body.permissionMode
         ? body.permissionMode : "bypassPermissions";
       const selectors: ChatSelectors = {
+        agent: body.agent === undefined ? OPENKAN_AGENT_ID : typeof body.agent === "string" ? body.agent : "",
         model: typeof body.model === "string" && body.model ? body.model : "default",
         effort: typeof body.effort === "string" && body.effort ? body.effort : "high",
         permissionMode: legacyPermissionModes[requestedPermissionMode] ?? requestedPermissionMode,
       };
       try {
         validateSelectors(selectors);
+        if (selectors.agent !== OPENKAN_AGENT_ID && selectors.agent !== "default" && !(await readAgents(projectRoot)).some(profile => profile.id === selectors.agent)) throw new Error("Selected agent is unavailable. Choose an installed agent.");
       } catch (e) {
         return errResponse((e as Error).message, 422);
       }
@@ -1329,6 +1356,7 @@ export async function handleChatRequest(
           message: agentMessage,
           displayMessage: message,
           taskMentions,
+          agent: selectors.agent,
           model: selectors.model,
           effort: selectors.effort,
           permissionMode: selectors.permissionMode,

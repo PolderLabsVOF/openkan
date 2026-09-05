@@ -67,6 +67,8 @@ test("installer creates and atomically updates a dedicated OpenKan home", () => 
   assert.equal(statSync(join(root, "home", ".claude", "skills", "openkan", "SKILL.md")).isFile(), true);
   assert.equal(statSync(join(root, "home", ".agents", "skills", "openkan", "SKILL.md")).isFile(), true);
 
+  assert.match(readFileSync(join(root, "home", ".claude", "agents", "openkan.md"), "utf8"), /name: openkan/);
+
   writeFileSync(join(installRoot, "obsolete-file"), "remove on update\n");
   writeFileSync(join(root, "home", ".codex", "skills", "openkan", "obsolete-file"), "remove on update\n");
   const second = runInstaller(root);
@@ -84,7 +86,7 @@ test("installer bootstraps the complete source tree when piped to bash", () => {
   const archiveRoot = join(root, "archive", "openkan-main");
   mkdirSync(archiveRoot, { recursive: true });
 
-  for (const directory of ["bin", "commands", "kanban", "ok", "skills", "web"]) {
+  for (const directory of ["bin", "commands", "kanban", "ok", "skills", "web", "agents"]) {
     cpSync(join(repoRoot, directory), join(archiveRoot, directory), { recursive: true });
   }
   for (const file of ["install.sh", "package.json", "package-lock.json", "README.md", "CHANGELOG.md", "LICENSE"]) {

@@ -1,287 +1,318 @@
-# OpenKan
+<p align="center">
+  <img src="https://raw.githubusercontent.com/PolderLabsVOF/openkan/main/web/brand/banner.svg" alt="OpenKan — local-first project management for people and coding agents" width="960">
+</p>
 
-![OpenKan banner](./web/brand/banner.svg)
+<h1 align="center">OpenKan</h1>
 
-Local-first project management for people and coding agents.
+<p align="center">
+  Tasks, goals, docs, and agent activity. In your repository.
+</p>
 
-OpenKan is a five-column MDX kanban with rich task workspaces, project
-documentation, MDX previews, contributor attribution, and a native Claude Code
-control plane — agents, durable tasks, sessions, chat history, and live
-activity all in one management workspace. It runs on `127.0.0.1`, stores project
-state under `.ok/`, and does not require a hosted service.
+<p align="center">
+  <a href="https://www.npmjs.com/package/@drb0rk/openkan"><img src="https://img.shields.io/npm/v/%40drb0rk%2Fopenkan?color=6366f1" alt="npm version"></a>
+  <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%3E%3D22-339933" alt="Node.js 22 or newer"></a>
+  <a href="https://github.com/PolderLabsVOF/openkan/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-64748b" alt="MIT license"></a>
+</p>
 
-```text
-┌───────────────────────────────────────────────────────────────┐
-│ Tasks  │ Docs  │ Claude  │                          ⚙ Chat ▌ │
-│ ▼ Backlog ▼ To Do ▼ Doing ▼ Review ▼ Done   │   ▌chat▐        │
-│   cards, drag, search, filters, archives    │   ▌sidebar▐     │
-│                                            │   ┌────────┐    │
-│  board + MDX + docs + changelog + …        │   │ model  │    │
-│                                            │   │ effort │    │
-│                                            │   │ perms  │    │
-│                                            │   ├────────┤    │
-│                                            │   │  msgs  │    │
-│                                            │   ├────────┤    │
-│                                            │   │ agents │    │
-│                                            │   │ teams  │    │
-│                                            │   │ flows  │    │
-│                                            │   └────────┘    │
-└───────────────────────────────────────────────────────────────┘
-```
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#workspace">Workspace</a> ·
+  <a href="#agent-workflow">Agent workflow</a> ·
+  <a href="#development">Development</a> ·
+  <a href="https://github.com/PolderLabsVOF/openkan/issues">Report an issue</a>
+</p>
 
-## Highlights
+OpenKan combines a local kanban dashboard with command-line planning for coding
+agents. Manage work in the browser, record goals and completion evidence from the
+terminal, and follow Claude Code activity without leaving the project. Project
+records live in `.ok/`; the board and planning CLI need no hosted service.
 
-- **Five-column board** with drag-and-drop, bulk actions, search, filters,
-  subtasks, and archives
-- **MDX task workspaces** with comments, structured questions, and sandboxed
-  TSX previews
-- **Project documentation browser** with cross-tab linking
-- **Multi-project switching** and live filesystem / SSE / WebSocket updates
-- **Native Claude Code control plane** — reads your local `~/.claude/`
-  agents, teams, workflows, and model router directly. No external process to
-  spawn; no separate database to keep in sync.
-- **Chat sidebar (in development)** — drive Claude Code from a right-side rail
-  with session/model/effort/permissions selectors and a live subagent +
-  workflow activity footer.
-- **`.ok/` planning system** — durable tasks, plans, PRDs, and chat sessions
-  share the same project directory as the board.
-- **`openkan import`** — scan any directory for `[ ]` / `[x]` Markdown
-  checkboxes and convert them into tracked kanban tasks (M1 wire).
-- **Local-only server** with no authentication, no remote sync, no telemetry.
+## Quick start
 
-## Requirements
-
-- Node.js ≥ 22. The npm package ships compiled JavaScript; users do not need
-  TypeScript or a build step. Source development uses Node ≥ 22.6 for type stripping.
-- `git` for source-tree features
-- An optional Claude Code install at `~/.claude/` is required for the Claude
-  control plane; the rest of OpenKan runs without it
-
-## Install
+**Requires Node.js 22 or newer and npm.** The npm package includes compiled
+JavaScript, so installation needs neither TypeScript nor a build step. Claude Code
+is optional and only needed for Claude-powered features.
 
 ```sh
 npm install -g @drb0rk/openkan
-cd /path/to/project
+
+cd /path/to/your/project
 openkan init
 openkan start
 ```
 
-Or run without a global install: `npx --package @drb0rk/openkan openkan --help`.
-The public package is scoped because npm reserves the unscoped `openkan` name;
-the installed commands remain `openkan` and `ok`.
-Install the bundled command-first agent skill explicitly (no install-time changes
-to your agent configuration):
+Installation adds the OpenKan Claude agent and skill, preserving locally edited
+files. Chat selects OpenKan by default; use the agent picker for Claude Code or
+another installed profile. To skip automatic installation, set
+`OPENKAN_SKIP_AGENT_INSTALL=1`. If npm scripts are disabled, run
+`openkan agent install` later. Use `--target DIR` for a custom Claude configuration
+directory; `--force` explicitly replaces customized files.
+
+Open [localhost:7777](http://127.0.0.1:7777/) if your browser does not open
+automatically. Keep the server process running while using the dashboard.
+`openkan init` is safe to run again in an existing workspace.
+
+<details>
+<summary><strong>Run without a global install</strong></summary>
+
+Run these commands from your project directory:
 
 ```sh
-openkan skill install --agent all       # Claude Code and Codex
-# --agent claude or --agent codex; --force updates an existing install
+npx --package @drb0rk/openkan openkan init
+npx --package @drb0rk/openkan openkan start
 ```
 
-### Tasks, goals, and progress from the CLI
+</details>
 
-No server or HTTP requests are needed for planning:
+<details>
+<summary><strong>Update an existing installation</strong></summary>
 
 ```sh
-openkan task add "Verify release" --owner codex --priority p1
+openkan stop
+npm install -g @drb0rk/openkan@latest
+openkan start
+```
+
+If you installed the agent skill, refresh it separately:
+
+```sh
+openkan skill install --agent all --force
+```
+
+The package name is **`@drb0rk/openkan`**. Its executables are **`openkan`** and
+**`ok`**; use the scoped name when installing or updating.
+
+</details>
+
+## Workspace
+
+| Area | What you can do |
+| --- | --- |
+| **Home** | See registered projects, activity, and workspace statistics. |
+| **Tasks** | Organize cards across Backlog, To Do, In Progress, Review, and Done. Search, filter, drag, archive, and manage subtasks. |
+| **Chat** | Stream agent responses, mention tasks by dropping cards into the composer, and inspect expandable activity details. Sessions are scoped to their project. |
+| **Docs** | Browse a folder tree, edit Markdown/MDX, preview documents, and generate drafts with the configured agent. |
+| **Goals** | Track PRD goals alongside plans, tasks, and progress. |
+| **Agents** | Explore a connected canvas of sessions, agents, subagents, and tasks, including discoverable Claude sessions started outside OpenKan for the current project. |
+
+**Task mode** keeps the board central with a resizable chat panel on the left.
+**Chat mode** gives the conversation the main workspace, with project tools on the
+right. The navbar stays available in both modes. Changelog, contributors, and
+insights are available through the workspace menu.
+
+### Claude Code integration
+
+Install and authenticate [Claude Code](https://code.claude.com/docs/en/setup)
+separately, then configure the agent, model, effort, and permissions in OpenKan.
+The board, docs, and offline planning commands remain usable without Claude Code.
+
+OpenKan reads local Claude configuration and session activity and launches Claude
+Code for chat turns and agent work. The chat activity view presents available file
+operations, commands, tool calls, and subagent events. Visibility depends on the
+events and local session data Claude exposes; OpenKan cannot display activity it
+does not receive.
+
+> **Local storage does not mean offline AI.** Agent requests use the configured
+> provider and may send project content to that provider. Review permission settings
+> before allowing an agent to run commands or change files.
+
+## Agent workflow
+
+Install the bundled skill so your coding agent can discover and use OpenKan's
+commands instead of constructing HTTP requests:
+
+```sh
+openkan skill install --agent all
+```
+
+Use `--agent claude` or `--agent codex` to install for one tool, or `--target DIR`
+for a custom skill directory. npm installation does not change agent configuration;
+skill installation is explicit.
+
+### Track tasks without a server
+
+Planning commands work directly with `.ok/`. From a project subdirectory, they find
+the nearest existing `.ok/` workspace. `ok` is the shorter planning-only command:
+`ok task list --json` and `openkan task list --json` use the same records.
+
+```sh
+openkan task add "Add a regression test" --owner codex --priority p1
 openkan task list --json
+
+# Replace TASK_ID with the ID printed by task add.
 openkan task claim TASK_ID --owner codex
-openkan task complete TASK_ID --owner codex --evidence "Tests passed"
-openkan prd add "Release" --vision "Easy installation" --goals "Ship package|Verify install"
-openkan goal list --json
-openkan goal update PRD_ID g1 --status met
+openkan task update TASK_ID --status review
+openkan task complete TASK_ID --owner codex --evidence "npm test passed"
+
 openkan progress --json
 openkan doctor
 ```
 
-Use IDs printed by creation commands in place of `TASK_ID` and `PRD_ID`.
-`openkan plan` manages phases and linked tasks; `ok` is the planning-only alias.
-Commands use the nearest existing `.ok/` workspace when invoked in a subdirectory.
-For visual board cards and collaboration use `openkan board list|add|show|move|comment`
-with the local server running. `openkan project list|use` selects its workspace.
-`openkan agent capabilities` describes advanced commands and the API fallback.
+Claims default to a one-hour lease. Use `openkan task heartbeat TASK_ID --owner
+codex` during longer work. Complete tasks only after verification, with evidence
+of what passed.
 
-### Alternative source installer
+### Connect goals, plans, and tasks
 
-OpenKan ships an atomic installer that puts binaries under
-`${XDG_DATA_HOME:-~/.local/share}/openkan` and a `openkan` symlink in
-`~/.local/bin`:
+Goals belong to a **PRD**: a product requirements document describing the intended
+outcome. Plans organize delivery; tasks record individual work items.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/PolderLabsVOF/openkan/main/install.sh | bash
+openkan prd add "First release" --vision "A tested, installable CLI" --goals "Ship package|Verify install"
+
+# Replace PRD_ID and PLAN_ID with the IDs printed by the preceding commands.
+openkan prd update PRD_ID --status active
+openkan plan add "Release preparation" --prd PRD_ID --summary "Package and verify"
+openkan task add "Test a clean installation" --prd PRD_ID --plan PLAN_ID --owner codex
+
+openkan goal list --prd PRD_ID --json
+openkan goal update PRD_ID g1 --status in_progress
+openkan progress --prd PRD_ID --json
 ```
 
-Pin the install location or target directory:
+Mark a goal `met` when its outcome is verified. Progress reports counts and
+completion percentages; it does not automatically finish goals or plans.
+
+### Work with dashboard cards
+
+**Planning tasks and dashboard cards are related but distinct.** Creating a task
+with `openkan task add` does not automatically create a visible board card. Use
+`openkan board` for dashboard work, with the server running:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/PolderLabsVOF/openkan/main/install.sh \
-  | OPENKAN_HOME=/opt/openkan OPENKAN_BIN_DIR="$HOME/bin" bash
+openkan project list
+openkan project use PROJECT_ID
+openkan board add "Test a clean installation" --column todo
+openkan board list
+openkan board move BOARD_TASK_ID doing
+openkan board comment BOARD_TASK_ID "Clean installation verified" --author agent:codex
+openkan board move BOARD_TASK_ID done
 ```
 
-Set `OPENKAN_SKIP_AGENT_SKILLS=1` only when you do not want the installer to
-manage the global OpenKan agent skill.
+Replace the example IDs with actual project and card IDs. Board commands check
+that the selected dashboard project matches your current repository. If you track
+both surfaces, include the planning task ID in the card description.
 
-If `~/.local/bin` is not already on `PATH`, add it to your shell profile:
+### Command reference
 
-```sh
-export PATH="$HOME/.local/bin:$PATH"
-```
+| Command | Purpose | Server needed |
+| --- | --- | --- |
+| `openkan task`, `plan`, `prd`, `goal` | Create and maintain planning records | No |
+| `openkan progress --json` | Report planning status and ready tasks | No |
+| `openkan doctor` | Validate the planning store | No |
+| `openkan board` | Manage dashboard cards and comments | Yes |
+| `openkan project list`, `project use ID` | Inspect or switch the dashboard project | Yes |
+| `openkan agent capabilities` | Discover the agent command surface | No |
+| `openkan agent context` | Read the active workspace context | Yes |
+| `openkan agent start ID`, `agent abort ID` | Start or stop agent work for a card | Yes |
 
-## Start a project
+Use `openkan --help` and `ok help` for command syntax. Planning list/show commands
+support `--json`; do not assume all mutation commands return JSON. For advanced
+features, use `openkan api` or `openkan agent call`, as documented in the
+[agent API reference](https://github.com/PolderLabsVOF/openkan/blob/main/skills/openkan/references/api.md).
+These target the dashboard's selected project, which may differ from your shell's
+current directory.
 
-```sh
-cd /path/to/project
-openkan init
-openkan start
-openkan open
-```
+## Project data and privacy
 
-The dashboard is available at:
-
-```text
-http://127.0.0.1:7777/
-```
-
-Useful commands:
-
-```sh
-openkan status
-openkan logs --follow
-openkan config list
-openkan config set port 7788
-openkan import --path notes.md         # scan a file for checkboxes
-openkan import --include "**/*.md"     # or a glob
-openkan stop
-```
-
-Use `openkan --help` for the full CLI.
-
-## Claude Code control plane
-
-OpenKan reads your local Claude Code install directly — there is no separate
-control daemon to run.
-
-- Agents, skills, slash commands, hooks, teams, and workflows are read from
-  `~/.claude/` by `kanban/claude-state.ts`.
-- The model router (`~/.claude/model-router.json`) drives the chat sidebar's
-  model selector and the activity feed.
-- A WebSocket bridge at `ws://127.0.0.1:7777/api/claude/ws` and an SSE stream
-  at `/api/claude/events` push live updates without polling.
-- The browser surfaces this as the **Claude** top-level tab and as the
-  activity footer inside the **Chat** sidebar.
-
-If you start OpenKan without a Claude Code install, the rest of the board
-still works — only the Claude tab and chat sidebar are disabled.
-
-## `.ok/` data layer
-
-OpenKan creates this structure inside each managed project. Two settings
-files coexist on purpose: `.ok/openkan.json` is OpenKan's own runtime config;
-`.ok/config.json` is the planning-system store (`ok.config.v1`).
+OpenKan uses **`.ok/`**, not the legacy `.openkan/` directory. Important paths are:
 
 ```text
 .ok/
-├── openkan.json          # port, host, theme (OpenKan settings)
-├── board.json            # canonical board state
-├── board.mdx             # rendered board view
-├── config.json           # ok.config.v1 planning store
-├── tasks/                # kanban task mirrors (<id>.json)
-├── sessions/             # session transcripts
-├── chat/                 # chat sidebar transcripts (gitignored)
-├── archive/              # archived tasks
-├── changelog.jsonl       # append-only event log
-└── plans/                # planning system: PRDs, plans, schedules
+├── openkan.json       # Dashboard/runtime settings
+├── config.json        # Planning configuration
+├── board.json         # Canonical dashboard board
+├── board.mdx          # Rendered board document
+├── tasks/             # Planning JSON records and board task workspaces
+├── prds/              # PRDs, including their goals
+├── plans/             # Delivery plans
+├── sessions/          # Project chat/session records
+├── index.json         # Planning lookup index
+└── locks/             # Task claims and leases
 ```
 
-Keep `.ok/tasks/` and `.ok/plans/` in version control when you want a
-durable work record. Treat `.ok/sessions/` and `.ok/chat/` as sensitive and
-normally gitignore them.
+Additional files appear as you use features. Keep task and planning records in
+version control when you want a shared work history. Review `.gitignore` before
+committing: sessions and runtime files can contain prompts, local paths, command
+output, and other sensitive information.
 
-## Planning CLI
+The dashboard binds to `127.0.0.1:7777` by default and has no login layer. **Do not
+expose it to an untrusted network or public reverse proxy.** It can launch agents
+and modify project files. Use only trusted projects and review agent permissions.
 
-The `ok` CLI manages the planning layer — PRD, plans, durable tasks, and
-chat sessions — independently of the OpenKan server:
+## Server and troubleshooting
 
 ```sh
-ok init
-ok task add "Wire .ok/ to the OpenKan engine" --owner alice --priority p1
-ok task claim tsk-AbCdEfGh --owner alice
-ok task complete tsk-AbCdEfGh --owner alice --evidence "kanban/board.ts:200-260"
-ok plan add "v0.4 — chat sidebar"
-ok index
+openkan status
+openkan logs --tail 100
+openkan config list
+openkan start --no-open --project /absolute/path/to/project
+openkan stop
 ```
 
-See [`docs/OK-PLANNING.md`](./docs/OK-PLANNING.md) for the full surface and
-[`docs/CLAUDE-NATIVE.md`](./docs/CLAUDE-NATIVE.md) for how the planning
-system stays in sync with Claude Code sessions and hooks.
-
-## API surface
-
-OpenKan exposes a small loopback API consumed by the dashboard:
-
-```text
-GET    /api/board                  board snapshot
-GET    /api/tasks                  paged task list
-POST   /api/tasks                  create
-PATCH  /api/tasks/<id>             move / edit
-POST   /api/import                 M1 checkbox scan → tasks
-GET    /api/claude/snapshot        Claude Code reader snapshot
-GET    /api/claude/ws              WebSocket live updates
-GET    /api/claude/events          SSE live updates
-POST   /api/chat/send              chat sidebar: send a turn
-GET    /api/chat/sessions          list sessions + archived
-GET    /api/chat/sessions/<sid>    full transcript
-POST   /api/chat/sessions/<sid>/abort   kill running subprocess
-```
-
-All routes are loopback-only. See
-[`docs/CLAUDE-NATIVE.md`](./docs/CLAUDE-NATIVE.md) for the Claude control
-plane contract.
-
-## Security
-
-- The server binds to `127.0.0.1` by default.
-- There is no authentication; do not expose the port to a network.
-- Session and chat files can contain paths, prompts, and command output.
-- TSX previews run in a sandboxed iframe without same-origin access.
-- All Claude control-plane endpoints are loopback-only.
+| Problem | Check |
+| --- | --- |
+| `openkan: command not found` | Ensure your npm global executable directory is on `PATH`. Check `npm prefix -g` and reopen your terminal after changing your shell configuration. |
+| An old install runs after updating | Check `command -v openkan` on macOS/Linux or `where openkan` on Windows. An earlier source install may appear before npm's executable on `PATH`. |
+| Port 7777 is occupied | Stop the existing OpenKan server, or start with `--port 7788`. Use the same `--port` for server-backed CLI commands. |
+| Board commands report a project mismatch | Run `openkan project list`, then `openkan project use PROJECT_ID` for the repository you are working in. |
+| Claude chat does not respond | Confirm Claude Code works in your terminal, check the configured provider/model and permissions, then inspect `openkan logs --tail 100`. |
+| Planning records fail validation | Run `openkan doctor` and inspect its reported files before editing or resetting data. |
 
 ## Development
+
+Use **Node.js 22.6 or newer** for source development; source commands use Node's
+experimental type-stripping support. Git is required to clone the repository.
 
 ```sh
 git clone https://github.com/PolderLabsVOF/openkan.git
 cd openkan
-npm install
-npm test
-npm run typecheck
-npm run check
-npm run e2e
+npm ci
+
+npm run openkan -- init
+npm run openkan -- start --no-open
 ```
 
-Run directly from the checkout:
+Run verification in another terminal:
 
 ```sh
-npm run openkan -- init
-npm run openkan -- start
+npm test                 # Unit and integration tests
+npm run typecheck        # TypeScript checks
+npm run check            # Repository sanity checks
+npm run test:package     # Build, pack, install, and smoke-test the npm artifact
 ```
 
-Repository layout:
+`npm run build` generates `dist/`. The npm launchers use that compiled output when
+present; use `npm run openkan -- ...` to run directly from edited source rather
+than an older build.
 
-```text
-bin/                 CLI entrypoints (openkan, ok, ok-install)
-commands/            Agent command prompts
-kanban/              Board, persistence, server, API, Claude readers
-ok/                  Planning system storage + command library
-skills/openkan/      Portable agent guidance and templates
-web/                 Browser application (vanilla JS/CSS)
-tests/               Unit, integration, installer, contract, e2e
-install.sh           Atomic dedicated-location installer
-docs/                User guides (OK-PLANNING, CLAUDE-NATIVE, HOOKS)
+<details>
+<summary><strong>Alternative source installer (macOS/Linux)</strong></summary>
+
+For a dedicated source installation rather than the published npm package, run
+this from a reviewed checkout. It requires Bash, Node.js 22.6+, and npm:
+
+```sh
+bash install.sh
 ```
 
-## Contributing
+The installer defaults to `~/.local/share/openkan` on Linux (respecting
+`XDG_DATA_HOME`) and `~/Library/Application Support/OpenKan` on macOS. It links
+`openkan` in `~/.local/bin`, which must be on `PATH`.
 
-See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+Override locations with `OPENKAN_HOME` and `OPENKAN_BIN_DIR`. This installer additionally installs skills for Codex and shared agents; set `OPENKAN_SKIP_AGENT_SKILLS=1` to
+skip that step. Use the same installation method for subsequent updates to avoid
+competing command paths.
 
-## License
+</details>
 
-MIT — see [`LICENSE`](./LICENSE).
+## Documentation and contributing
+
+- [Planning guide](https://github.com/PolderLabsVOF/openkan/blob/main/docs/OK-PLANNING.md)
+- [Agent skill and workflow](https://github.com/PolderLabsVOF/openkan/blob/main/skills/openkan/SKILL.md)
+- [Agent API reference](https://github.com/PolderLabsVOF/openkan/blob/main/skills/openkan/references/api.md)
+- [Claude integration](https://github.com/PolderLabsVOF/openkan/blob/main/docs/CLAUDE-NATIVE.md)
+- [Contributing](https://github.com/PolderLabsVOF/openkan/blob/main/CONTRIBUTING.md)
+- [Changelog](https://github.com/PolderLabsVOF/openkan/blob/main/CHANGELOG.md)
+
+OpenKan is [MIT licensed](https://github.com/PolderLabsVOF/openkan/blob/main/LICENSE).

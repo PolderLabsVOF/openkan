@@ -292,6 +292,10 @@
       b.addEventListener("click", onClick);
       return b;
     };
+    actions.append(mkIconBtn("Discuss", "Discuss this task in chat", () => {
+      window.OpenKanTaskView.close();
+      void window.OpenKanChatSidebar?.mentionTask?.(task);
+    }));
     // Copy task ID.
     actions.append(mkIconBtn("ID", "Copy ID", async () => {
       try {

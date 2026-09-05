@@ -137,7 +137,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for directory in bin commands kanban ok skills web; do
+for directory in bin commands kanban ok skills web agents; do
   cp -R "${SOURCE_ROOT}/${directory}" "${STAGING_ROOT}/${directory}"
 done
 
@@ -199,6 +199,10 @@ if [[ "${OPENKAN_SKIP_AGENT_SKILLS:-0}" != "1" ]]; then
 fi
 
 echo ""
+if [[ "${OPENKAN_SKIP_AGENT_INSTALL:-0}" != "1" ]]; then
+  node "${INSTALL_ROOT}/bin/install-agent.mjs"
+fi
+
 echo "OpenKan installed successfully."
 echo "  Application: ${INSTALL_ROOT}"
 echo "  Command:     ${BIN_DIR}/openkan"

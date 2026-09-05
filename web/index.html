@@ -7,6 +7,7 @@
     <title>OpenKan</title>
     <link rel="stylesheet" href="style.css" />
     <link rel="stylesheet" href="workspace.css?v=20260904-board-width" />
+    <link rel="stylesheet" href="experience.css" />
     <!-- M-Brand: SVG favicon, mono-coral. No PNG fallback (spec: no rasters). -->
     <link rel="icon" type="image/svg+xml" href="./brand/favicon.svg" />
   </head>
@@ -221,27 +222,19 @@
               <h2 id="modal-title">New Task</h2>
               <button class="btn-icon" type="button" data-close-modal aria-label="Close">&times;</button>
             </header>
-            <form id="new-task-form" class="modal-body">
+            <form id="new-task-form" class="modal-body" novalidate>
+              <p id="task-create-project" class="task-create-context">Create a task in the current project.</p>
               <label class="field">
-                <span>Title</span>
-                <input name="title" type="text" required maxlength="200" autocomplete="off" />
+                <span>Task title <span class="field-required">Required</span></span>
+                <input name="title" type="text" required maxlength="200" autocomplete="off" placeholder="What needs to get done?" aria-describedby="task-create-error" />
               </label>
               <label class="field">
-                <span>Project path</span>
-                <div class="field-row-with-button">
-                  <input name="root" type="text" autocomplete="off"
-                         placeholder="/abs/path/to/repo (defaults to active project)" />
-                  <button type="button" id="new-task-browse-btn" class="btn btn-sm"
-                          aria-label="Browse for a project folder">📁 Browse…</button>
-                </div>
-              </label>
-              <label class="field">
-                <span>Description</span>
-                <textarea name="description" rows="3" placeholder="Prompt for the agent. Markdown is fine."></textarea>
+                <span>Description <span class="field-optional">Optional</span></span>
+                <textarea name="description" rows="4" placeholder="Describe the outcome, context, and how to verify it. Markdown supported."></textarea>
               </label>
               <div class="field-row">
                 <label class="field">
-                  <span>Column</span>
+                  <span>Status</span>
                   <select name="column">
                     <option value="backlog">Backlog</option>
                     <option value="todo" selected>To Do</option>
@@ -251,21 +244,31 @@
                   </select>
                 </label>
                 <label class="field">
-                  <span>Agent</span>
-                  <input name="agent" type="text" placeholder="e.g. build" autocomplete="off" />
-                </label>
-                <label class="field">
-                  <span>Model</span>
-                  <input name="model" type="text" placeholder="provider/model" autocomplete="off" />
+                  <span>Priority</span>
+                  <select name="priority">
+                    <option value="low">Low</option>
+                    <option value="normal" selected>Normal</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
                 </label>
               </div>
-              <!-- Hidden parentId — populated when the modal is opened from
-                   a parent task's "+ Add subtask" button. Sent through to
-                   /api/tasks so the cascade knows about the link. -->
+              <details class="task-create-options">
+                <summary>Agent settings <span>Optional</span></summary>
+                <p>Assign an agent and model for later. Creating a task does not start an agent.</p>
+                <div class="field-row">
+                  <label class="field"><span>Agent</span><input name="agent" type="text" placeholder="Use configured default" autocomplete="off" /></label>
+                  <label class="field"><span>Model</span><input name="model" type="text" placeholder="Use configured default" autocomplete="off" /></label>
+                </div>
+              </details>
               <input type="hidden" name="parentId" value="" />
+              <p id="task-create-error" role="alert" hidden></p>
+              <label class="task-create-open"><input name="openAfterCreate" type="checkbox" checked /> Open task after creating</label>
               <footer class="modal-footer">
-                <button type="button" class="btn" data-close-modal>Cancel</button>
-                <button type="submit" class="btn btn-primary">Create Task</button>
+                <span class="task-create-shortcut">Ctrl / ⌘ + Enter to create</span>
+                <button type="button" class="btn" id="task-discard-draft">Discard draft</button>
+                <button type="button" class="btn" data-close-modal>Close</button>
+                <button type="submit" class="btn btn-primary" id="task-create-submit">Create task</button>
               </footer>
             </form>
           </div>

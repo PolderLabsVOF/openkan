@@ -1,7 +1,7 @@
 // OpenKan — multi-project registry stored at ~/.config/openkan/projects.json
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from "node:fs";
-import { join, basename, resolve } from "node:path";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, realpathSync } from "node:fs";
+import { join, basename, resolve, dirname } from "node:path";
 import { homedir } from "node:os";
 import { promisify } from "node:util";
 import { opendir } from "node:fs/promises";
@@ -13,6 +13,8 @@ export interface ProjectEntry {
   name: string;         // human-friendly display name
   root: string;         // absolute path to the project root
   addedAt: string;      // ISO timestamp
+  lastOpenedAt?: string;
+  lastActivityAt?: string;
   active: boolean;      // exactly one true at any time
 }
 
@@ -44,7 +46,7 @@ export function loadRegistry(): { projects: ProjectEntry[] } {
 
 export function saveRegistry(reg: { projects: ProjectEntry[] }): void {
   const path = registryPath();
-  const dir = join(homedir(), ".config", "openkan");
+  const dir = dirname(path);
   mkdirSync(dir, { recursive: true });
   writeFileSync(path, JSON.stringify(reg, null, 2), "utf-8");
 }
@@ -60,12 +62,56 @@ function slugify(name: string): string {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-/** List all registered projects. */
+function canonicalRoot(root: string): string {
+  try { return realpathSync(resolve(root)); } catch { return resolve(root); }
+}
+
+function uniqueId(id: string, used: Set<string>): string {
+  const base = id || "project";
+  let candidate = base;
+  for (let i = 2; used.has(candidate); i++) candidate = `${base}-${i}`;
+  return candidate;
+}
+
+function distinctProjects(projects: ProjectEntry[]): ProjectEntry[] {
+  const roots = new Map<string, ProjectEntry>();
+  for (const project of projects) {
+    const root = canonicalRoot(project.root);
+    const prior = roots.get(root);
+    if (!prior) roots.set(root, { ...project, root });
+    else roots.set(root, {
+      ...(project.active ? project : prior), root,
+      active: prior.active || project.active,
+      lastOpenedAt: [prior.lastOpenedAt, project.lastOpenedAt].filter(Boolean).sort().at(-1),
+    });
+  }
+  const ids = new Set<string>();
+  return [...roots.values()].map(project => {
+    const id = uniqueId(project.id, ids); ids.add(id);
+    return { ...project, id };
+  });
+}
+
+function projectActivity(project: ProjectEntry): number {
+  let latest = Date.parse(project.lastOpenedAt || project.addedAt) || 0;
+  const files = [".ok/board.json", ".ok/tasks", ".ok/plans", ".ok/prds", ".ok/changelog.jsonl", ".git/index", ".git/logs/HEAD"];
+  // Session turns append to existing files; inspect mtimes, never transcript contents.
+  try { for (const name of readdirSync(join(project.root, ".ok/sessions"))) files.push(`.ok/sessions/${name}`); } catch { /* no sessions */ }
+  for (const file of files) {
+    try { latest = Math.max(latest, statSync(join(project.root, file)).mtimeMs); } catch { /* optional activity source */ }
+  }
+  return Math.min(latest, Date.now());
+}
+
+/** List one entry per physical repository, newest activity first. */
 export function listProjects(): ProjectEntry[] {
   // Claude worktrees are execution sandboxes, not independent OpenKan
   // projects. Keep legacy registry entries on disk for compatibility, but
   // never surface them in selectors or overview APIs.
-  return loadRegistry().projects.filter((project) => !isWorktreePath(project.root));
+  return distinctProjects(loadRegistry().projects)
+    .filter((project) => !isWorktreePath(project.root))
+    .map(project => ({ ...project, lastActivityAt: new Date(projectActivity(project)).toISOString() }))
+    .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 }
 
 export function isWorktreePath(root: string): boolean {
@@ -85,8 +131,7 @@ export function isWorktreePath(root: string): boolean {
 
 /** Return the currently active project, or null. */
 export function activeProject(): ProjectEntry | null {
-  const reg = loadRegistry();
-  return reg.projects.find(p => p.active) ?? null;
+  return listProjects().find(p => p.active) ?? null;
 }
 
 /**
@@ -95,12 +140,12 @@ export function activeProject(): ProjectEntry | null {
  * Returns null if the id doesn't exist.
  */
 export function setActiveProject(id: string): ProjectEntry | null {
-  const reg = loadRegistry();
+  const reg = { projects: distinctProjects(loadRegistry().projects) };
   const prev = reg.projects.find(p => p.active) ?? null;
   const target = reg.projects.find(p => p.id === id);
   if (!target) return null;
 
-  reg.projects = reg.projects.map(p => ({ ...p, active: p.id === id }));
+  reg.projects = reg.projects.map(p => ({ ...p, active: p.id === id, ...(p.id === id ? { lastOpenedAt: new Date().toISOString() } : {}) }));
   saveRegistry(reg);
   return prev;
 }
@@ -111,20 +156,16 @@ export function setActiveProject(id: string): ProjectEntry | null {
  * Sets it as active (deactivates any previous).
  */
 export function addProject(input: { id?: string; name: string; root: string }): ProjectEntry {
-  const id = input.id ?? slugify(basename(input.root));
+  const root = canonicalRoot(input.root);
   const now = new Date().toISOString();
-
-  const reg = loadRegistry();
-  // Deactivate all others
-  reg.projects = reg.projects.map(p => ({ ...p, active: false }));
-
+  const reg = { projects: distinctProjects(loadRegistry().projects) };
+  const existing = reg.projects.find(project => project.root === root);
+  const id = existing?.id ?? uniqueId(input.id ?? slugify(basename(root)), new Set(reg.projects.map(project => project.id)));
   const entry: ProjectEntry = {
-    id,
-    name: input.name,
-    root: input.root,
-    addedAt: now,
-    active: true,
+    ...existing, id, name: input.name, root,
+    addedAt: existing?.addedAt || now, lastOpenedAt: now, active: true,
   };
+  reg.projects = reg.projects.filter(project => project.root !== root).map(project => ({ ...project, active: false }));
   reg.projects.push(entry);
   saveRegistry(reg);
   return entry;
@@ -132,7 +173,7 @@ export function addProject(input: { id?: string; name: string; root: string }): 
 
 /** Remove a project by id. Returns true if found and removed. */
 export function removeProject(id: string): boolean {
-  const reg = loadRegistry();
+  const reg = { projects: distinctProjects(loadRegistry().projects) };
   const idx = reg.projects.findIndex(p => p.id === id);
   if (idx === -1) return false;
 
@@ -321,8 +362,8 @@ export async function autoDetectProjects(opts?: AutoDetectOptions): Promise<Auto
   const skipHidden = opts?.skipHidden ?? true;
   const skipDirs = new Set(opts?.skipDirs ?? [...DEFAULT_SKIP_DIRS]);
 
-  const registry = loadRegistry();
-  const knownRoots = new Set(registry.projects.map((p) => resolve(p.root)));
+  const registry = { projects: distinctProjects(loadRegistry().projects) };
+  const knownRoots = new Set(registry.projects.map((p) => canonicalRoot(p.root)));
   const result: AutoDetectScanResult = { scanned: [], discovered: [], alreadyKnown: [] };
 
   // Start from cwd
@@ -351,7 +392,7 @@ export async function autoDetectProjects(opts?: AutoDetectOptions): Promise<Auto
   const seenRoots = new Set<string>();
   const uniqueScanned: string[] = [];
   for (const raw of result.scanned) {
-    const resolved = resolve(raw);
+    const resolved = canonicalRoot(raw);
     if (seenRoots.has(resolved)) continue;
     seenRoots.add(resolved);
     uniqueScanned.push(resolved); // store resolved form for consistency
@@ -359,11 +400,12 @@ export async function autoDetectProjects(opts?: AutoDetectOptions): Promise<Auto
 
   // Filter against registry
   for (const repoRoot of uniqueScanned) {
+    if (isWorktreePath(repoRoot)) continue;
     if (knownRoots.has(repoRoot)) {
       result.alreadyKnown.push(repoRoot);
       continue;
     }
-    const id = slugify(basename(repoRoot));
+    const id = uniqueId(slugify(basename(repoRoot)), new Set([...registry.projects, ...result.discovered].map(project => project.id)));
     const entry: ProjectEntry = {
       id,
       name: basename(repoRoot),

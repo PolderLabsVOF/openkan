@@ -23,6 +23,7 @@ import { runImport } from "../kanban/import.ts";
 import { main as runPlanning } from "./ok.ts";
 import { cpSync } from "node:fs";
 import { homedir } from "node:os";
+import { installAgent } from "./install-agent.mjs";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -196,8 +197,8 @@ async function cmdStart(ctx: BoardContext, argv: string[]): Promise<void> {
   if (projectFlag) {
     const projectRoot = projectFlag;
     const id = basename(projectRoot).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-    addProject({ id, name: basename(projectRoot), root: projectRoot });
-    setActiveProject(id);
+    const entry = addProject({ id, name: basename(projectRoot), root: projectRoot });
+    setActiveProject(entry.id);
     ctx.directory = projectRoot;
     setProjectRoot(projectRoot);
   }
@@ -506,8 +507,15 @@ async function cmdAgentContext(argv: string[]): Promise<void> {
 
 async function cmdAgent(argv: string[]): Promise<void> {
   const sub = argv[0] ?? "capabilities";
+  if (sub === "install") {
+    const args = parseArgs(argv.slice(1));
+    if (args.flags.provider && args.flags.provider !== "claude") throw new Error("Only the Claude provider is currently supported");
+    const result = installAgent({ force: args.flags.force === true, ...(typeof args.flags.target === "string" ? { configDir: resolve(args.flags.target) } : {}) });
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
   if (sub === "-h" || sub === "--help" || sub === "help") {
-    process.stdout.write("Usage: openkan agent capabilities|context|call|start|abort\n\n  capabilities              Print the supported local API groups\n  context [--json]          Snapshot active workspace context\n  call /api/path [flags]    Call a loopback OpenKan API route\n  start <task-id> [flags]   Start the configured agent for a task\n  abort <task-id> [flags]   Abort a running task agent\n");
+    process.stdout.write("Usage: openkan agent install|capabilities|context|call|start|abort\n\n  install [--target DIR] [--force]  Install the Claude agent and skill\n  capabilities              Print the supported local API groups\n  context [--json]          Snapshot active workspace context\n  call /api/path [flags]    Call a loopback OpenKan API route\n  start <task-id> [flags]   Start the configured agent for a task\n  abort <task-id> [flags]   Abort a running task agent\n");
     return;
   }
   if (sub === "capabilities") {
@@ -533,7 +541,7 @@ async function cmdAgent(argv: string[]): Promise<void> {
     if (!taskId) throw new Error("Usage: openkan agent abort <task-id>");
     return cmdApi([`/api/tasks/${encodeURIComponent(taskId)}/abort`, "--method", "POST", ...argv.slice(2)]);
   }
-  throw new Error("Usage: openkan agent capabilities|context|call|start|abort …");
+  throw new Error("Usage: openkan agent install|capabilities|context|call|start|abort …");
 }
 
 // ─── Subcommand: reset ───────────────────────────────────────────────────────
@@ -589,7 +597,7 @@ function printHelp(cmd?: string): void {
     config: "config list|get <key>|set <key> <value>  Manage config",
     logs: "logs [--tail N] [--follow]       Print server logs",
     api: "api <path> [--method M] [--data JSON|--data-file FILE]  Call any local OpenKan REST feature",
-    agent: "agent capabilities|context|call|start|abort  Agent-first command/control bridge",
+    agent: "agent install|capabilities|context|call|start|abort  Agent-first command/control bridge",
     task: "task add|list|show|update|claim|heartbeat|complete|cancel|release  Durable offline tasks (same as ok task)",
     board: "board list|show|add|move|comment   Dashboard tasks (requires local server and matching project)",
     project: "project list|use <id>             Inspect/select the dashboard project",

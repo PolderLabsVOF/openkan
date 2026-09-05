@@ -687,6 +687,7 @@
   const statusPill = $("status-pill");
   const statusText = $("status-text");
   const modal = $("modal-backdrop");
+  if (modal) document.body.appendChild(modal);
   const form = $("new-task-form");
   const menu = $("action-menu");
   const searchInput = $("search-input");
@@ -1162,6 +1163,8 @@
       menu.append(b);
     };
     // `call` is the module-scope wrapper defined near the top of the IIFE.
+
+    run("Discuss in chat", () => window.OpenKanChatSidebar?.mentionTask?.(task));
 
     // "Move to next column" — hidden if archived or on the last column.
     const idx = COLUMN_ORDER.indexOf(task.column);
@@ -1744,6 +1747,7 @@
       label: "Open",
       action: () => window.OpenKanTaskView?.open(task.id),
     });
+    items.push({ label: "Discuss in chat", action: () => window.OpenKanChatSidebar?.mentionTask?.(task) });
     if (task.artifact) {
       items.push({
         label: "View Artifact ↗",
@@ -3150,30 +3154,59 @@
     });
   }
 
+  let creatingTask = false;
+  let taskModalReturnFocus = null;
+  function taskDraftKey() { return `openkan:task-draft:${projectSwitcher.active?.root || location.pathname}`; }
+  function saveTaskDraft() {
+    if (!form) return;
+    try { sessionStorage.setItem(taskDraftKey(), JSON.stringify(Object.fromEntries(new FormData(form)))); } catch {}
+  }
+  function taskCreateError(message = "") {
+    const error = $("task-create-error");
+    if (error) { error.textContent = message; error.hidden = !message; }
+  }
   function openModal() {
     if (!modal) return;
+    taskModalReturnFocus = document.activeElement;
     if (window.OpenKanTaskView?.getCurrentTaskId?.()) {
       window.OpenKanTaskView.close();
     }
     activateTab("tasks");
     modal.hidden = false;
     if (form) {
-      form.reset();
-      form.elements.title?.focus();
-      // Apply default column from saved settings (if any).
+      form.reset(); taskCreateError();
+      form.elements.title?.removeAttribute("aria-invalid");
       try {
-        const raw = localStorage.getItem("openkan:settings");
-        if (raw && form.elements.column) {
-          const parsed = JSON.parse(raw);
-          const def = parsed?.project?.defaultColumn;
-          if (def) form.elements.column.value = def;
+        const settings = JSON.parse(localStorage.getItem("openkan:settings") || "{}");
+        const def = settings?.project?.defaultColumn;
+        if (def) form.elements.column.value = def;
+        const draft = JSON.parse(sessionStorage.getItem(taskDraftKey()) || "null");
+        if (draft) for (const [key, value] of Object.entries(draft)) {
+          const field = form.elements.namedItem(key);
+          if (field && field.type !== "checkbox") field.value = String(value);
         }
+        if (draft) form.elements.openAfterCreate.checked = draft.openAfterCreate === "on";
       } catch {}
+      const context = $("task-create-project");
+      if (context) context.textContent = `Project: ${projectSwitcher.active?.name || "current project"}. Drafts are saved in this browser tab.`;
+      form.elements.title?.focus();
     }
   }
   function closeModal() {
-    if (modal) modal.hidden = true;
+    if (!modal || modal.hidden || creatingTask) return;
+    saveTaskDraft();
+    modal.hidden = true;
+    taskModalReturnFocus?.focus?.();
   }
+  window.OpenKanCreateTask = { openFromChat(message) {
+    openModal();
+    if (form.elements.title.value || form.elements.description.value) {
+      showToast("Your existing task draft is open. Your chat text is unchanged.", "info"); return;
+    }
+    form.elements.title.value = String(message).split("\n")[0].slice(0, 200);
+    form.elements.description.value = String(message);
+    saveTaskDraft();
+  } };
   if ($("new-task-btn")) $("new-task-btn").addEventListener("click", openModal);
   if (modal) {
     modal.addEventListener("click", (e) => {
@@ -3196,77 +3229,59 @@
     }
   });
   if (form) {
-    // Browse button: lets the user pick a project path for the new task.
-    // Reuses the same path picker as the Add Project modal. The server's
-    // POST /api/tasks may or may not honour `root` — if not, the task is
-    // created against the active project (the previous behaviour).
-    const browseBtn = document.getElementById("new-task-browse-btn");
-    const rootInput = form.querySelector('input[name="root"]');
-    if (browseBtn && rootInput) {
-      browseBtn.addEventListener("click", () => {
-        const picker = window.OpenKanPathPicker;
-        if (!picker || typeof picker.open !== "function") {
-          console.warn(
-            "[new-task-modal] Browse clicked but OpenKanPathPicker is not loaded",
-          );
-          return;
-        }
-        picker.open({
-          title: "Choose a project folder",
-          mode: "folder",
-          initialPath: rootInput.value?.trim() || undefined,
-          onPick: (path) => {
-            rootInput.value = path;
-          },
-          onCancel: () => {
-            /* user dismissed — nothing to do */
-          },
-        });
-      });
-    }
+    form.addEventListener("input", () => { saveTaskDraft(); taskCreateError(); form.elements.title?.removeAttribute("aria-invalid"); });
+    form.addEventListener("change", saveTaskDraft);
+    $("task-discard-draft")?.addEventListener("click", () => {
+      if (creatingTask) return;
+      form.reset(); saveTaskDraft(); taskCreateError(); form.elements.title?.focus();
+    });
+    modal.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); form.requestSubmit(); }
+      if (e.key !== "Tab") return;
+      const focusable = [...modal.querySelectorAll('button, input:not([type="hidden"]), textarea, select, summary, [tabindex="0"]')].filter(node => !node.disabled && node.getClientRects().length);
+      const first = focusable[0], last = focusable.at(-1);
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+    });
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
+      if (creatingTask) return;
       const fd = new FormData(form);
       const title = String(fd.get("title") || "").trim();
-      if (!title) return alert("Title is required");
+      if (!title || title.length > 200) {
+        taskCreateError(!title ? "Give this task a title before creating it." : "Keep the title under 200 characters.");
+        form.elements.title?.setAttribute("aria-invalid", "true");
+        form.elements.title?.focus(); return;
+      }
       const body = {
-        title,
-        description: String(fd.get("description") || ""),
-        column: String(fd.get("column") || "todo"),
-        agent: String(fd.get("agent") || ""),
-        model: String(fd.get("model") || ""),
+        title, description: String(fd.get("description") || ""),
+        column: String(fd.get("column") || "todo"), priority: String(fd.get("priority") || "normal"),
+        agent: String(fd.get("agent") || ""), model: String(fd.get("model") || ""),
       };
-      // Optional project path. If the server doesn't accept `root` the task
-      // is created against the active project (existing behaviour).
-      const root = String(fd.get("root") || "").trim();
-      if (root) body.root = root;
-      // parentId is hidden in the form. Optional — only sent when populated
-      // by the "+ Add subtask" flow so the cascade knows the new task is a
-      // child of an existing task.
       const parentId = String(fd.get("parentId") || "").trim();
       if (parentId) body.parentId = parentId;
-      closeModal();
-      form.reset();
-      // Clear the hidden parentId so the next open defaults back to "no
-      // parent" — otherwise subsequent non-subtask creates would still
-      // carry the previous parent's id.
-      const parentField = form.elements.parentId;
-      if (parentField) parentField.value = "";
+      const openAfterCreate = fd.get("openAfterCreate") === "on";
+      const submit = $("task-create-submit");
+      saveTaskDraft(); taskCreateError(); creatingTask = true;
+      form.setAttribute("aria-busy", "true");
+      for (const control of form.querySelectorAll("input, textarea, select, button")) control.disabled = true;
+      if (submit) submit.textContent = "Creating…";
       try {
         const res = await api("POST", "/api/tasks", body);
-        if (res && res.id) {
-          tasks.set(res.id, res);
-          renderBoard();
-          // If we just created a subtask, the parent's task view (if open)
-          // should re-render so the new child appears in the list.
-          if (parentId && window.OpenKanTaskView?.getCurrentTaskId?.() === parentId) {
-            window.OpenKanTaskView.open(parentId);
-          }
-        }
+        if (!res?.id) throw new Error("The server did not confirm task creation");
+        tasks.set(res.id, res); renderBoard();
+        form.reset(); creatingTask = false; closeModal();
+        try { sessionStorage.removeItem(taskDraftKey()); } catch {}
+        showToast("Task created", "success");
+        if (openAfterCreate) window.OpenKanTaskView?.open?.(res.id);
+        else if (parentId && window.OpenKanTaskView?.getCurrentTaskId?.() === parentId) window.OpenKanTaskView.open(parentId);
       } catch (err) {
-        openModal();
-        alert(`Create failed: ${err.message}`);
+        taskCreateError(`Could not create task: ${err.message}. Your draft is kept; try again.`);
+      } finally {
+        creatingTask = false; form.removeAttribute("aria-busy");
+        for (const control of form.querySelectorAll("input, textarea, select, button")) control.disabled = false;
+        if (submit) submit.textContent = "Create task";
       }
     });
   }
@@ -3446,6 +3461,13 @@
     }
   }
 
+  const topbar = document.querySelector(".topbar");
+  if (topbar && typeof ResizeObserver === "function") {
+    new ResizeObserver(() => {
+      document.documentElement.style.setProperty("--topbar-height", `${Math.ceil(topbar.getBoundingClientRect().height)}px`);
+    }).observe(topbar);
+  }
+
   // ---------- Project switcher + brand chip -----------------------------
   // Manages the topbar dropdown that lists every registered project plus the
   // "+ Add project…" affordance. Uses the multi-project registry at
@@ -3605,6 +3627,7 @@
     // immediately close the popover. 50ms is short enough to feel
     // instant but long enough to outlast the opening click event.
     setTimeout(() => attachProjectPopoverDismiss(pop), 50);
+    void fetchProjects().then(() => { if (!pop.hidden) { renderProjectPopover(); positionPopover(anchorBtn); } });
   }
 
   // Single toggle entry point used by both trigger buttons. Decouples
@@ -3627,7 +3650,7 @@
     // Header row — a small "Projects" label so the popover reads as a
     // section header and not just a loose list of buttons. Styled in CSS
     // as a muted, uppercase, letter-spaced label.
-    pop.append(el("div", "project-switcher-header", { text: "Projects" }));
+    pop.append(el("div", "project-switcher-header", { text: "Projects · Recent activity" }));
     const list = projectSwitcher.list || [];
     if (projectSwitcher.error) {
       pop.append(el("div", "project-switcher-error", {
@@ -3647,7 +3670,10 @@
       });
       if (p.active) row.classList.add("active");
       row.append(el("span", `project-dot${p.active ? " filled" : ""}`, { "aria-hidden": "true" }));
-      row.append(el("span", "project-switcher-name", { text: p.name || "(unnamed)" }));
+      const identity = el("span", "project-switcher-identity");
+      identity.append(el("span", "project-switcher-name", { text: p.name || "(unnamed)" }));
+      identity.append(el("span", "project-switcher-path", { text: p.root || "" }));
+      row.append(identity);
       if (p.active) {
         row.append(el("span", "project-switcher-badge", { text: "active" }));
       }

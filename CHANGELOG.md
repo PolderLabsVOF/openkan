@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-05
+
+### Added
+
+- Bundled OpenKan Claude agent, automatic installation that preserves customized
+  profiles, and an explicit `openkan agent install` command.
+- Chat agent selection with OpenKan as the default and installed custom profiles
+  available alongside the general-purpose Claude Code agent.
+
+### Changed
+
+- Improved chat drafts, send recovery, transcript navigation, and responsive
+  composer controls.
+- Streamlined task creation with optional settings, retained drafts, accessible
+  errors, and duplicate-submission protection.
+- Improved project recency handling and refreshed the installation guide.
+
+## [0.3.0]
+
+
 ### Added
 
 - Public npm distribution with compiled JavaScript, both `openkan` and `ok`
