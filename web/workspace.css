@@ -1456,6 +1456,97 @@ body.workspace-mode-chat { padding-left: 0; }
   text-decoration: none;
 }
 .card-artifact-link:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+
+/* Nested subtasks disclosure — sits at the foot of a parent card. Collapsed
+   by default (the <details> has no `open` attribute); expanded by the
+   summary click. Each child is a checkbox row so the user can mark it done
+   without opening the task view. Stylistically a sibling of `.subtasks-panel`
+   in the opened-task view — same component family, same design tokens. */
+.card-subtasks {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+}
+.card-subtasks-summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: .035em;
+  color: var(--text-mute);
+  padding: 2px 0;
+  user-select: none;
+}
+.card-subtasks-summary::-webkit-details-marker { display: none; }
+.card-subtasks-summary::marker { display: none; content: ""; }
+.card-subtasks-summary::before {
+  content: "▸";
+  display: inline-block;
+  font-size: 10px;
+  color: var(--text-mute);
+  transition: transform var(--transition);
+}
+.card-subtasks[open] > .card-subtasks-summary::before {
+  transform: rotate(90deg);
+}
+.card-subtasks-summary:hover { color: var(--text); }
+.card-subtasks-summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.card-subtasks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+.card-subtask-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+  /* The row lives inside a draggable parent card — its own drag is
+     disabled in JS, but make doubly sure CSS doesn't reintroduce a grab
+     cursor that hints otherwise. */
+  cursor: default;
+}
+.card-subtask-row:hover {
+  background: color-mix(in srgb, var(--bg-elev) 60%, transparent);
+}
+.card-subtask-checkbox {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  flex: 0 0 auto;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.card-subtask-row-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+.card-subtask-row-done {
+  opacity: 0.72;
+}
+.card-subtask-row-done .card-subtask-row-title {
+  color: var(--text-mute);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--text-mute) 70%, transparent);
+}
 .card-source { gap: 7px; padding: 3px 7px; color: var(--text-dim); background: transparent; border-color: var(--border); }
 .card-source:hover { background: var(--bg-elev); border-color: var(--border-strong); color: var(--text); }
 .card-source-label { color: var(--text-mute); font-size: 9px; font-weight: 750; letter-spacing: .07em; text-transform: uppercase; }
