@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // OpenKan — standalone CLI entrypoint.
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, appendFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, appendFileSync, statSync } from "node:fs";
 import { join, dirname, resolve, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, execSync } from "node:child_process";
@@ -677,6 +677,18 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     if (!["all", "claude", "codex"].includes(agent)) throw new Error("--agent must be codex, claude, or all");
     const targets = typeof flags.target === 'string' ? [resolve(flags.target)] : (agent === 'all' ? ['claude', 'codex'] : [agent]).map(name => join(homedir(), `.${name}`, 'skills', 'openkan'));
     for (const target of targets) {
+      if (!existsSync(target)) {
+        // cpSync would create parents and silently succeed; reject early so
+        // the user does not end up with a target at a typo'd path.
+        throw new Error(`--target ${target} does not exist`);
+      }
+      const st = statSync(target);
+      if (!st.isDirectory()) throw new Error(`--target ${target} is not a directory`);
+      // Probe writability with a temp file rather than access() — file-mode
+      // checks are unreliable on WSL/macOS sandbox paths.
+      const probe = join(target, `.openkan-write-probe-${process.pid}`);
+      try { writeFileSync(probe, ""); } catch { throw new Error(`--target ${target} is not writable`); }
+      try { rmSync(probe, { force: true }); } catch { /* best effort */ }
       if (existsSync(target) && !flags.force) throw new Error(`${target} already exists; use --force to update`);
     }
     for (const target of targets) { cpSync(join(OPENKAN_ROOT, 'skills', 'openkan'), target, { recursive: true }); console.log(`Installed openkan skill: ${target}`); }
