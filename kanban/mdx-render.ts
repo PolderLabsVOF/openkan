@@ -194,6 +194,73 @@ function normalizeWhitespace(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+// ─── Inline markdown → HTML ─────────────────────────────────────────────────────
+//
+// Transforms a single line of plain text into HTML that handles the most common
+// inline constructs: `code`, **bold**, *italic*, __bold__, _italic_, and
+// [text](url). MDX-style `{expr}` is escaped so it shows up literally without
+// crashing the render — we don't have a real JSX runtime. The final result is
+// fed back through escapeHtml so any literal HTML still survives sanitisation
+// as escaped entities.
+//
+// Order matters:
+//   1. Inline code is matched first so its contents are never re-interpreted.
+//   2. Bold is matched before italic because `**` would otherwise partially
+//      match `*` runs.
+//   3. Links and images are matched last so the link text gets one pass of
+//      bold/italic without infinite recursion.
+//   4. Anything that looks like an MDX expression `{...}` is neutralised to
+//      `&#123;...&#125;` so the braces stay visible but never confuse a
+//      downstream JSX-aware consumer.
+function renderInlineMarkdown(line: string): string {
+  if (!line) return "";
+
+  // 1. Carve out inline code (and remember the placeholders so we can put the
+  //    code back after the other patterns have run).
+  const codeSlots: string[] = [];
+  const withPlaceholders = line.replace(/`([^`\n]+)`/g, (_match, code) => {
+    const idx = codeSlots.length;
+    codeSlots.push(`<code>${escapeHtml(code)}</code>`);
+    return ` CODE${idx} `;
+  });
+
+  // 2. Escape the remaining text so any literal HTML shows up as text.
+  let escaped = escapeHtml(withPlaceholders);
+
+  // 3. Neutralise MDX-style `{expr}` so the braces survive visually but don't
+  //    get interpreted downstream. Match an opening brace followed by any
+  //    non-empty, non-brace, non-newline body and a closing brace.
+  escaped = escaped.replace(/&#123;([^{}\n]+)&#125;/g, (_match, inner) => `&#123;${inner}&#125;`);
+
+  // 4. Inline images: ![alt](url) — must come before links so the leading `!`
+  //    isn't accidentally consumed.
+  escaped = escaped.replace(/!\[([^\]\n]*)\]\(([^()\s]+)(?:\s+&quot;[^&]*&quot;)?\)/g, (_match, alt, url) => {
+    if (!/^https?:|^mailto:|^data:image\//i.test(url)) return _match;
+    return `<img src="${url}" alt="${escapeHtml(alt)}" />`;
+  });
+
+  // 5. Links: [text](url) — URL must be a safe scheme.
+  escaped = escaped.replace(/\[([^\]\n]+)\]\(([^()\s]+)(?:\s+&quot;[^&]*&quot;)?\)/g, (_match, text, url) => {
+    if (!/^https?:|^mailto:|^data:image\//i.test(url)) return _match;
+    return `<a href="${url}">${text}</a>`;
+  });
+
+  // 6. Bold (must come before italic): **...** or __...__
+  escaped = escaped.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+  escaped = escaped.replace(/__([^_\n]+)__/g, "<strong>$1</strong>");
+
+  // 7. Italic: *...* or _..._ — guard against the middle-of-word underscores
+  //    in things like `foo_bar_baz` by requiring the surrounding characters to
+  //    not be word characters.
+  escaped = escaped.replace(/(^|[^*\w])\*([^*\n]+)\*(?=[^*\w]|$)/g, "$1<em>$2</em>");
+  escaped = escaped.replace(/(^|[^\w_])_([^_\n]+)_(?=[^\w_]|$)/g, "$1<em>$2</em>");
+
+  // 8. Restore code placeholders.
+  escaped = escaped.replace(/ CODE(\d+) /g, (_match, idx) => codeSlots[Number(idx)] ?? "");
+
+  return escaped;
+}
+
 function blockPreview(blockLines: string[]): string {
   return normalizeWhitespace(trimLines(blockLines.join(" "))).slice(0, 80);
 }
@@ -269,7 +336,7 @@ function blockToHtml(block: BlockBuilder, siblingIndex: number, opts?: { mdxComp
     case "heading": {
       const m = trimmed.match(/^(#{1,6})\s(.*)/);
       const level = m ? m[1].length : 2;
-      inner = `<h${level}>${escapeHtml(m ? m[2] : trimmed.replace(/^#+\s/, ""))}</h${level}>`;
+      inner = `<h${level}>${renderInlineMarkdown(m ? m[2] : trimmed.replace(/^#+\s/, ""))}</h${level}>`;
       break;
     }
     case "code": {
@@ -282,27 +349,27 @@ function blockToHtml(block: BlockBuilder, siblingIndex: number, opts?: { mdxComp
     case "list": {
       const items = block.lines.map((l) => {
         const text = l.replace(/^\s*[-*+]\s/, "").replace(/^\s*\d+\.\s/, "");
-        return `<li>${escapeHtml(text.trim())}</li>`;
+        return `<li>${renderInlineMarkdown(text.trim())}</li>`;
       }).join("");
       inner = trimmed.startsWith("1.") ? `<ol>${items}</ol>` : `<ul>${items}</ul>`;
       break;
     }
     case "quote": {
       const text = block.lines.map((l) => l.replace(/^>\s?/, "")).join(" ");
-      inner = `<blockquote>${escapeHtml(text.trim())}</blockquote>`;
+      inner = `<blockquote>${renderInlineMarkdown(text.trim())}</blockquote>`;
       break;
     }
     case "table": {
       // Simple pipe table: first row = header, second row = separator, rest = body
       const rows = block.lines.map((l) => l.trim()).filter((l) => l.startsWith("|"));
       if (rows.length < 2) {
-        inner = `<p>${escapeHtml(trimmed)}</p>`;
+        inner = `<p>${renderInlineMarkdown(trimmed)}</p>`;
       } else {
         const cells = rows[0].split("|").map((c) => c.trim()).filter((c) => c !== "");
-        const header = `<thead><tr>${cells.map((c) => `<th>${escapeHtml(c)}</th>`).join("")}</tr></thead>`;
+        const header = `<thead><tr>${cells.map((c) => `<th>${renderInlineMarkdown(c)}</th>`).join("")}</tr></thead>`;
         const bodyRows = rows.slice(2).map((row) => {
           const cells = row.split("|").map((c) => c.trim()).filter((c) => c !== "");
-          return `<tr>${cells.map((c) => `<td>${escapeHtml(c)}</td>`).join("")}</tr>`;
+          return `<tr>${cells.map((c) => `<td>${renderInlineMarkdown(c)}</td>`).join("")}</tr>`;
         }).join("");
         inner = `<table>${header}<tbody>${bodyRows}</tbody></table>`;
       }
@@ -310,7 +377,7 @@ function blockToHtml(block: BlockBuilder, siblingIndex: number, opts?: { mdxComp
     }
     case "paragraph":
     default: {
-      inner = `<p>${escapeHtml(normalizeWhitespace(trimmed))}</p>`;
+      inner = `<p>${renderInlineMarkdown(normalizeWhitespace(trimmed))}</p>`;
       break;
     }
   }
@@ -337,7 +404,7 @@ export function stripMdxFrontmatter(mdx: string): string {
 
 const SANITIZE_ALLOWED_TAGS = new Set([
   "h1","h2","h3","h4","h5","h6","p","ul","ol","li",
-  "code","pre","blockquote","a","strong","em","hr","br",
+  "code","pre","blockquote","a","strong","em","hr","br","img",
   "table","thead","tbody","tr","th","td",
   "section", "iframe", "button", "input", "select", "option", "label",
 ]);
@@ -396,10 +463,18 @@ export async function renderMdx(
   let html = htmlParts.join("\n");
 
   // Sanitize final HTML
+  //
+  // `allowedSchemes` + `allowedSchemesByTag` + `allowedSchemesAppliedToAttributes`
+  // already strip `javascript:` URLs. The renderInlineMarkdown helper also
+  // refuses to emit an `<a href>` for unsafe schemes — so we don't need an
+  // additional `urlFilter` callback (which isn't part of sanitize-html's public
+  // type surface anyway). The scheme list below is the single source of truth.
   const clean = sanitizeHtml(html, {
     allowedTags: Array.from(SANITIZE_ALLOWED_TAGS),
     allowedAttributes: SANITIZE_ALLOWED_ATTRS,
     allowedSchemes: SANITIZE_ALLOWED_SCHEMES,
+    allowedSchemesByTag: { a: ["http", "https", "mailto"], img: ["http", "https", "data"] },
+    allowedSchemesAppliedToAttributes: ["href", "src"],
   });
 
   return {

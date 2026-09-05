@@ -108,5 +108,102 @@ describe("mdx-render", () => {
       assert.strictEqual(r1.html, r2.html);
       assert.deepStrictEqual(r1.blocks.map(b => b.id), r2.blocks.map(b => b.id));
     });
+
+    // ─── Inline markdown (regression for docs overhaul) ────────────────────
+    //
+    // Before the docs overhaul the renderer escaped paragraphs verbatim, so
+    // `**bold**` and `[link](https://example.com)` showed up literally. These
+    // tests pin the inline parser behaviour so the preview stays readable.
+
+    it("renders **bold** as <strong> inside paragraphs", async () => {
+      const result = await renderMdx("Hello **world**");
+      assert.ok(result.html.includes("<strong>world</strong>"), `bold not parsed: ${result.html}`);
+      assert.ok(!result.html.includes("**world**"), `bold markers leaked through: ${result.html}`);
+    });
+
+    it("renders __bold__ as <strong> inside paragraphs", async () => {
+      const result = await renderMdx("Hello __world__");
+      assert.ok(result.html.includes("<strong>world</strong>"), `bold not parsed: ${result.html}`);
+    });
+
+    it("renders *italic* and _italic_ as <em>", async () => {
+      const result = await renderMdx("Hello *world* and _also_");
+      assert.ok(result.html.includes("<em>world</em>"), `star italic not parsed: ${result.html}`);
+      assert.ok(result.html.includes("<em>also</em>"), `underscore italic not parsed: ${result.html}`);
+    });
+
+    it("does not italicise foo_bar_baz inside a word", async () => {
+      const result = await renderMdx("foo_bar_baz stays literal");
+      assert.ok(!result.html.includes("<em>"), `should not italicise mid-word: ${result.html}`);
+      assert.ok(result.html.includes("foo_bar_baz"), `should keep literal text: ${result.html}`);
+    });
+
+    it("renders inline `code` as <code> in paragraphs", async () => {
+      const result = await renderMdx("Use `npm test` to run.");
+      assert.ok(result.html.includes("<code>npm test</code>"), `code not parsed: ${result.html}`);
+      assert.ok(!result.html.includes("`npm test`"), `backticks leaked: ${result.html}`);
+    });
+
+    it("renders [text](url) links with safe href", async () => {
+      const result = await renderMdx("Visit [OpenKan](https://example.com) today.");
+      assert.ok(
+        result.html.includes('<a href="https://example.com">OpenKan</a>'),
+        `link not parsed: ${result.html}`,
+      );
+    });
+
+    it("strips href for unsafe link schemes (javascript:)", async () => {
+      const result = await renderMdx("Click [bad](javascript:alert(1)) now.");
+      // The unsafe URL must NEVER become an actual <a href>. It either stays
+      // as escaped literal text or the whole anchor is dropped by sanitise.
+      assert.ok(
+        !/href\s*=\s*["']?\s*javascript:/i.test(result.html),
+        `unsafe scheme ended up in href: ${result.html}`,
+      );
+      assert.ok(!result.html.includes("<a"), `anchor should be dropped: ${result.html}`);
+    });
+
+    it("escapes MDX-style {expr} so braces survive but don't crash", async () => {
+      const result = await renderMdx("Hello {user.name} world");
+      // Braces stay visible (the preview shows them) but no JSX-like content is interpreted.
+      assert.ok(result.html.includes("{"), `braces disappeared: ${result.html}`);
+      assert.ok(!result.html.includes("<user"), `JSX-style leak: ${result.html}`);
+    });
+
+    it("applies inline markdown inside list items", async () => {
+      const result = await renderMdx("- alpha **beta**\n- gamma `delta`");
+      assert.ok(result.html.includes("<strong>beta</strong>"), `list bold missing: ${result.html}`);
+      assert.ok(result.html.includes("<code>delta</code>"), `list code missing: ${result.html}`);
+    });
+
+    it("applies inline markdown inside blockquotes", async () => {
+      const result = await renderMdx("> Said **loudly** and `clearly`");
+      assert.ok(result.html.includes("<strong>loudly</strong>"), `quote bold missing: ${result.html}`);
+      assert.ok(result.html.includes("<code>clearly</code>"), `quote code missing: ${result.html}`);
+    });
+
+    it("applies inline markdown inside table cells", async () => {
+      const result = await renderMdx("| A | B |\n| - | - |\n| **x** | `y` |");
+      assert.ok(result.html.includes("<strong>x</strong>"), `table bold missing: ${result.html}`);
+      assert.ok(result.html.includes("<code>y</code>"), `table code missing: ${result.html}`);
+    });
+
+    it("renders inline markdown in headings", async () => {
+      const result = await renderMdx("## Welcome to **OpenKan**");
+      assert.ok(result.html.includes("<h2>"), `heading missing: ${result.html}`);
+      assert.ok(result.html.includes("<strong>OpenKan</strong>"), `heading inline missing: ${result.html}`);
+    });
+
+    it("does not re-process markdown inside inline code spans", async () => {
+      const result = await renderMdx("Run `**not bold**` to test.");
+      assert.ok(result.html.includes("<code>**not bold**</code>"), `code content mangled: ${result.html}`);
+      assert.ok(!result.html.includes("<strong>not bold</strong>"), `bold leaked from code: ${result.html}`);
+    });
+
+    it("does not let raw <script> through inline parsing", async () => {
+      const result = await renderMdx("Hello <script>alert(1)</script> world");
+      assert.ok(!result.html.includes("<script>"), `script tag leaked: ${result.html}`);
+      assert.ok(result.html.includes("&lt;script&gt;"), `script should be escaped: ${result.html}`);
+    });
   });
 });

@@ -306,3 +306,48 @@ User asked for a self-update path on the CLI. Shipped at commit
 Tracking task `tsk-rw1yVERZ` marked `done` with full evidence
 comment.
 
+### Docs page overhaul (tsk-GgEUW8tD)
+
+Four defects fixed:
+
+1. **MDX not rendering** — `kanban/mdx-render.ts` now runs inline
+   markdown (`**bold**`, `*italic*`, `` `code` ``, `[text](url)`) through
+   `renderInlineMarkdown()` for paragraphs, lists, blockquotes, table
+   cells, and headings. Inline code spans are extracted first so backticks
+   inside code never get re-parsed. `img` added to the sanitiser allow
+   list and `<a>` / `<img>` schemes restricted to `http`/`https`/`mailto`
+   /`data` (no `javascript:`).
+2. **Rendered docs not editable** — `web/docs-view.js` swapped the
+   side-by-side source panel for an in-place edit toggle. The file bar
+   shows `[MDX help] [Edit document]` in reading mode and
+   `[Discard] [Save changes]` in editing mode. Cancel-edit reloads the
+   canonical content from the server so unsaved edits are dropped.
+3. **Weird banner removed** — `.docs-commandbar` and its
+   "Knowledge workspace / Docs that stay readable…" hero copy are no
+   longer emitted. The workspace header now reads `<strong>filename</strong>
+   · Saved …` / `· Unsaved draft`.
+4. **Better layout** — `.docs-mdx-preview` constrained to `max-width:
+   760px` with `clamp()` responsive padding. Section spacing bumped
+   (`h2 { margin-top: 2.4em }`, `h3 { margin-top: 2em }`). Code blocks
+   gain `overflow-x: auto` and `white-space: pre`; tables become
+   scrollable on overflow. Inline `<code>` is bordered and rounded.
+   @media (max-width: 760px) collapses the sidebar.
+
+### Verification
+
+- `npm test` — 674/674 pass (was 653, +21 new: 14 inline MDX cases +
+  7 docs-view harness tests, plus the ui-overhaul pinning updates).
+- `npm run typecheck` — clean.
+- `npm run check` — `0 errors, 0 warnings`.
+- `npm run build` — `tsc -p tsconfig.build.json` clean.
+
+### File:line refs
+
+- `kanban/mdx-render.ts:1-480` — inline parser, sanitiser.
+- `web/docs-view.js:1-197` — preview-first workspace, edit toggle.
+- `web/style.css:8217-8444` — banner removal + workspace chrome.
+- `tests/mdx-render.test.mts:1-209` — renderer regressions.
+- `tests/docs-view.test.mts:1-401` — harness regressions.
+- `tests/ui-overhaul.test.mts:238-289` — pinning updates.
+
+

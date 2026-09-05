@@ -8199,9 +8199,9 @@ body.workspace-mode-chat { padding-left: 0; }
 .home-command-header { display:flex; align-items:flex-end; justify-content:space-between; gap:24px; margin-bottom:24px; }
 .home-command-header h2 { max-width:720px; margin:5px 0 8px; color:var(--ink-100); font-size:clamp(30px,4vw,52px); letter-spacing:-.052em; line-height:.98; }
 .home-command-header p { max-width:650px; margin:0; color:var(--ink-60); line-height:1.55; }
-.home-command-actions,.docs-command-actions { display:flex; flex-wrap:wrap; gap:8px; }
-.home-command-actions button,.docs-command-actions button { min-height:36px; padding:0 11px; border:1px solid var(--border); border-radius:8px; background:var(--bg-elev); color:var(--ink-80); cursor:pointer; font:700 12px inherit; }
-.home-command-actions button:hover,.docs-command-actions button:hover { border-color:var(--border-strong); background:var(--bg-elev-2); }
+.home-command-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.home-command-actions button { min-height:36px; padding:0 11px; border:1px solid var(--border); border-radius:8px; background:var(--bg-elev); color:var(--ink-80); cursor:pointer; font:700 12px inherit; }
+.home-command-actions button:hover { border-color:var(--border-strong); background:var(--bg-elev-2); }
 .home-network-card { display:grid; grid-template-columns:minmax(230px,.72fr) minmax(350px,1.28fr); min-height:270px; overflow:hidden; border:1px solid var(--border); border-radius:18px; background:linear-gradient(120deg,color-mix(in srgb,var(--bg-elev) 96%,#121d38),var(--bg)); }
 .home-network-copy { display:flex; flex-direction:column; justify-content:center; padding:clamp(24px,4vw,50px); border-right:1px solid var(--border); }
 .home-section-label { color:var(--accent); font-size:10px; font-weight:800; letter-spacing:.1em; }
@@ -8214,32 +8214,203 @@ body.workspace-mode-chat { padding-left: 0; }
 .home-dashboard-grid { display:grid; grid-template-columns:1.1fr 1fr .9fr; gap:10px; }.home-dashboard-grid article { min-height:220px; padding:18px; }.home-dashboard-grid header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }.home-dashboard-grid h3 { margin:5px 0 0; color:var(--ink-100); font-size:15px; }.home-dashboard-grid header>span,.home-dashboard-grid header button { color:var(--ink-50); font-size:11px; }.home-dashboard-grid header button { padding:0;border:0;background:none;cursor:pointer; }.home-flow-chart { width:100%; height:122px; margin-top:20px; overflow:visible; }.home-flow-area { fill:color-mix(in srgb,var(--accent) 14%,transparent); }.home-flow-line { fill:none; stroke:var(--accent); stroke-width:2; }.home-flow-chart circle { fill:var(--accent); }.home-activity-card footer { display:flex; justify-content:space-between; color:var(--ink-50); font-size:10px; }.home-queue-list { display:grid; gap:10px; margin-top:22px; }.home-queue-list>div { display:grid; grid-template-columns:88px 24px 1fr; align-items:center; gap:8px; color:var(--ink-60); font-size:11px; }.home-queue-list b { color:var(--ink-100); text-align:right; }.home-queue-list i { display:block; height:4px; border-radius:5px; background:linear-gradient(90deg,var(--accent) var(--queue),var(--bg) var(--queue)); }.home-operator-list { display:grid; gap:10px; margin-top:20px; }.home-operator-list>div { display:flex; align-items:center; gap:8px; }.home-operator-list span { display:grid; min-width:0; }.home-operator-list strong { overflow:hidden; color:var(--ink-80); font-size:12px; text-overflow:ellipsis; white-space:nowrap; }.home-operator-list small { color:var(--ink-50); font-size:10px; }.home-loading { padding:50px; color:var(--ink-60); }
 @media(max-width:900px){.home-network-card,.home-dashboard-grid{grid-template-columns:1fr}.home-network-copy{border-right:0;border-bottom:1px solid var(--border)}.home-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.home-command-header{align-items:flex-start;flex-direction:column}}@media(max-width:520px){.home-stat-grid{grid-template-columns:1fr}.home-command-center{padding:22px 16px}}
 
-/* Preview-first docs: the rendered MDX document owns the canvas, while source
-   slides in as an editor instead of replacing the reading experience. */
+/* Docs workspace — Preview-first docs page, no banner.
+   The renderer is the default surface. An "Edit document" button in the file
+   bar swaps the rendered preview for an in-place source editor (toolbar +
+   textarea). All chrome below stays in sync with the workspace-mode class on
+   `.docs-workspace`. */
 #tab-docs { background:var(--bg); }
 .docs-shell { min-height:calc(100vh - var(--topbar-height)); background:var(--bg); }
-.docs-commandbar { display:flex; align-items:flex-end; justify-content:space-between; gap:24px; padding:28px clamp(20px,3vw,48px) 20px; border-bottom:1px solid var(--border); background:color-mix(in srgb,var(--bg-elev) 90%,transparent); }
-.docs-commandbar h2 { margin:5px 0 7px; color:var(--ink-100); font-size:clamp(24px,3vw,36px); letter-spacing:-.04em; }.docs-commandbar p { max-width:640px; margin:0; color:var(--ink-60); line-height:1.5; }.docs-agent-button { border-color:color-mix(in srgb,var(--accent) 42%,var(--border)) !important; background:color-mix(in srgb,var(--accent) 11%,var(--bg-elev)) !important; }
-.docs-workspace { display:grid; grid-template-columns:250px minmax(0,1fr) 0; min-height:calc(100vh - 183px); transition:grid-template-columns .22s ease; }.docs-workspace--source-open { grid-template-columns:250px minmax(0,1fr) minmax(320px,30vw); }.docs-sidebar { display:flex; flex-direction:column; min-width:0; padding:14px 10px; border-right:1px solid var(--border); background:var(--bg); }.docs-sidebar-head { display:flex; align-items:center; justify-content:space-between; padding:0 5px 10px; color:var(--ink-60); font:700 11px ui-monospace,monospace; }.docs-sidebar-head div { display:grid; gap:3px; }.docs-sidebar-head small { color:var(--ink-50); font:10px inherit; }.docs-sidebar-head button { width:28px;height:28px;border:1px solid var(--border);border-radius:7px;background:var(--bg-elev);color:var(--ink-80);cursor:pointer;font-size:17px; }.docs-sidebar-search { padding:0 3px 10px; }.docs-sidebar-search input { width:100%;box-sizing:border-box;min-height:31px;padding:0 9px;border:1px solid var(--border);border-radius:7px;background:var(--bg-elev);color:var(--text);font:11px inherit;outline:none; }.docs-sidebar-search input:focus { border-color:var(--border-strong); }.docs-file-list { display:grid; gap:3px; overflow:auto; padding:0 2px 16px; }.docs-file { display:grid; gap:2px; width:100%; min-width:0; padding:8px 9px; border:1px solid transparent !important; border-radius:8px !important; background:transparent !important; color:var(--ink-60) !important; cursor:pointer; text-align:left; }.docs-file span { overflow:hidden; color:var(--ink-50); font-size:9px; text-overflow:ellipsis; white-space:nowrap; }.docs-file strong { overflow:hidden; color:inherit; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }.docs-file:hover { background:var(--bg-elev-2) !important; color:var(--ink-90) !important; }.docs-file.active { border-color:color-mix(in srgb,var(--accent) 34%,var(--border)) !important; background:color-mix(in srgb,var(--accent) 10%,var(--bg-elev)) !important; color:var(--ink-100) !important; }.docs-empty-tree { padding:16px 9px; color:var(--ink-50); font-size:11px; line-height:1.5; }.docs-stage { display:flex; min-width:0; flex-direction:column; background:var(--bg-elev); }.docs-filebar { display:flex; align-items:center; justify-content:space-between; gap:16px; min-height:58px; padding:0 22px; border-bottom:1px solid var(--border); }.docs-file-ident { display:flex; min-width:0; align-items:center; gap:9px; }.docs-file-ident>span:last-child { display:grid; gap:2px; min-width:0; }.docs-file-ident strong { overflow:hidden; color:var(--ink-90); font-size:13px; text-overflow:ellipsis; white-space:nowrap; }.docs-file-ident small { overflow:hidden; color:var(--ink-50); font-size:10px; text-overflow:ellipsis; white-space:nowrap; }.docs-file-icon { display:grid; width:28px;height:28px;place-items:center;border:1px solid var(--border);border-radius:7px;background:var(--bg);color:var(--accent); }.docs-file-actions { display:flex; gap:6px; }.docs-file-actions button,.docs-preview-toolbar button,.docs-source-panel button { min-height:28px;padding:0 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--ink-60);cursor:pointer;font:700 11px inherit; }.docs-file-actions button:hover,.docs-preview-toolbar button:hover,.docs-source-panel button:hover { border-color:var(--border-strong);color:var(--ink-100); }.docs-preview-toolbar { display:flex; align-items:center; gap:7px; min-height:42px; padding:0 22px; border-bottom:1px solid var(--border); background:var(--bg); }.docs-preview-toolbar>span { display:flex;align-items:center;gap:6px;margin-right:auto;color:var(--ink-60);font-size:11px;font-weight:700; }.docs-preview-toolbar i { width:6px;height:6px;border-radius:50%;background:var(--success);box-shadow:0 0 8px color-mix(in srgb,var(--success) 65%,transparent); }.docs-mdx-preview { max-width:900px; width:100%; box-sizing:border-box; margin:0 auto; padding:clamp(28px,5vw,72px); color:var(--ink-80); line-height:1.7; }.docs-mdx-preview h1,.docs-mdx-preview h2,.docs-mdx-preview h3,.docs-mdx-preview h4 { color:var(--ink-100); letter-spacing:-.03em; }.docs-mdx-preview h1 { margin-top:0; font-size:clamp(30px,4vw,50px); line-height:1.05; border:0; }.docs-mdx-preview h2 { margin-top:2.3em; font-size:1.7em; }.docs-mdx-preview h3 { margin-top:2em; }.docs-mdx-preview p,.docs-mdx-preview li { max-width:76ch; }.docs-mdx-preview pre { padding:16px; border:1px solid var(--border); border-radius:10px; background:var(--bg); overflow:auto; }.docs-mdx-preview table { width:100%; border-collapse:collapse; margin:22px 0; }.docs-mdx-preview th,.docs-mdx-preview td { padding:10px 12px; border:1px solid var(--border); text-align:left; }.docs-mdx-preview th { background:var(--bg); }.docs-mdx-preview blockquote { margin:20px 0;padding:8px 18px;border-left:3px solid var(--accent);color:var(--ink-60); }.docs-preview-empty { display:grid;place-items:start;gap:7px;min-height:280px;align-content:center; }.docs-preview-empty h3,.docs-preview-empty p { margin:0; }.docs-preview-empty button { margin-top:8px;padding:8px 10px;border:1px solid var(--border);border-radius:7px;background:var(--bg);color:var(--ink-80);cursor:pointer; }.docs-source-panel { display:flex; min-width:0; overflow:hidden; flex-direction:column; border-left:1px solid var(--border); background:var(--bg); opacity:0; pointer-events:none; transition:opacity .16s ease; }.docs-workspace--source-open .docs-source-panel { opacity:1; pointer-events:auto; }.docs-source-panel>header { display:flex;align-items:center;justify-content:space-between;min-height:58px;padding:0 14px;border-bottom:1px solid var(--border); }.docs-source-panel>header div { display:grid;gap:2px; }.docs-source-panel header span { color:var(--ink-80);font-size:12px;font-weight:800; }.docs-source-panel header small { color:var(--ink-50);font-size:10px; }.docs-source-tools { display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px;border-bottom:1px solid var(--border); }.docs-source-panel textarea { flex:1; min-height:0; width:100%; box-sizing:border-box; padding:16px; border:0; outline:0; resize:none; background:var(--bg); color:var(--ink-80); font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; }.docs-source-panel footer { display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:42px;padding:0 12px;border-top:1px solid var(--border);color:var(--ink-50);font-size:10px; }.docs-context-menu { position:fixed;z-index:150;display:grid;min-width:160px;padding:5px;border:1px solid var(--border-strong);border-radius:9px;background:var(--bg-elev);box-shadow:var(--shadow-2); }.docs-context-menu[hidden] { display:none; }.docs-context-menu button { padding:8px;border:0;border-radius:6px;background:transparent;color:var(--ink-70);cursor:pointer;text-align:left;font:600 11px inherit; }.docs-context-menu button:hover { background:var(--bg-elev-2);color:var(--ink-100); }.docs-context-menu .danger { color:var(--danger); }.docs-tab.is-generating { cursor:progress; }.docs-tab.is-generating .docs-stage { opacity:.6;pointer-events:none; }
-@media(max-width:1050px){.docs-workspace--source-open{grid-template-columns:210px minmax(0,1fr) minmax(290px,34vw)}.docs-commandbar{align-items:flex-start;flex-direction:column}}@media(max-width:760px){.docs-workspace,.docs-workspace--source-open{grid-template-columns:1fr;min-height:0}.docs-sidebar{max-height:175px;border-right:0;border-bottom:1px solid var(--border)}.docs-source-panel{min-height:430px;border-left:0;border-top:1px solid var(--border)}.docs-mdx-preview{padding:32px 20px}.docs-filebar,.docs-preview-toolbar{padding-inline:14px}.docs-commandbar{padding:22px 16px 16px}}
+/* The old command bar (`Knowledge workspace / Docs that stay readable…`) is
+   gone. We keep an inert selector so any leftover markup from a stale build
+   collapses instead of stacking a phantom header on top of the file bar. */
+.docs-commandbar { display:none !important; }
+.docs-workspace { display:grid; grid-template-columns:250px minmax(0,1fr); min-height:calc(100vh - 56px); }
+.docs-workspace--editing { grid-template-columns:260px minmax(0,1fr); }
+.docs-sidebar { display:flex; flex-direction:column; min-width:0; padding:14px 10px; border-right:1px solid var(--border); background:var(--bg); gap:6px; }
+.docs-sidebar-head { display:flex; align-items:center; justify-content:space-between; padding:0 5px 10px; color:var(--ink-60); font:700 11px ui-monospace,monospace; }
+.docs-sidebar-head div { display:grid; gap:3px; }
+.docs-sidebar-head small { color:var(--ink-50); font:10px inherit; }
+.docs-sidebar-head button { width:28px;height:28px;border:1px solid var(--border);border-radius:7px;background:var(--bg-elev);color:var(--ink-80);cursor:pointer;font-size:17px; }
+.docs-sidebar-head button:hover { border-color:var(--border-strong); color:var(--ink-100); }
+.docs-sidebar-search { padding:0 3px 8px; }
+.docs-sidebar-search input { width:100%;box-sizing:border-box;min-height:31px;padding:0 9px;border:1px solid var(--border);border-radius:7px;background:var(--bg-elev);color:var(--text);font:11px inherit;outline:none; }
+.docs-sidebar-search input:focus { border-color:var(--border-strong); }
+.docs-file-list { display:grid; gap:3px; overflow:auto; padding:0 2px 12px; }
+.docs-sidebar-foot { padding:10px 3px 4px; border-top:1px solid var(--border); }
+.docs-sidebar-foot button { width:100%; padding:7px 10px; border:1px solid var(--border); border-radius:7px; background:var(--bg-elev); color:var(--ink-80); cursor:pointer; font:700 11px inherit; }
+.docs-sidebar-foot button:hover { border-color:var(--border-strong); color:var(--ink-100); }
+.docs-file { display:grid; gap:2px; width:100%; min-width:0; padding:8px 9px; border:1px solid transparent !important; border-radius:8px !important; background:transparent !important; color:var(--ink-60) !important; cursor:pointer; text-align:left; }
+.docs-file span { overflow:hidden; color:var(--ink-50); font-size:9px; text-overflow:ellipsis; white-space:nowrap; }
+.docs-file strong { overflow:hidden; color:inherit; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
+.docs-file:hover { background:var(--bg-elev-2) !important; color:var(--ink-90) !important; }
+.docs-file.active { border-color:color-mix(in srgb,var(--accent) 34%,var(--border)) !important; background:color-mix(in srgb,var(--accent) 10%,var(--bg-elev)) !important; color:var(--ink-100) !important; }
+.docs-empty-tree { padding:16px 9px; color:var(--ink-50); font-size:11px; line-height:1.5; }
+.docs-stage { display:flex; min-width:0; flex-direction:column; background:var(--bg-elev); }
+.docs-filebar { display:flex; align-items:center; justify-content:space-between; gap:16px; min-height:58px; padding:0 22px; border-bottom:1px solid var(--border); }
+.docs-file-ident { display:flex; min-width:0; align-items:center; gap:9px; }
+.docs-file-ident>span:last-child { display:grid; gap:2px; min-width:0; }
+.docs-file-ident strong { overflow:hidden; color:var(--ink-90); font-size:13px; text-overflow:ellipsis; white-space:nowrap; }
+.docs-file-ident small { overflow:hidden; color:var(--ink-50); font-size:10px; text-overflow:ellipsis; white-space:nowrap; }
+.docs-file-icon { display:grid; width:28px;height:28px;place-items:center;border:1px solid var(--border);border-radius:7px;background:var(--bg);color:var(--accent); }
+.docs-file-actions { display:flex; gap:6px; align-items:center; }
+
+/* Button primitives — small, readable, consistent across the docs file bar. */
+.docs-btn-primary,
+.docs-btn-secondary,
+.docs-btn-icon,
+.docs-file-actions button { min-height:28px; padding:0 11px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--ink-70); cursor:pointer; font:700 11px/1 inherit; letter-spacing:.02em; transition: border-color .12s ease, color .12s ease, background .12s ease; }
+.docs-file-actions button:hover,
+.docs-btn-primary:hover,
+.docs-btn-secondary:hover,
+.docs-btn-icon:hover { border-color:var(--border-strong); color:var(--ink-100); }
+.docs-btn-primary { background: color-mix(in srgb, var(--accent) 14%, var(--bg-elev)); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); color: var(--ink-100); }
+.docs-btn-primary:hover { background: color-mix(in srgb, var(--accent) 22%, var(--bg-elev)); border-color: color-mix(in srgb, var(--accent) 65%, var(--border)); }
+.docs-btn-primary:disabled { opacity:.45; cursor:not-allowed; }
+.docs-btn-secondary { background:var(--bg-elev); }
+.docs-btn-icon { width:30px; min-height:28px; padding:0; font-size:13px; line-height:1; }
+
+/* Rendered document — readable, breathable, capped. */
+.docs-mdx-preview {
+  max-width: 760px;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: clamp(28px, 4.5vw, 56px) clamp(20px, 4vw, 48px) clamp(40px, 6vw, 96px);
+  color: var(--ink-80);
+  font-size: 15px;
+  line-height: 1.72;
+  letter-spacing: 0.005em;
+}
+.docs-mdx-preview > * + * { margin-top: 1.1em; }
+.docs-mdx-preview h1,
+.docs-mdx-preview h2,
+.docs-mdx-preview h3,
+.docs-mdx-preview h4 { color: var(--ink-100); letter-spacing: -.025em; line-height: 1.2; }
+.docs-mdx-preview h1 { margin-top: 0; font-size: clamp(28px, 3.6vw, 42px); font-weight: 700; }
+.docs-mdx-preview h2 { margin-top: 2.4em; font-size: 1.55em; font-weight: 700; }
+.docs-mdx-preview h3 { margin-top: 2em; font-size: 1.2em; font-weight: 700; color: var(--ink-90); }
+.docs-mdx-preview h4 { margin-top: 1.8em; font-size: 1em; font-weight: 700; color: var(--ink-90); text-transform: uppercase; letter-spacing: .06em; }
+.docs-mdx-preview p,
+.docs-mdx-preview li { max-width: 70ch; }
+.docs-mdx-preview ul,
+.docs-mdx-preview ol { padding-left: 1.4em; }
+.docs-mdx-preview li { margin: 4px 0; }
+.docs-mdx-preview li::marker { color: var(--ink-50); }
+.docs-mdx-preview hr { margin: 2.4em 0; border: 0; border-top: 1px solid var(--border); }
+.docs-mdx-preview strong { color: var(--ink-100); font-weight: 700; }
+.docs-mdx-preview em { color: var(--ink-90); }
+.docs-mdx-preview a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
+.docs-mdx-preview a:hover { text-decoration-thickness: 2px; }
+.docs-mdx-preview code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88em;
+  padding: 2px 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--ink-90);
+}
+.docs-mdx-preview pre {
+  max-width: 100%;
+  margin: 1.4em 0;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  overflow-x: auto;
+  white-space: pre;
+  scrollbar-width: thin;
+}
+.docs-mdx-preview pre code {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-90);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre;
+}
+.docs-mdx-preview blockquote {
+  margin: 1.6em 0;
+  padding: 4px 18px;
+  border-left: 3px solid var(--accent);
+  color: var(--ink-70);
+  font-style: italic;
+}
+.docs-mdx-preview blockquote > * + * { margin-top: .8em; }
+.docs-mdx-preview table {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 1.6em 0;
+  font-size: 14px;
+}
+.docs-mdx-preview th,
+.docs-mdx-preview td {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+.docs-mdx-preview th { background: var(--bg); color: var(--ink-100); font-weight: 700; }
+.docs-mdx-preview tr:nth-child(odd) td { background: color-mix(in srgb, var(--bg-elev) 60%, transparent); }
+.docs-mdx-preview img { max-width: 100%; height: auto; border-radius: 6px; }
+
+/* Per-block wrappers emitted by the server renderer — keep spacing sane. */
+.docs-mdx-preview section.mdx-block { display: block; }
+.docs-mdx-preview section.mdx-block > * + * { margin-top: inherit; }
+
+/* Empty state. */
+.docs-preview-empty { display:grid; place-items:start; gap:10px; min-height:320px; align-content:center; }
+.docs-preview-empty h3 { margin:0; color:var(--ink-100); font-size:18px; }
+.docs-preview-empty p { margin:0; color:var(--ink-60); font-size:14px; line-height:1.55; max-width:52ch; }
+.docs-preview-empty button { margin-top:6px; padding:9px 14px; border:1px solid var(--border); border-radius:7px; background:var(--bg-elev); color:var(--ink-80); cursor:pointer; font:700 12px inherit; }
+.docs-preview-empty button:hover { border-color:var(--border-strong); color:var(--ink-100); }
+
+/* In-place editor — replaces the preview when `state.editing` flips on. */
+.docs-editor-shell { display:flex; flex-direction:column; min-height:0; flex:1 1 auto; background: var(--bg); }
+.docs-source-tools { display:flex; flex-wrap:wrap; gap:4px; padding:10px 14px; border-bottom:1px solid var(--border); background:var(--bg-elev); }
+.docs-source-tools button { min-height:28px; min-width:34px; padding:0 8px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--ink-70); cursor:pointer; font:700 11px inherit; }
+.docs-source-tools button:hover { border-color:var(--border-strong); color:var(--ink-100); }
+.docs-editor-shell textarea { flex:1 1 auto; min-height:0; width:100%; box-sizing:border-box; padding:22px clamp(18px, 4vw, 40px); border:0; outline:0; resize:none; background:var(--bg); color:var(--ink-90); font:13px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace; }
+.docs-editor-foot { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:40px; padding:0 16px; border-top:1px solid var(--border); color:var(--ink-50); font-size:10px; background:var(--bg-elev); }
+.docs-editor-hint { letter-spacing:.04em; text-transform:uppercase; }
+
+.docs-context-menu { position:fixed; z-index:150; display:grid; min-width:160px; padding:5px; border:1px solid var(--border-strong); border-radius:9px; background:var(--bg-elev); box-shadow:var(--shadow-2); }
+.docs-context-menu[hidden] { display:none; }
+.docs-context-menu button { padding:8px; border:0; border-radius:6px; background:transparent; color:var(--ink-70); cursor:pointer; text-align:left; font:600 11px inherit; }
+.docs-context-menu button:hover { background:var(--bg-elev-2); color:var(--ink-100); }
+.docs-context-menu .danger { color:var(--danger); }
+.docs-tab.is-generating { cursor:progress; }
+.docs-tab.is-generating .docs-stage { opacity:.6; pointer-events:none; }
+
+@media(max-width:760px){
+  .docs-workspace,
+  .docs-workspace--editing { grid-template-columns:1fr; min-height:0; }
+  .docs-sidebar { max-height:200px; border-right:0; border-bottom:1px solid var(--border); }
+  .docs-mdx-preview { padding:24px 18px 56px; }
+  .docs-editor-shell textarea { padding:18px 16px; }
+  .docs-filebar { padding-inline:14px; }
+}
 
 /* Docs owns its own scroll regions. The application shell intentionally does
    not scroll, so letting the preview inherit a fixed/min-height mix trapped
-   long documents below the viewport. Keep the command bar fixed and make the
-   document stage, file tree, and source editor independently scrollable. */
+   long documents below the viewport. The file bar stays sticky and the
+   document stage, file tree, and source editor scroll independently. */
 #tab-docs { min-height: 0; overflow: hidden; }
 .docs-shell { display: flex; min-height: 0; height: 100%; flex-direction: column; overflow: hidden; }
 .docs-workspace { min-height: 0; flex: 1 1 auto; }
 .docs-sidebar,
 .docs-stage,
-.docs-source-panel { min-height: 0; }
+.docs-editor-shell { min-height: 0; }
 .docs-file-list { min-height: 0; flex: 1 1 auto; }
 .docs-stage { overflow: auto; overscroll-behavior: contain; }
-.docs-filebar,
-.docs-preview-toolbar { position: sticky; z-index: 2; }
-.docs-filebar { top: 0; background: var(--bg-elev); }
-.docs-preview-toolbar { top: 58px; }
-.docs-source-panel textarea { min-height: 0; }
+.docs-filebar { position: sticky; top: 0; z-index: 2; background: var(--bg-elev); }
+.docs-editor-shell textarea { min-height: 0; }
 
 /* Docs navigation mirrors the actual docs/ filesystem. Directory rows own
    expansion; documents stay compact and the active document is unambiguous. */
@@ -8314,26 +8485,26 @@ body.workspace-mode-chat { padding-left: 0; }
    shell's scrolling contract. They are deliberately restrained in both themes. */
 .docs-file-list,
 .docs-stage,
-.docs-source-panel textarea,
+.docs-editor-shell textarea,
 .docs-mdx-preview pre {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--ink-50) 55%, transparent) transparent;
 }
 .docs-file-list::-webkit-scrollbar,
 .docs-stage::-webkit-scrollbar,
-.docs-source-panel textarea::-webkit-scrollbar,
+.docs-editor-shell textarea::-webkit-scrollbar,
 .docs-mdx-preview pre::-webkit-scrollbar { width: 9px; height: 9px; }
 .docs-file-list::-webkit-scrollbar-track,
 .docs-stage::-webkit-scrollbar-track,
-.docs-source-panel textarea::-webkit-scrollbar-track,
+.docs-editor-shell textarea::-webkit-scrollbar-track,
 .docs-mdx-preview pre::-webkit-scrollbar-track { background: transparent; }
 .docs-file-list::-webkit-scrollbar-thumb,
 .docs-stage::-webkit-scrollbar-thumb,
-.docs-source-panel textarea::-webkit-scrollbar-thumb,
+.docs-editor-shell textarea::-webkit-scrollbar-thumb,
 .docs-mdx-preview pre::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 999px; background: color-mix(in srgb, var(--ink-50) 58%, transparent); background-clip: padding-box; }
 .docs-file-list::-webkit-scrollbar-thumb:hover,
 .docs-stage::-webkit-scrollbar-thumb:hover,
-.docs-source-panel textarea::-webkit-scrollbar-thumb:hover,
+.docs-editor-shell textarea::-webkit-scrollbar-thumb:hover,
 .docs-mdx-preview pre::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--ink-70) 74%, transparent); }
 /* Medium screens keep every primary destination reachable without a scrolling
    tab strip. The brand project picker remains the single project control. */
