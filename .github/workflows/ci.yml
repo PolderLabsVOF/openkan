@@ -2,59 +2,59 @@ name: CI
 
 on:
   push:
-    branches: [main, dev, beta]
+    branches: [main, beta, dev]
   pull_request:
-    branches: [main, dev]
+    branches: [main, beta, dev]
+  workflow_call:
+    inputs:
+      ref:
+        description: Exact commit to validate before publication
+        type: string
+        required: true
+
+permissions:
+  contents: read
 
 jobs:
   package:
-    name: npm package (Node ${{ matrix.node }})
+    name: Node ${{ matrix.node }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
+      fail-fast: false
       matrix:
         node: ['22', '24']
+    env:
+      OPENKAN_SKIP_AGENT_INSTALL: '1'
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
+          cache: npm
       - run: npm ci --include=dev
       - run: npm run typecheck
       - run: npm test
+      - run: npm run check
       - run: npm run test:package
+      - run: npm pack --ignore-scripts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-node-${{ matrix.node }}
+          path: '*.tgz'
+          retention-days: 14
+          if-no-files-found: error
 
-  typecheck:
-    name: Typecheck (${{ matrix.runtime }})
+  required:
+    name: CI required
+    if: always()
+    needs: package
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - runtime: node
-            version: "22"
-          - runtime: bun
-            version: "1.1"
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node
-        if: matrix.runtime == 'node'
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.version }}
-
-      - name: Setup Bun
-        if: matrix.runtime == 'bun'
-        uses: oven-sh/setup-bun@v1
-        with:
-          bun-version: ${{ matrix.version }}
-
-      - name: Install dependencies
-        run: |
-          if [ "${{ matrix.runtime }}" = "node" ]; then
-            npm install
-          else
-            bun install --frozen-lockfile
-          fi
-
-      - name: Typecheck
-        run: npm run typecheck
+      - name: Require every supported Node version
+        env:
+          RESULT: ${{ needs.package.result }}
+        run: test "$RESULT" = success

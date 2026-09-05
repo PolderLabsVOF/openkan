@@ -1,0 +1,113 @@
+name: Release
+
+on:
+  push:
+    branches: [main, beta]
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+    inputs:
+      channel:
+        type: choice
+        options: [nightly, beta, stable]
+        default: nightly
+        required: true
+      dry_run:
+        description: Build and validate without publishing or creating tags
+        type: boolean
+        default: true
+        required: true
+      version:
+        description: Optional explicit semver (overrides auto-bump; ignored for nightly)
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+# Serialize registry/tag changes across channels. Never cancel an active publish.
+concurrency:
+  group: openkan-releases
+  cancel-in-progress: false
+
+jobs:
+  source:
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.source.outputs.channel }}
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - name: Select the branch for this channel
+        id: source
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+        run: |
+          if [ "$EVENT" = schedule ]; then
+            channel=nightly
+          elif [ "$EVENT" = workflow_dispatch ]; then
+            channel="$INPUT_CHANNEL"
+          elif [ "$REF" = refs/heads/main ]; then
+            channel=stable
+          elif [ "$REF" = refs/heads/beta ]; then
+            channel=beta
+          else
+            exit 1
+          fi
+          case "$channel" in
+            stable) branch=main ;;
+            beta) branch=beta ;;
+            nightly) branch=dev ;;
+            *) exit 1 ;;
+          esac
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          # Push releases use the event commit, not a newer branch tip.
+          if [ "$EVENT" = push ]; then branch="$GITHUB_SHA"; fi
+          echo "ref=$branch" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.source.outputs.ref }}
+          persist-credentials: false
+      - id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  verify:
+    needs: source
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.source.outputs.sha }}
+
+  publish:
+    needs: [source, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      OPENKAN_SKIP_AGENT_INSTALL: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - name: Ensure trusted publishing support
+        run: npm install --global npm@11
+      - run: npm ci --include=dev
+      - name: Build, publish with OIDC, and create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_CHANNEL: ${{ needs.source.outputs.channel }}
+          RELEASE_SHA: ${{ needs.source.outputs.sha }}
+          RELEASE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version }}
+        run: node scripts/release.mjs
