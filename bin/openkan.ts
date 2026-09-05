@@ -146,10 +146,21 @@ async function cmdInit(): Promise<void> {
 // ─── Subcommand: import ───────────────────────────────────────────────────────
 
 async function cmdImport(ctx: BoardContext, argv: string[]): Promise<void> {
-  const args = parseArgs(argv);
+  // parseArgs treats argv[0] as the command name, so prefix before parsing
+  // or our flags end up stored as `cmd` instead of `flags`.
+  const args = parseArgs(["import", ...argv]);
   const pathFlag = args.flags["path"] as string | undefined;
   const includeFlag = args.flags["include"] as string | undefined;
   const excludeFlag = args.flags["exclude"] as string | undefined;
+
+  // Surface typos in flag names — npm/wget behaviour. The import surface is
+  // small and stable: only --path, --include, --exclude.
+  const KNOWN_IMPORT_FLAGS = new Set(["path", "include", "exclude"]);
+  for (const flag of Object.keys(args.flags)) {
+    if (!KNOWN_IMPORT_FLAGS.has(flag)) {
+      console.warn(`openkan import: warning: unknown flag --${flag} (known: ${[...KNOWN_IMPORT_FLAGS].map(f => `--${f}`).join(", ")})`);
+    }
+  }
 
   // ctx.directory must be set
   if (!ctx.directory) {
