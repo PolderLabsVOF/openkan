@@ -13,14 +13,38 @@ else
   DEFAULT_INSTALL_ROOT="${XDG_DATA_HOME:-${HOME}/.local/share}/openkan"
 fi
 
-INSTALL_ROOT="${OPENKAN_HOME:-${1:-${DEFAULT_INSTALL_ROOT}}}"
+# Pre-parse pass-through flags so --help still works regardless of position.
+INSTALL_AGENT_SKILLS_YES=0
+INSTALL_AGENT_SKILLS_NO=0
+REQUESTED_HELP=0
+INSTALL_ROOT_POSITIONAL=""
+for arg in "$@"; do
+  case "${arg}" in
+    -y|--yes) INSTALL_AGENT_SKILLS_YES=1 ;;
+    -n|--no)  INSTALL_AGENT_SKILLS_NO=1 ;;
+    -h|--help) REQUESTED_HELP=1 ;;
+    -*) ;;
+    *)
+      if [[ -z "${INSTALL_ROOT_POSITIONAL}" ]]; then
+        INSTALL_ROOT_POSITIONAL="${arg}"
+      fi
+      ;;
+  esac
+done
+
+INSTALL_ROOT="${OPENKAN_HOME:-${INSTALL_ROOT_POSITIONAL:-${DEFAULT_INSTALL_ROOT}}}"
 BIN_DIR="${OPENKAN_BIN_DIR:-${HOME}/.local/bin}"
 
-if [[ "${INSTALL_ROOT}" == "--help" || "${INSTALL_ROOT}" == "-h" ]]; then
+if [[ "${REQUESTED_HELP}" == "1" || "${INSTALL_ROOT}" == "--help" || "${INSTALL_ROOT}" == "-h" ]]; then
   cat <<USAGE
-Usage: install.sh [install-directory]
+Usage: install.sh [install-directory] [options]
 
 Installs or updates OpenKan in its own application directory.
+
+Options:
+  -y, --yes    Install the OpenKan agent + skill without prompting.
+  -n, --no     Skip the agent + skill install.
+  -h, --help   Print this message and exit 0.
 
 Environment:
   OPENKAN_HOME              Override the application directory.
@@ -29,15 +53,67 @@ Environment:
   OPENKAN_INSTALL_REF_KIND  Source ref kind: heads or tags (default: heads).
   OPENKAN_INSTALL_ARCHIVE_URL
                             Override the source archive URL.
-  OPENKAN_SKIP_AGENT_SKILLS Skip installing agent workflow skills.
+  OPENKAN_SKIP_AGENT_SKILLS Skip installing agent workflow skills (CI hook).
+  OPENKAN_SKIP_AGENT_INSTALL
+                            Skip the npm-style agent install (CI hook).
   OPENKAN_SKIP_DEPENDENCIES Skip dependency installation (tests/packaging only).
 
 Defaults:
   application: ${DEFAULT_INSTALL_ROOT}
   command:     ${BIN_DIR}/openkan
+
+When run interactively (stdout is a TTY or /dev/tty is readable) without
+--yes/--no and without OPENKAN_SKIP_AGENT_SKILLS=1, install.sh asks once
+before copying the agent + skill into ~/.claude, ~/.codex, and ~/.agents.
+Default answer is yes (press Enter to accept).
 USAGE
   exit 0
 fi
+
+if [[ "${INSTALL_AGENT_SKILLS_YES}" == "1" && "${INSTALL_AGENT_SKILLS_NO}" == "1" ]]; then
+  echo "[openkan] cannot pass both --yes and --no" >&2
+  exit 2
+fi
+
+# Decide whether to ask the user. Returns 0 (install) or 1 (skip).
+prompt_yes_no() {
+  local prompt="$1"
+  local reply
+  local input=""
+  if [[ -t 0 ]]; then
+    input="/dev/stdin"
+  elif [[ -r /dev/tty ]]; then
+    input="/dev/tty"
+  fi
+  if [[ -z "${input}" ]]; then
+    # No interactive terminal available (e.g. background CI without a tty).
+    # Default to install so existing CI smoke flows keep working.
+    return 0
+  fi
+  printf '%s' "${prompt}" >&2
+  if ! read -r reply <"${input}"; then
+    # read failed (e.g. /dev/tty closed mid-install). Default to install.
+    printf '\n' >&2
+    return 0
+  fi
+  case "$(printf '%s' "${reply}" | tr '[:upper:]' '[:lower:]')" in
+    n|no) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+should_install_agent_skills() {
+  if [[ "${INSTALL_AGENT_SKILLS_NO}" == "1" ]]; then
+    return 1
+  fi
+  if [[ "${INSTALL_AGENT_SKILLS_YES}" == "1" ]]; then
+    return 0
+  fi
+  if [[ "${OPENKAN_SKIP_AGENT_SKILLS:-0}" == "1" ]]; then
+    return 1
+  fi
+  prompt_yes_no "Install OpenKan agent + skill into ~/.claude (and ~/.codex / ~/.agents)? [Y/n] "
+}
 
 has_complete_source() {
   [[ -n "${SOURCE_ROOT}" ]] &&
@@ -192,22 +268,28 @@ install_agent_skill() {
   mv "${staged}" "${target}"
 }
 
-if [[ "${OPENKAN_SKIP_AGENT_SKILLS:-0}" != "1" ]]; then
+AGENT_SKILLS_INSTALLED=0
+if should_install_agent_skills; then
   install_agent_skill "${CODEX_HOME:-${HOME}/.codex}/skills"
   install_agent_skill "${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/skills"
   install_agent_skill "${AGENTS_HOME:-${HOME}/.agents}/skills"
+  AGENT_SKILLS_INSTALLED=1
+else
+  echo "[openkan] Skipped agent skill install. Run \`openkan agent install\` later."
 fi
 
 echo ""
-if [[ "${OPENKAN_SKIP_AGENT_INSTALL:-0}" != "1" ]]; then
-  node "${INSTALL_ROOT}/bin/install-agent.mjs"
+if [[ "${OPENKAN_SKIP_AGENT_INSTALL:-0}" != "1" ]] && [[ "${AGENT_SKILLS_INSTALLED}" == "1" ]]; then
+  node "${INSTALL_ROOT}/bin/install-agent.mjs" --yes
 fi
 
 echo "OpenKan installed successfully."
 echo "  Application: ${INSTALL_ROOT}"
 echo "  Command:     ${BIN_DIR}/openkan"
-if [[ "${OPENKAN_SKIP_AGENT_SKILLS:-0}" != "1" ]]; then
+if [[ "${AGENT_SKILLS_INSTALLED}" == "1" ]]; then
   echo "  Agent skill: Codex, Claude Code, and shared agent skill directories"
+else
+  echo "  Agent skill: skipped (run 'openkan agent install' later)"
 fi
 echo ""
 echo "Run 'openkan init' inside a project, then 'openkan start'."
