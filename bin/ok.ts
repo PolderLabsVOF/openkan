@@ -18,58 +18,75 @@ import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 function help(): void {
-  process.stdout.write(`ok — self-contained planning workspace under .ok/
-
-Usage:
-  ok init                           Create .ok/ in cwd (idempotent).
-  ok task <subcommand> [args]        Manage tasks.
-  ok plan <subcommand> [args]        Manage plans.
-  ok prd  <subcommand> [args]        Manage long-horizon PRDs.
-  ok goal <list|add|show|update>     Manage goals within a PRD.
-  ok progress [--prd ID] [--json]   Summarize tasks, plans, PRDs and goal progress.
-  ok index                           Rebuild .ok/index.json from filesystem.
-  ok doctor                          Validate every JSON against its schema.
-  ok migrate-from-openkan [root]     One-shot import of legacy .openkan/ workspace.
-  ok help                            Show this message.
-
-Task subcommands:
-  ok task add <title>               [--owner X] [--priority p0|p1|p2|p3] [--plan pln-…] [--prd prd-…]
-                                    [--scope a,b] [--deps t1,t2] [--description …] [--acceptance a,b]
-  ok task list                      [--status pending|in_progress|review|done|cancelled]
-                                    [--owner X] [--plan pln-…] [--prd prd-…] [--json]
-  ok task show <id>                 [--json]
-  ok task update <id>               [--status …] [--owner …] [--priority …] [--evidence …] [--acceptance a,b] [--description …]
-  ok task claim <id> --owner X      [--lease-ms N] (default 1h)
-  ok task heartbeat <id> --owner X  [--lease-ms N]
-  ok task complete <id> --owner X --evidence "<commit/file/url>"
-  ok task cancel <id> --owner X --reason "<text>"
-  ok task release <id> --owner X    Drop a lock without changing status.
-
-Plan subcommands:
-  ok plan add <title>               [--summary …] [--prd prd-…] [--phase …] [--tasks t1,t2,…] [--acceptance a,b]
-  ok plan list                      [--status draft|active|blocked|complete|abandoned] [--prd prd-…] [--json]
-  ok plan show <id>                 [--json]
-  ok plan update <id>               [--status …] [--phase …] [--tasks t1,t2,…] [--append-task t1]
-
-PRD subcommands:
-  ok prd add <title>                [--vision …] [--goals g1|g2|g3] [--non-goals n1,n2]
-                                    [--milestones m1,m2] [--metrics 'name|target|current']
-                                    [--owners o1,o2] [--review-cadence weekly]
-  ok prd list                       [--status draft|active|shipped|abandoned] [--json]
-  ok prd show <id>                  [--json]
-  ok prd update <id>                [--status …] [--goal g1 --goal-status met] [--milestone m1 --milestone-status hit]
-                                    [--append-plan pln-…] [--review-cadence …] [--next-review ISO]
-
-Examples:
-  ok init
-  ok task add "Wire openkan ts typecheck" --owner karen --priority p1
-  ok task claim tsk-AbCdEfGh --owner karen
-  ok task complete tsk-AbCdEfGh --owner karen --evidence "abc1234 commit, see bin/ok.ts"
-  ok prd add "Planning workspace v1" --vision "Self-contained .ok/ tree for any agent" --goals "ship schema|ship CLI|ship skill"
-  ok plan add "M1: schemas + storage" --prd prd-AbCdEfGh --tasks tsk-AbCdEfGh,tsk-IjKlMnOp
-  ok index
-  ok doctor
-`);
+  // Multi-line help: enumerate every ok subcommand. Mirrors the compact
+  // `cmd  description` layout that `openkan --help` produces (Usage header,
+  // aligned rows, Flags note, Examples block). The catalogue tables are
+  // factored out so adding a new subcommand only requires updating one place.
+  const TOP: Array<[string, string]> = [
+    ["init", "Create .ok/ in cwd (idempotent)."],
+    ["task add|list|show|update|claim|heartbeat|complete|cancel|release", "Durable offline tasks."],
+    ["plan add|list|show|update", "Plans and phases."],
+    ["prd add|list|show|update", "Long-horizon scope (PRDs)."],
+    ["goal list|add|show|update", "Goals within a PRD."],
+    ["progress [--prd ID] [--json]", "Tasks / plans / PRD / goal rollups without a server."],
+    ["index", "Rebuild .ok/index.json from filesystem."],
+    ["doctor", "Validate every JSON against its schema."],
+    ["migrate-from-openkan [--path DIR] [root] [--list]", "One-shot import of legacy .openkan/ workspace."],
+    ["help", "Show this message."],
+  ];
+  const TASK: string[] = [
+    "ok task add <title> [--status pending|in_progress|review|done|cancelled] [--owner X] [--priority p0|p1|p2|p3] [--plan pln-...] [--prd prd-...] [--scope a,b] [--deps t1,t2] [--description ...] [--acceptance a,b]",
+    "ok task list [--status ...] [--owner X] [--plan pln-...] [--prd prd-...] [--json]",
+    "ok task show <id> [--json]",
+    "ok task update <id> [--status ...] [--owner ...] [--priority ...] [--evidence ...] [--acceptance a,b] [--description ...]",
+    "ok task claim <id> --owner X [--lease-ms N]",
+    "ok task heartbeat <id> --owner X [--lease-ms N]",
+    "ok task complete <id> --owner X --evidence \"<commit/file/url>\"",
+    "ok task cancel <id> --owner X --reason \"<text>\"",
+    "ok task release <id> --owner X",
+  ];
+  const PLAN: string[] = [
+    "ok plan add <title> [--summary ...] [--prd prd-...] [--phase ...] [--tasks t1,t2,...] [--acceptance a,b]",
+    "ok plan list [--status draft|active|blocked|complete|abandoned] [--prd prd-...] [--json]",
+    "ok plan show <id> [--json]",
+    "ok plan update <id> [--status ...] [--phase ...] [--tasks t1,t2,...] [--append-task t1]",
+  ];
+  const PRD: string[] = [
+    "ok prd add <title> [--vision ...] [--goals g1|g2|g3] [--non-goals n1,n2] [--milestones m1,m2] [--metrics 'name|target|current'] [--owners o1,o2] [--review-cadence weekly]",
+    "ok prd list [--status draft|active|shipped|abandoned] [--json]",
+    "ok prd show <id> [--json]",
+    "ok prd update <id> [--status ...] [--goal g1 --goal-status met] [--milestone m1 --milestone-status hit] [--append-plan pln-...] [--review-cadence ...] [--next-review ISO]",
+  ];
+  const w = Math.max(...TOP.map(([cmd]) => cmd.length));
+  const lines: string[] = [];
+  lines.push("Usage: ok <command> [args...]");
+  lines.push("");
+  for (const [cmd, desc] of TOP) {
+    lines.push(`  ${cmd.padEnd(w)}  ${desc}`);
+  }
+  lines.push("");
+  lines.push("Flags: --flag=value or --flag value, can appear before or after positionals.");
+  lines.push("");
+  lines.push("Task subcommands:");
+  for (const cmd of TASK) lines.push(`  ${cmd}`);
+  lines.push("");
+  lines.push("Plan subcommands:");
+  for (const cmd of PLAN) lines.push(`  ${cmd}`);
+  lines.push("");
+  lines.push("PRD subcommands:");
+  for (const cmd of PRD) lines.push(`  ${cmd}`);
+  lines.push("");
+  lines.push("Examples:");
+  lines.push("  ok init");
+  lines.push('  ok task add "Wire openkan ts typecheck" --owner karen --priority p1');
+  lines.push("  ok task claim tsk-AbCdEfGh --owner karen");
+  lines.push('  ok task complete tsk-AbCdEfGh --owner karen --evidence "abc1234 commit, see bin/ok.ts"');
+  lines.push('  ok prd add "Planning workspace v1" --vision "Self-contained .ok/ tree for any agent" --goals "ship schema|ship CLI|ship skill"');
+  lines.push("  ok plan add \"M1: schemas + storage\" --prd prd-AbCdEfGh --tasks tsk-AbCdEfGh,tsk-IjKlMnOp");
+  lines.push("  ok migrate-from-openkan --path /legacy/workspace --list");
+  lines.push("  ok index");
+  lines.push("  ok doctor");
+  process.stdout.write(lines.join("\n") + "\n");
 }
 
 export async function main(argv = process.argv.slice(2)): Promise<number> {

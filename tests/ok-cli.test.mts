@@ -104,7 +104,27 @@ describe("ok CLI", () => {
   it("ok help prints usage", () => {
     const r = runCli(root, "help");
     assert.strictEqual(r.code, 0);
-    assert.match(r.stdout, /ok — self-contained planning workspace/);
+    // The help header is "Usage: ok <command> [args...]" (mirrors openkan --help).
+    assert.match(r.stdout, /Usage: ok <command> \[args\.\.\.\]/);
+    // Every top-level subcommand must be enumerated so `ok --help` is as
+    // useful as `openkan --help`.
+    for (const sub of [
+      "init",
+      "task add",
+      "plan add",
+      "prd add",
+      "goal",
+      "progress",
+      "index",
+      "doctor",
+      "migrate-from-openkan",
+    ]) {
+      assert.match(r.stdout, new RegExp(sub.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `help missing subcommand: ${sub}`);
+    }
+    // --path flag for migrate-from-openkan is documented.
+    assert.match(r.stdout, /--path DIR/);
+    // --status flag for ok task add is documented.
+    assert.match(r.stdout, /--status pending\|in_progress\|review\|done\|cancelled/);
   });
 
   it("unknown subcommand exits non-zero with helpful message", () => {
