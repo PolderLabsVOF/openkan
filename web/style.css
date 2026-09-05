@@ -7325,6 +7325,10 @@ body.chat-sidebar-resizing .chat-sidebar__resize-handle::after { opacity: 1; bac
 .chat-sidebar__popover-list label, .chat-sidebar__popover button { display: flex; align-items: center; gap: var(--space-2); width: 100%; padding: 8px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--ink-80); cursor: pointer; font: inherit; font-size: 13px; text-align: left; }
 .chat-sidebar__popover-list label:hover, .chat-sidebar__popover-list label.is-active, .chat-sidebar__popover button:hover { background: var(--bg-elev-2); }
 .chat-sidebar__popover-list input[type="radio"] { accent-color: var(--coral); }
+.chat-sidebar__session-row-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-sidebar__session-badge { flex: 0 0 auto; margin-left: 8px; }
+.chat-sidebar__session-badge[data-source="claude-code"] { color: var(--accent); border-color: var(--accent); background: transparent; }
+.chat-sidebar__session-badge[data-source="history-fallback"] { color: var(--ink-50); border-color: var(--border); background: transparent; }
 .chat-sidebar__activity { display: none; }
 .chat-sidebar__tabs { display: none; }
 

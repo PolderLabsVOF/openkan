@@ -196,7 +196,11 @@
     const a = api();
     if (!a) return [];
     try {
-      const data = await a("GET", "/api/chat/sessions");
+      // include=external pulls in Claude Code sessions discovered in
+      // ~/.claude/projects/<encoded>/. Each summary carries a 'source'
+      // field so the menu can tag external rows without breaking the
+      // default OpenKan-only contract.
+      const data = await a("GET", "/api/chat/sessions?include=external");
       return Array.isArray(data?.sessions) ? data.sessions : [];
     } catch (_err) { return []; }
   }
@@ -2121,9 +2125,22 @@
     }
     closePopover();
     const items = [`<button type="button" data-chat-action="new" data-attach="1">New chat</button>`]
-      .concat((state.sessions || []).slice(0, 20).map((s) =>
-        `<button type="button" data-chat-action="pick-session" data-session-id="${esc(s.id)}" data-attach="1">${esc(s.title || s.id)}</button>`,
-      ));
+      .concat((state.sessions || []).slice(0, 20).map((s) => {
+        // External sessions get an unobtrusive badge so the user can tell
+        // apart "started in OpenKan" from "discovered in ~/.claude".
+        // history-fallback entries render with a muted variant because
+        // they cannot be continued.
+        const source = s && typeof s.source === "string" ? s.source : "openkan";
+        const badge = source === "claude-code"
+          ? `<span class="pill pill-sm chat-sidebar__session-badge" data-source="${esc(source)}">Claude Code</span>`
+          : source === "history-fallback"
+            ? `<span class="pill pill-sm chat-sidebar__session-badge" data-source="${esc(source)}">metadata only</span>`
+            : "";
+        const dataAttrs = source !== "openkan" ? ` data-source="${esc(source)}"` : "";
+        return `<button type="button" data-chat-action="pick-session" data-session-id="${esc(s.id)}"${dataAttrs} data-attach="1">
+          <span class="chat-sidebar__session-row-title">${esc(s.title || s.id)}</span>${badge}
+        </button>`;
+      }));
     popover.innerHTML = items.join("");
     state.popoverId = popover.id;
     anchorPopover(popover, trigger);
