@@ -20,6 +20,9 @@ const OPENKAN_ROOT = resolve(__dirname, "..");
 const OPENKAN_WEB = join(OPENKAN_ROOT, "web");
 import { removeDir, ensureDir } from "../kanban/io.ts";
 import { runImport } from "../kanban/import.ts";
+import { main as runPlanning } from "./ok.ts";
+import { cpSync } from "node:fs";
+import { homedir } from "node:os";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -47,7 +50,7 @@ const DEFAULT_CONFIG: Config = {
 const AGENT_CAPABILITIES = Object.freeze({
   board: ["GET /api/board", "GET /api/tasks-index", "GET /api/tasks/:id", "POST /api/tasks", "PATCH /api/tasks/:id", "DELETE /api/tasks/:id", "POST /api/tasks/bulk", "POST /api/organize", "POST /api/import"],
   taskContext: ["GET|POST /api/tasks/:id/comments", "POST /api/tasks/:id/ask", "POST /api/tasks/:id/respond", "GET /api/tasks/:id/subtasks", "GET|POST /api/tasks/:id/images", "POST /api/tasks/:id/start", "POST /api/tasks/:id/abort"],
-  planning: ["ok task|plan|prd …", "GET /api/goals", "PATCH /api/goals/:prdId/:goalId"],
+  planning: ["openkan task|plan|prd|goal …", "openkan progress --json", "openkan doctor", "ok task|plan|prd|goal …", "GET /api/goals", "PATCH /api/goals/:prdId/:goalId"],
   docs: ["GET /api/docs", "GET|PUT|DELETE /api/docs/:path", "POST /api/docs/render", "POST /api/docs/generate"],
   chat: ["POST /api/chat/send", "GET /api/chat/sessions", "GET /api/chat/sessions/:id", "POST /api/chat/sessions/:id/abort"],
   agents: ["GET /api/claude/snapshot", "GET /api/claude/agents|skills|commands|hooks|teams|workflows", "GET /api/claude/activity", "GET /api/claude/model-router"],
@@ -438,6 +441,46 @@ async function cmdApi(argv: string[]): Promise<void> {
   if (!response.ok) process.exitCode = 1;
 }
 
+async function cmdBoard(argv: string[]): Promise<void> {
+  const [sub, ...rest] = argv;
+  const args = parseArgs(['board', ...rest]);
+  const [id, ...words] = args.positionals;
+  const transport: string[] = ['--json'];
+  for (const key of ['host', 'port']) if (args.flags[key] !== undefined) transport.push(`--${key}`, String(args.flags[key]));
+  let path = '/api/board';
+  let method = 'GET';
+  let data: Record<string, unknown> | undefined;
+  if (sub === 'show' && id) path = `/api/tasks/${encodeURIComponent(id)}`;
+  else if (sub === 'add' && id) {
+    if (args.flags.column && !['backlog', 'todo', 'doing', 'review', 'done'].includes(String(args.flags.column))) throw new Error('column must be backlog|todo|doing|review|done');
+    path = '/api/tasks'; method = 'POST';
+    data = { title: [id, ...words].join(' '), column: String(args.flags.column || 'todo') };
+    if (typeof args.flags.description === 'string') data.description = args.flags.description;
+  } else if (sub === 'move' && id && words.length === 1) {
+    if (!['backlog', 'todo', 'doing', 'review', 'done'].includes(words[0])) throw new Error('column must be backlog|todo|doing|review|done');
+    path = `/api/tasks/${encodeURIComponent(id)}`; method = 'PATCH'; data = { column: words[0] };
+  } else if (sub === 'comment' && id && words.length) {
+    path = `/api/tasks/${encodeURIComponent(id)}/comments`; method = 'POST';
+    data = { text: words.join(' '), blockId: 'progress', line: 1, author: String(args.flags.author || 'agent:openkan') };
+  } else if (sub !== 'list') {
+    throw new Error('Usage: openkan board list | show <id> | add <title> [--column todo] | move <id> <column> | comment <id> <text> [--author agent:NAME]');
+  }
+  // The dashboard can select another repository; never silently write to it.
+  const response = await fetch(`${apiBaseUrl(args)}/api/project`, { signal: AbortSignal.timeout(10000) });
+  if (!response.ok) throw new Error(`Cannot verify active project: HTTP ${response.status}`);
+  const project = await response.json() as { active?: { root?: string } };
+  if (project.active?.root && resolve(project.active.root) !== resolve(process.cwd())) {
+    throw new Error(`Dashboard is on ${project.active.root}; select this repository with openkan project use <id> before using board commands`);
+  }
+  await cmdApi([path, '--method', method, ...transport, ...(data ? ['--data', JSON.stringify(data)] : [])]);
+}
+
+async function cmdProject(argv: string[]): Promise<void> {
+  if (argv[0] === 'list') return cmdApi(['/api/projects', '--json', ...argv.slice(1)]);
+  if (argv[0] === 'use' && argv[1]) return cmdApi([`/api/projects/${encodeURIComponent(argv[1])}/active`, '--method', 'PATCH', '--json', ...argv.slice(2)]);
+  throw new Error('Usage: openkan project list | use <id>');
+}
+
 async function cmdAgentContext(argv: string[]): Promise<void> {
   const args = parseArgs(["context", ...argv]);
   const endpoints = {
@@ -547,6 +590,15 @@ function printHelp(cmd?: string): void {
     logs: "logs [--tail N] [--follow]       Print server logs",
     api: "api <path> [--method M] [--data JSON|--data-file FILE]  Call any local OpenKan REST feature",
     agent: "agent capabilities|context|call|start|abort  Agent-first command/control bridge",
+    task: "task add|list|show|update|claim|heartbeat|complete|cancel|release  Durable offline tasks (same as ok task)",
+    board: "board list|show|add|move|comment   Dashboard tasks (requires local server and matching project)",
+    project: "project list|use <id>             Inspect/select the dashboard project",
+    plan: "plan add|list|show|update         Plans and phases (same as ok plan)",
+    prd: "prd add|list|show|update           Long-horizon scope (same as ok prd)",
+    goal: "goal list|add|show|update          Goals within PRDs; goal update <prd> <goal> --status met",
+    progress: "progress [--prd ID] [--json]       Task, goal, plan and PRD rollups without a server",
+    skill: "skill install [--agent codex|claude|all] [--target DIR] [--force]  Install command-first agent guidance",
+    doctor: "doctor                            Validate the .ok/ planning store",
     reset: "reset [--hard]                  Reset .ok/ (--hard also wipes tasks/sessions)",
   };
   if (cmd && msgs[cmd]) {
@@ -565,6 +617,34 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   }
 
   const { cmd, positionals, flags } = parseArgs(argv);
+
+  if (["task", "plan", "prd", "goal", "progress", "doctor", "index", "migrate-from-openkan"].includes(cmd)) {
+    process.exitCode = await runPlanning(argv);
+    return;
+  }
+  if (cmd === "skill") {
+    if (positionals[0] !== "install") throw new Error("Usage: openkan skill install [--agent codex|claude|all] [--target DIR] [--force]");
+    const agent = String(flags.agent || "all");
+    if (!["all", "claude", "codex"].includes(agent)) throw new Error("--agent must be codex, claude, or all");
+    const targets = typeof flags.target === 'string' ? [resolve(flags.target)] : (agent === 'all' ? ['claude', 'codex'] : [agent]).map(name => join(homedir(), `.${name}`, 'skills', 'openkan'));
+    for (const target of targets) {
+      if (existsSync(target) && !flags.force) throw new Error(`${target} already exists; use --force to update`);
+    }
+    for (const target of targets) { cpSync(join(OPENKAN_ROOT, 'skills', 'openkan'), target, { recursive: true }); console.log(`Installed openkan skill: ${target}`); }
+    return;
+  }
+
+  // Resolve nested invocations without creating a second workspace.
+  if (cmd !== 'init') {
+    let directory = process.cwd();
+    while (!existsSync(join(directory, '.ok')) && dirname(directory) !== directory) directory = dirname(directory);
+    if (existsSync(join(directory, '.ok'))) process.chdir(directory);
+  }
+  // Command/API helpers must not rewrite board state just to read it.
+  if (cmd === 'board') return cmdBoard(argv.slice(1));
+  if (cmd === 'project') return cmdProject(argv.slice(1));
+  if (cmd === 'api') return cmdApi(argv.slice(1));
+  if (cmd === 'agent') return cmdAgent(argv.slice(1));
 
   const ctx: BoardContext = {
     directory: process.cwd(),
@@ -588,7 +668,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   }
 
   switch (cmd) {
-    case "init":    return cmdInit();
+    case "init":    await cmdInit(); process.exitCode = await runPlanning(['init']); return;
     case "start":   return cmdStart(ctx, argv.slice(1));
     case "import":  return cmdImport(ctx, argv.slice(1));
     case "stop":    return cmdStop(ctx);

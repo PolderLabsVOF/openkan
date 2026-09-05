@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Public npm distribution with compiled JavaScript, both `openkan` and `ok`
+  executables, bundled UI, explicit skill installation, and isolated package
+  installation/server smoke tests.
+- Offline `openkan task`, `plan`, `prd`, `goal`, and `progress` commands;
+  command-first board collaboration and project selection without handwritten
+  HTTP requests. Planning commands locate an existing parent `.ok/` workspace.
+- CI package verification on Node 22 and 24.
+
 ### Changed
 
 - The dashboard now uses a cohesive responsive workspace design with a compact

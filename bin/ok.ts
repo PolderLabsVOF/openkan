@@ -12,6 +12,10 @@ import { runPrd } from "../ok/commands/prd.ts";
 import { runIndex, runDoctor } from "../ok/commands/index.ts";
 import { cmdInit } from "../ok/commands/init.ts";
 import { cmdMigrateFromOpenkan } from "../ok/migrate.ts";
+import { runGoal } from "../ok/commands/goal.ts";
+import { runProgress } from "../ok/commands/progress.ts";
+import { existsSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 
 function help(): void {
   process.stdout.write(`ok — self-contained planning workspace under .ok/
@@ -21,6 +25,8 @@ Usage:
   ok task <subcommand> [args]        Manage tasks.
   ok plan <subcommand> [args]        Manage plans.
   ok prd  <subcommand> [args]        Manage long-horizon PRDs.
+  ok goal <list|add|show|update>     Manage goals within a PRD.
+  ok progress [--prd ID] [--json]   Summarize tasks, plans, PRDs and goal progress.
   ok index                           Rebuild .ok/index.json from filesystem.
   ok doctor                          Validate every JSON against its schema.
   ok migrate-from-openkan [root]     One-shot import of legacy .openkan/ workspace.
@@ -66,8 +72,10 @@ Examples:
 `);
 }
 
-async function main(): Promise<number> {
-  const argv = process.argv.slice(2);
+export async function main(argv = process.argv.slice(2)): Promise<number> {
+  let root = resolve(process.cwd());
+  while (!existsSync(`${root}/.ok`) && dirname(root) !== root) root = dirname(root);
+  if (existsSync(`${root}/.ok`)) process.chdir(root);
   const cmd = argv[0];
   const rest = argv.slice(1);
   switch (cmd) {
@@ -85,6 +93,10 @@ async function main(): Promise<number> {
       return runPlan(rest);
     case "prd":
       return runPrd(rest);
+    case "goal":
+      return runGoal(rest);
+    case "progress":
+      return runProgress(rest);
     case "index":
       return runIndex();
     case "doctor":

@@ -1,211 +1,111 @@
 ---
 name: openkan
-description: Use OpenKan as the durable project control plane. Always use this skill when a project contains .ok/, when managing project tasks or agent work, or when the user mentions OpenKan, kanban work, task status, project progress, agent sessions, or collaboration. Keep OpenKan tasks, task workspaces, status, decisions, and verification evidence synchronized throughout non-trivial work.
+description: Manage project tasks, goals, plans, progress and agent work through the OpenKan CLI. Use when a project contains .ok/ or the user asks to track project work with OpenKan.
 ---
 
 # OpenKan project workflow
 
-Treat OpenKan as the source of truth for project work. Keep it synchronized
-while working; do not reconstruct task state only at the end.
+Use `openkan` commands, not handwritten HTTP requests or direct JSON edits.
+`.ok/` is the durable workspace; `.openkan/` is legacy import input only.
+Run from the project root or a child directory of an existing `.ok/` workspace.
 
-OpenKan is a local-first MDX kanban with two sibling surfaces:
-
-- **The board** (this skill) — five-column kanban, MDX task workspaces,
-  comments, structured questions, archives, changelog.
-- **The planning system** — durable tasks, plans, and PRDs that share the
-  same `.ok/` directory but are managed with the `ok` CLI. PRDs own goals;
-  plans and tasks roll up to them.
-
-Use both as appropriate. The board owns visible work and acceptance evidence;
-the planning system owns long-horizon scope. They never conflict.
-
-## Begin every non-trivial task
-
-1. Find the project root by walking upward for `.ok/`.
-2. Run `openkan status`. If OpenKan is stopped, run `openkan start --no-open`.
-3. Confirm the canonical workspace and current work. `.ok/` is the only
-   writable workspace. Do **not** create or write `.openkan/`; it is legacy
-   import input only.
-
-   ```sh
-   ok init
-   curl -fsS http://127.0.0.1:7777/api/board
-   curl -fsS http://127.0.0.1:7777/api/tasks-index
-   ok task list --json
-   ok prd list --json
-   ```
-
-4. Reuse the matching active task. Otherwise create a focused task with a
-   concrete outcome and acceptance criteria.
-5. Move the selected task to `doing` before changing project files.
-
-For long-horizon work, create or reuse a PRD and claim a planning task:
+## Install and discover
 
 ```sh
-ok prd add "Outcome" --vision "Why this matters" --goals "Goal one|Goal two" --owners "agent"
-ok task add "Deliver outcome" --prd prd-... --owner agent --priority p1
-ok task claim tsk-... --owner agent
+npm install -g @drb0rk/openkan
+openkan skill install --agent all
+openkan init
+openkan task list --json
+openkan prd list --json
+openkan goal list --json
+openkan progress --json
 ```
 
-Keep the planning task current with `ok task update`, `ok task review`, and
-`ok task complete --evidence "validation output"`. Reference its ID in the
-board task description when both surfaces are used.
+Installation is a one-time setup, not a per-task operation. Reuse a matching task
+if one exists. Planning commands work offline without a server. The shorter `ok`
+command supports the same task/plan/prd/goal/progress operations. Use
+`openkan --help` and `ok help` for the command reference.
 
-## While you work
-
-- Keep task status honest. Move it to `doing` when you start editing files,
-  to `review` when validation passes, and only to `done` once the acceptance
-  criteria are actually met.
-- Append every meaningful change to the task workspace as comments.
-- When you discover follow-up work, add a subtask rather than expanding
-  scope on the parent.
-- When you need a decision, use a `choice` input so the answer is recorded
-  and reviewable, not buried in a chat reply.
+## Track execution
 
 ```sh
-curl -fsS -X POST http://127.0.0.1:7777/api/tasks/TASK_ID/comments \
-  -H 'content-type: application/json' \
-  -d '{
-    "blockId": "progress",
-    "line": 1,
-    "text": "Changed X; validation Y passed; remaining risk Z.",
-    "author": "agent:NAME"
-  }'
+openkan task add "Deliver scoped change" --owner codex --priority p1 --acceptance "Regression test passes|Installed CLI works"
+openkan task claim tsk-ID --owner codex
+openkan task heartbeat tsk-ID --owner codex
+openkan task update tsk-ID --evidence "Implemented X; test Y passed; Z remains"
+openkan task update tsk-ID --status review
+openkan task complete tsk-ID --owner codex --evidence "Test command and outcome; commit or file reference"
 ```
 
-## Native Claude Code control plane
+Claims default to a one-hour lease; refresh during longer work. Do not take
+another owner's claim or complete work without validation evidence. Cancel with
+`task cancel <id> --owner NAME --reason TEXT`; release a claim with `task release`.
+Read and list commands support `--json`; existing mutation commands print the
+entity ID (do not assume every mutation returns JSON).
 
-OpenKan reads your local Claude Code install directly. It exposes agents,
-skills, commands, hooks, teams, and workflows as a management surface.
+## Goals and progression
+
+Goals belong to a PRD, not a separate store. Save IDs from creation commands
+and substitute them below; do not use the example placeholders literally.
 
 ```sh
-curl -fsS http://127.0.0.1:7777/api/claude/snapshot
-curl -fsS http://127.0.0.1:7777/api/claude/agents
-curl -fsS http://127.0.0.1:7777/api/claude/workflows
+openkan prd add "Release outcome" --vision "Why it matters" --goals "Ship CLI|Verify install"
+openkan prd update prd-ID --status active
+openkan plan add "Release phase" --prd prd-ID --summary "Implementation and validation"
+openkan task add "Verify clean install" --prd prd-ID --plan pln-ID --owner codex
+openkan goal add prd-ID "Publish package" --json
+openkan goal update prd-ID g1 --status in_progress
+openkan goal update prd-ID g1 --status met
+openkan plan update pln-ID --phase validation --status active
+openkan progress --prd prd-ID --json
 ```
 
-Live updates stream over WebSocket and SSE — no polling required:
+`progress` reports status counts, completion percentages and dependency-ready
+tasks. Cancelled/dropped/abandoned items are excluded from completion denominators;
+empty denominators report 0%. It does not mark goals or plans complete for you.
+Use `goal show <prd> <goal>` for detail and `goal update ... --text TEXT` to edit.
 
-```text
-ws://127.0.0.1:7777/api/claude/ws     WebSocket
-GET  /api/claude/events               SSE
-```
+## Dashboard tasks and collaboration
 
-When you start or stop a Claude session, the dashboard reflects it within a
-second. Use the Claude endpoints to discover what is running before you
-start a new agent; it is wasteful to spawn a duplicate when one is already
-active on the same task.
-
-## Chat sidebar
-
-The left-side chat rail drives Claude Code directly from the dashboard.
-Backend routes (subject to change while the feature is in development):
-
-```text
-POST /api/chat/send                    send a turn; spawns `claude -p`
-GET  /api/chat/sessions                list sessions + archived
-GET  /api/chat/sessions/<sid>          full transcript
-POST /api/chat/sessions/<sid>/abort    kill running subprocess
-```
-
-Sessions persist as JSONL under `.ok/sessions/` (gitignored). Reopening a
-session restores the full transcript plus the model / effort / permissions
-that were selected at send time.
-
-Prefer the chat sidebar for one-off orchestration — quick questions, plan
-reviews, commit messages. Prefer the planning skill + a board task for
-multi-step work that needs an audit trail.
-
-## Goals workspace
-
-The **Goals** dashboard tab is a direct view of the durable PRDs in
-`.ok/prds/`; it is not a second task store. It lists each PRD vision and its
-goals, and lets users update a goal’s state (`open`, `in_progress`, `met`, or
-`dropped`). The UI uses:
-
-```text
-GET   /api/goals
-PATCH /api/goals/<prd-id>/<goal-id>  {"status":"in_progress"}
-```
-
-Use the CLI for creating, editing scope, milestones, and PRD metadata:
+The visual board and planning records are related but distinct surfaces. Do not
+assume a planning-only task is already a board card. Use board commands for cards
+and include the planning ID in their description when tracking both.
 
 ```sh
-ok prd list --json
-ok prd update prd-... --goal g1 --goal-status met
+openkan start --no-open
+openkan project list
+openkan project use PROJECT_ID
+openkan board list
+openkan board add "Visible work item" --description "Planning task: tsk-ID" --column doing
+openkan board show BOARD_TASK_ID
+openkan board comment BOARD_TASK_ID "Changed X; validation Y passed" --author agent:codex
+openkan board move BOARD_TASK_ID review
+openkan board move BOARD_TASK_ID done
 ```
 
-Every API update writes the PRD and rebuilds `.ok/index.json`; do not edit
-legacy `.openkan/` state. If a repository still contains legacy data, import
-it once with `ok migrate-from-openkan`, verify `.ok/`, then remove the legacy
-folder only when the migration is confirmed.
+Board commands require the local server and reject a mismatched dashboard
+project. Their output is JSON. Select the intended project explicitly. Pass
+`--port N` if the server is not using its configured default port.
 
-## M1 checkbox import
-
-Scanning a directory or file for Markdown checkboxes and converting them
-into tracked board tasks is a first-class operation. Use it when the user
-has existing TODO lists they want tracked.
+## Agent and advanced features
 
 ```sh
+openkan agent capabilities
+openkan agent context
+openkan agent start BOARD_TASK_ID --agent AGENT_ID --model MODEL_ID
+openkan agent abort BOARD_TASK_ID
 openkan import --path notes.md
-openkan import --include "**/*.md"
 ```
 
-Or over HTTP:
-
-```sh
-curl -fsS -X POST http://127.0.0.1:7777/api/import \
-  -H 'content-type: application/json' \
-  -d '{"path":"notes.md","include":"**/*.md"}'
-```
-
-Imported tasks keep a `source.path` and `source.line` reference so the
-dashboard can deep-link back to the original file.
-
-## Insights
-
-The Insights tab shows a 30-day stacked-bar chart of column flow sourced
-from `.ok/changelog.jsonl`. Useful for spotting velocity trends and
-bottleneck columns before committing to a sprint plan.
-
-```sh
-curl -fsS "http://127.0.0.1:7777/api/insights/velocity?days=30"
-```
-
-Returns zero-filled arrays when the changelog is empty; do not treat that
-as an error.
-
-## Collaboration
-
-Before editing shared areas, inspect tasks in `doing` and `review` to avoid
-overlapping ownership. Split independent scopes into subtasks and identify
-the owned files in each task description.
-
-Ask a blocking choice:
-
-```sh
-curl -fsS -X POST http://127.0.0.1:7777/api/tasks/TASK_ID/ask \
-  -H 'content-type: application/json' \
-  -d '{
-    "type": "choice",
-    "question": "Which deployment target should be used?",
-    "options": [
-      {"id":"staging","label":"Staging"},
-      {"id":"production","label":"Production"}
-    ]
-  }'
-```
-
-For Claude control-plane endpoints (snapshot, agents, workflows, sessions,
-chat, insights), see `references/api.md` before invoking them.
+For less common features (docs, chat, structured inputs, bulk changes), consult
+[the API reference](references/api.md) and use `openkan api /api/PATH` or
+`openkan agent call`. These commands handle transport; do not use `curl`.
+`openkan api` targets the dashboard's selected project, not necessarily cwd.
+Use `--method`, `--data` or `--data-file`, and `--json` for structured requests.
+Native Claude state is observational: never mutate Claude runtime files.
 
 ## Finish
 
-1. Run the project's required validation.
-2. Append the commands and outcomes to the task workspace.
-3. Re-read the task and board for concurrent changes.
-4. Move the task to `review` or `done` based on actual evidence.
-5. Leave a concise handoff comment when another agent or user must continue.
-
-Never report completion while OpenKan still shows the work as stale,
-unverified, or in progress.
+Run validation, append evidence, re-read current task state, then complete the
+task and update associated goals/plan only when their criteria are met.
+Run `openkan doctor` and leave unresolved work visible rather than marking it done.

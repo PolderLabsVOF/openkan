@@ -7,6 +7,22 @@ on:
     branches: [main, dev]
 
 jobs:
+  package:
+    name: npm package (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci --include=dev
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run test:package
+
   typecheck:
     name: Typecheck (${{ matrix.runtime }})
     runs-on: ubuntu-latest

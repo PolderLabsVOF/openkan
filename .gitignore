@@ -1,5 +1,7 @@
 # Dependencies
 node_modules/
+dist/
+*.tgz
 
 # Generated runtime state — track tasks, board, and config but ignore transient files
 .ok/

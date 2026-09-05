@@ -51,13 +51,56 @@ state under `.ok/`, and does not require a hosted service.
 
 ## Requirements
 
-- Node.js ≥ 22 (uses `--experimental-strip-types` for native TypeScript
-  execution — no transpilation step)
+- Node.js ≥ 22. The npm package ships compiled JavaScript; users do not need
+  TypeScript or a build step. Source development uses Node ≥ 22.6 for type stripping.
 - `git` for source-tree features
 - An optional Claude Code install at `~/.claude/` is required for the Claude
   control plane; the rest of OpenKan runs without it
 
 ## Install
+
+```sh
+npm install -g @drb0rk/openkan
+cd /path/to/project
+openkan init
+openkan start
+```
+
+Or run without a global install: `npx --package @drb0rk/openkan openkan --help`.
+The public package is scoped because npm reserves the unscoped `openkan` name;
+the installed commands remain `openkan` and `ok`.
+Install the bundled command-first agent skill explicitly (no install-time changes
+to your agent configuration):
+
+```sh
+openkan skill install --agent all       # Claude Code and Codex
+# --agent claude or --agent codex; --force updates an existing install
+```
+
+### Tasks, goals, and progress from the CLI
+
+No server or HTTP requests are needed for planning:
+
+```sh
+openkan task add "Verify release" --owner codex --priority p1
+openkan task list --json
+openkan task claim TASK_ID --owner codex
+openkan task complete TASK_ID --owner codex --evidence "Tests passed"
+openkan prd add "Release" --vision "Easy installation" --goals "Ship package|Verify install"
+openkan goal list --json
+openkan goal update PRD_ID g1 --status met
+openkan progress --json
+openkan doctor
+```
+
+Use IDs printed by creation commands in place of `TASK_ID` and `PRD_ID`.
+`openkan plan` manages phases and linked tasks; `ok` is the planning-only alias.
+Commands use the nearest existing `.ok/` workspace when invoked in a subdirectory.
+For visual board cards and collaboration use `openkan board list|add|show|move|comment`
+with the local server running. `openkan project list|use` selects its workspace.
+`openkan agent capabilities` describes advanced commands and the API fallback.
+
+### Alternative source installer
 
 OpenKan ships an atomic installer that puts binaries under
 `${XDG_DATA_HOME:-~/.local/share}/openkan` and a `openkan` symlink in

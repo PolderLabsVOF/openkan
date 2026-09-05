@@ -19,12 +19,13 @@ completion.
 | Need | Preferred surface |
 | --- | --- |
 | Durable work, ownership, PRDs | `ok task`, `ok plan`, `ok prd` |
-| Board move/tag/archive/bulk changes | `openkan api` |
+| Board list/add/show/move/comment | `openkan board` |
+| Board tags/archive/bulk changes | `openkan api` |
 | Agent discovery and task execution | `openkan agent context`, `openkan agent start` |
 | A focused Claude turn | `/api/chat/send` through `openkan api` |
 | Docs editing/generation | `/api/docs/*` through `openkan api` |
-| Goal state | `ok prd update` or `/api/goals/*` |
-| Project registration/switching | `/api/projects/*` through `openkan api` |
+| Goals and progression | `openkan goal`, `openkan progress --json` |
+| Project switching | `openkan project list`, `openkan project use <id>` |
 | Insights and changelog analysis | `/api/insights/*`, `/api/changelog*` |
 
 ## Mutations

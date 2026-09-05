@@ -12,8 +12,9 @@ description: |
 # ok-planning
 
 `.ok/` is the project's self-contained planning workspace. The `ok` CLI
-manages it. OpenKan reads and writes the same store, so anything you
-write here shows up in the OpenKan UI automatically.
+manages it. `openkan task`, `openkan plan`, `openkan prd`, `openkan goal`
+and `openkan progress` use the same planning store. Dashboard cards remain a
+separate surface: use `openkan board` to manage their visible state.
 
 ## Quick reference
 
@@ -30,7 +31,9 @@ ok index                                 # rebuild .ok/index.json
 ok doctor                                # validate JSON against schemas
 ```
 
-All commands are also JSON-parseable via `--json` for scripted use.
+Read/list commands support `--json`; existing mutation commands print the entity
+ID. Use `openkan goal list --json` and `openkan progress --json` for structured
+progress reporting. Use CLI commands rather than manual HTTP requests.
 
 ## Storage layout
 

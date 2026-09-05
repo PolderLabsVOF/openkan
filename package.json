@@ -1,17 +1,26 @@
 {
-  "name": "openkan",
+  "name": "@drb0rk/openkan",
   "version": "0.3.0",
   "description": "Local-first MDX kanban with native Claude Code control plane, .ok/ planning system, and embedded chat sidebar.",
   "type": "module",
-  "private": true,
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/PolderLabsVOF/openkan.git" },
+  "homepage": "https://github.com/PolderLabsVOF/openkan#readme",
+  "bugs": { "url": "https://github.com/PolderLabsVOF/openkan/issues" },
+  "keywords": ["kanban", "agents", "tasks", "goals", "cli", "local-first"],
+  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
+  "files": ["bin/*.mjs", "dist", "skills/openkan", "LICENSE", "README.md", "CHANGELOG.md"],
   "bin": {
-    "openkan": "./bin/openkan.mjs",
-    "ok": "./bin/ok.mjs"
+    "openkan": "bin/openkan.mjs",
+    "ok": "bin/ok.mjs"
   },
   "engines": {
     "node": ">=22.0.0"
   },
   "scripts": {
+    "build": "node scripts/build.mjs",
+    "prepack": "npm run build",
+    "test:package": "node scripts/test-package.mjs",
     "test": "node --test --experimental-strip-types tests/*.test.mts tests/*.test.mjs",
     "typecheck": "tsc --noEmit --allowImportingTsExtensions --allowJs --checkJs --skipLibCheck --target ES2022 --module ESNext --moduleResolution Bundler bin/*.ts kanban/*.ts ok/*.ts ok/commands/*.ts",
     "check": "node --experimental-strip-types scripts/sanity-check.ts",
