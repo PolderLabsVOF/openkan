@@ -12,3 +12,4 @@ for (const directory of ['web', 'skills', 'commands', 'agents']) {
 }
 mkdirSync(new URL('.claude/skills/', dist), { recursive: true });
 cpSync(new URL('../.claude/skills/ok-planning/', import.meta.url), new URL('.claude/skills/ok-planning/', dist), { recursive: true });
+cpSync(new URL('../bin/assets/', import.meta.url), new URL('bin/assets', dist), { recursive: true });
