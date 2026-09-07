@@ -1,8 +1,6 @@
 name: Release
 
 on:
-  push:
-    branches: [main, beta]
   schedule:
     - cron: '17 2 * * *'
   workflow_dispatch:
