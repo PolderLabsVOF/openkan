@@ -87,6 +87,52 @@ export interface Board {
   sessions: Record<string, SessionRecord>;
 }
 
+/**
+ * Read and normalise a board.json file. Returns the parsed board alongside
+ * a flag indicating whether the loader recovered from a structured-but-broken
+ * shape (missing or non-array `tasks`/`columns`, or root not an object).
+ * Pure JSON-parse failures still throw because the file is then genuinely
+ * damaged and recovering would mask data loss. Recovery never rewrites the
+ * file on disk; the next persist normalises it.
+ */
+export function readBoardSafe(
+  boardPath: string,
+): { board: Board; recovered: boolean } {
+  const raw = readFileSync(boardPath, "utf-8");
+  const parsed = JSON.parse(raw);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { board: freshBoard(), recovered: true };
+  }
+  const board = parsed as Board;
+  let recovered = false;
+  if (!Array.isArray(board.tasks)) {
+    board.tasks = [];
+    recovered = true;
+  }
+  if (!Array.isArray(board.columns) || board.columns.length === 0) {
+    board.columns = [...DEFAULT_COLUMNS];
+    recovered = true;
+  }
+  if (!board.sessions || typeof board.sessions !== "object") {
+    board.sessions = {};
+    recovered = true;
+  }
+  if (typeof board.version !== "number") {
+    board.version = 1;
+    recovered = true;
+  }
+  return { board, recovered };
+}
+
+function freshBoard(): Board {
+  return {
+    version: 1,
+    columns: [...DEFAULT_COLUMNS],
+    tasks: [],
+    sessions: {},
+  };
+}
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 export const DEFAULT_COLUMNS: Column[] = [
