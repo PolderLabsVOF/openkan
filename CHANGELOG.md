@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not an object) by reseeding the empty defaults; only unparseable JSON
   is fatal, since that means the file itself is damaged. The next
   persist rewrites the file in its normalised form.
+- Installed package web root: `OPENKAN_WEB` now resolves to the first
+  existing candidate between `<pkg>/dist/web` (the published layout)
+  and `<pkg>/web` (the source layout). Previously it pointed only at
+  `<pkg>/web`, which is not in the npm `files` list, so `ok start`
+  served 404 on every dashboard asset when run from a global
+  install. Regression: `tests/web-root.test.mts`.
 - Windows session archive: `kanban/chat.ts:archiveSession` routes through
   new `kanban/io.ts:moveOver` so re-archiving an already-archived
   session replaces the destination (Windows EEXIST) and survives brief
