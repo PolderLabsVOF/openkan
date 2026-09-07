@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-07
+
+### Fixed
+
+- `ok serve --mode=background` (and tray-mode fallback when tray init fails)
+  no longer exit the CLI immediately after starting the HTTP listener.
+  Background-mode processes now detach from the controlling terminal,
+  survive parent shell SIGHUP, and stay alive until `ok stop` (SIGTERM)
+  cleanly shuts the server down. The pidfile's PID is now reliably the
+  live server PID.
+
 ## [0.5.0] - 2026-09-07
 
 ### Changed

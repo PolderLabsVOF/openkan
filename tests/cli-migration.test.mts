@@ -25,9 +25,9 @@ test("bin/openkan.mjs is gone (M2)", () => {
   assert.equal(existsSync("bin/openkan.mjs"), false);
 });
 
-test("package.json version is 0.5.0", () => {
+test("package.json version is 0.5.1", () => {
   const pkg = JSON.parse(readFileSync("package.json", "utf8")) as { version: string };
-  assert.equal(pkg.version, "0.5.0");
+  assert.equal(pkg.version, "0.5.1");
 });
 
 test("package.json bin field only publishes ok", () => {
@@ -106,9 +106,13 @@ test("install.sh links ${BIN_DIR}/ok, not openkan", () => {
   assert.equal(src.includes("${BIN_DIR}/ok"), true, "install.sh missing ${BIN_DIR}/ok link");
 });
 
-test("CHANGELOG.md has a 0.5.0 entry", () => {
+test("CHANGELOG.md has a 0.5.0 entry (M2 baseline)", () => {
   const src = readFileSync("CHANGELOG.md", "utf8");
   assert.equal(src.includes("0.5.0"), true, "CHANGELOG.md missing 0.5.0 entry");
+});
+test("CHANGELOG.md has a 0.5.1 entry (background-mode fix)", () => {
+  const src = readFileSync("CHANGELOG.md", "utf8");
+  assert.equal(src.includes("0.5.1"), true, "CHANGELOG.md missing 0.5.1 entry");
 });
 
 test("bin/ok.ts --version prints a semver version", () => {
