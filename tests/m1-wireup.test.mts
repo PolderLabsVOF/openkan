@@ -2,7 +2,7 @@
 
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert";
-import { mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "path";
 import { tmpdir } from "node:os";
 import { initBoard, setProjectRoot, getBoard } from "../kanban/board.ts";
@@ -26,6 +26,11 @@ describe("runImport", () => {
 
   afterEach(() => {
     rmSync(tmp, { force: true, recursive: true });
+    // The apiImport path below sets KANBAN_DIR to `tmp` (not `tmp/.ok`)
+    // and triggers persist() which mirrors into `<KANBAN_DIR>/..` = `/tmp`.
+    // That leak would be inherited by sibling tests that look up the nearest
+    // `.ok` workspace — scrub it so other suites start clean.
+    if (existsSync("/tmp/.ok")) rmSync("/tmp/.ok", { force: true, recursive: true });
   });
 
   it("scans 3 unchecked + 1 checked checkbox → creates 3 Backlog tasks with imp- IDs, source, sourceHash", async () => {
@@ -153,6 +158,11 @@ describe("POST /api/import", () => {
   afterEach(() => {
     setKanbanDir("");
     rmSync(tmp, { force: true, recursive: true });
+    // The apiImport path sets KANBAN_DIR to `tmp` (not `tmp/.ok`) and
+    // triggers persist() which mirrors into `<KANBAN_DIR>/..` = `/tmp`.
+    // That leak would be inherited by sibling tests that look up the
+    // nearest `.ok` workspace — scrub it so other suites start clean.
+    if (existsSync("/tmp/.ok")) rmSync("/tmp/.ok", { force: true, recursive: true });
   });
 
   async function apiImportReq(body: unknown): Promise<Response> {

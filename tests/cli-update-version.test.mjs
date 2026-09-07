@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { readFileSync } from "node:fs";
 
 const PROJECT_ROOT = new URL("../", import.meta.url).pathname;
-const CLI_ARGS = ["--experimental-strip-types", join(PROJECT_ROOT, "bin", "openkan.ts")];
+const CLI_ARGS = ["--experimental-strip-types", join(PROJECT_ROOT, "bin", "ok.ts")];
 
 function run(args, cwd = PROJECT_ROOT) {
   return spawnSync(process.execPath, [...CLI_ARGS, ...args], {
@@ -49,7 +49,7 @@ describe("openkan update", () => {
   it("--help prints usage and exits 0", () => {
     const result = run(["update", "--help"]);
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /Usage: openkan update/);
+    assert.match(result.stdout, /Usage: ok update/);
     assert.match(result.stdout, /--check/);
     assert.match(result.stdout, /--yes/);
   });

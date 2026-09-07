@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 const PROJECT_ROOT = new URL("../", import.meta.url).pathname;
-const CLI_ARGS = ["--experimental-strip-types", join(PROJECT_ROOT, "bin", "openkan.ts")];
+const CLI_ARGS = ["--experimental-strip-types", join(PROJECT_ROOT, "bin", "ok.ts")];
 
 function tmpDir() {
   return mkdtempSync(join(tmpdir(), "openkan-serve-test-"));
@@ -164,7 +164,7 @@ describe("openkan serve", () => {
 });
 
 // Direct unit-level coverage of the input-to-mode mapping that lives inside
-// bin/openkan.ts. We mirror the table in cmdServe.promptModeInteractive
+// bin/ok.ts. We mirror the table in cmdServe.promptModeInteractive
 // here so we can test it without spawning the CLI; the integration tests
 // above cover the wire-up.
 describe("prompt parser (input → mode)", () => {

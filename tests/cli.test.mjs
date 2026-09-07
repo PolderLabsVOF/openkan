@@ -1,4 +1,4 @@
-// tests/cli.test.mjs — CLI subprocess tests for bin/openkan.ts
+// tests/cli.test.mjs — CLI subprocess tests for bin/ok.ts
 //
 // Tests the openkan CLI by spawning it in temp directories. Since the CLI
 // handles its own cwd-based .ok/ directory, each test runs in a unique
@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 const PROJECT_ROOT = new URL("../", import.meta.url).pathname;
-const CLI = `node --experimental-strip-types ${join(PROJECT_ROOT, "bin", "openkan.ts")}`;
+const CLI = `node --experimental-strip-types ${join(PROJECT_ROOT, "bin", "ok.ts")}`;
 
 function tmpDir() {
   return mkdtempSync(join(tmpdir(), "openkan-cli-test-"));
@@ -135,7 +135,7 @@ describe("CLI", () => {
 
     it("prints subcommand help without treating it as a failed agent action", () => {
       const out = runOk("agent --help", tmpdir());
-      assert.ok(out.includes("Usage: openkan agent"));
+      assert.ok(out.includes("Usage: ok agent"));
       assert.ok(out.includes("capabilities"));
     });
   });

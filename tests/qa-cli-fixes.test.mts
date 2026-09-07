@@ -20,7 +20,7 @@ import { tmpdir } from "node:os";
 
 const PROJECT_ROOT = new URL("../", import.meta.url).pathname;
 const CLI = `node --experimental-strip-types ${join(PROJECT_ROOT, "bin", "ok.ts")}`;
-const OPENKAN_CLI = `node --experimental-strip-types ${join(PROJECT_ROOT, "bin", "openkan.ts")}`;
+const OPENKAN_CLI = `node --experimental-strip-types ${join(PROJECT_ROOT, "bin", "ok.ts")}`;
 
 function tmp(): string {
   return mkdtempSync(join(tmpdir(), "ok-qa-fix-"));

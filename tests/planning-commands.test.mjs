@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const cli = fileURLToPath(new URL('../bin/openkan.ts', import.meta.url));
+const cli = fileURLToPath(new URL('../bin/ok.ts', import.meta.url));
 function run(cwd, ...args) {
   const result = spawnSync(process.execPath, ['--experimental-strip-types', cli, ...args], { cwd, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
