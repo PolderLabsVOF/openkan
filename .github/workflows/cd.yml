@@ -1,0 +1,60 @@
+name: CD
+
+# Continuous delivery: when a pull request is merged into `main` or `beta`,
+# dispatch the Release workflow with the matching channel. `main` publishes
+# the next stable version to the `latest` npm dist-tag; `beta` publishes the
+# next beta to the `beta` dist-tag. Merges into `dev` continue to roll up
+# via the nightly cron at 02:17 UTC.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main, beta]
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: openkan-cd
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    name: Trigger release for ${{ github.event.pull_request.base.ref }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Map base ref to release channel
+        id: channel
+        run: |
+          case "${{ github.event.pull_request.base.ref }}" in
+            main)
+              echo "channel=stable" >> "$GITHUB_OUTPUT"
+              ;;
+            beta)
+              echo "channel=beta" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::Unsupported base ref: ${{ github.event.pull_request.base.ref }}" >&2
+              exit 1
+              ;;
+          esac
+      - name: Dispatch Release workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run release.yml \
+            --ref "${{ github.event.pull_request.base.ref }}" \
+            -f channel="${{ steps.channel.outputs.channel }}" \
+            -f dry_run=false
+      - name: Summarise
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          CHANNEL: ${{ steps.channel.outputs.channel }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          echo "Triggered $CHANNEL release for $BASE_REF (PR #$PR_NUMBER: $PR_TITLE, $HEAD_SHA)"
