@@ -10,7 +10,7 @@
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { execSync } from "node:child_process";
 
 // ─── M1: bin/openkan.ts deleted ───────────────────────────────────────────────
@@ -128,14 +128,17 @@ test("bin/ok.mjs exists as the published ok entrypoint", () => {
 
 test("no test file references the legacy bin/openkan.{ts,mjs}", () => {
   const offenders: string[] = [];
-  const SELF = "tests/cli-migration.test.mts";
+  // Compare resolved absolute paths so this self-exclusion survives Windows:
+  // walk() joins with platform-native backslashes, but a forward-slash SELF
+  // constant never matches and the test would flag its own file as offender.
+  const SELF = resolve("tests/cli-migration.test.mts");
   function walk(dir: string): void {
     for (const entry of readdirSync(dir)) {
       const full = join(dir, entry);
       const stat = statSync(full);
       if (stat.isDirectory()) {
         walk(full);
-      } else if (full !== SELF && /\.test\.(mjs|mts)$/.test(entry)) {
+      } else if (resolve(full) !== SELF && /\.test\.(mjs|mts)$/.test(entry)) {
         const text = readFileSync(full, "utf8");
         if (text.includes("bin/openkan.ts") || text.includes("bin/openkan.mjs")) {
           offenders.push(full);
@@ -145,4 +148,13 @@ test("no test file references the legacy bin/openkan.{ts,mjs}", () => {
   }
   walk("tests");
   assert.deepEqual(offenders, [], `test files still reference bin/openkan: ${offenders.join(", ")}`);
+});
+
+test("the offender scan excludes itself on native path separators", () => {
+  // Guards the check above: this file mentions the legacy names, so a
+  // self-exclusion that only matches forward slashes made the scan flag
+  // itself on Windows. Both forms must resolve to the same absolute path.
+  const self = resolve("tests/cli-migration.test.mts");
+  assert.equal(resolve(join("tests", "cli-migration.test.mts")), self);
+  assert.ok(readFileSync(self, "utf8").includes("bin/openkan.ts"));
 });

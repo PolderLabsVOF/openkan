@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Windows CLI: resolve `PROJECT_ROOT` with `fileURLToPath` so test path
+  lookups stop emitting `C:\C:\...` and can find `bin/ok.ts`; the previous
+  `URL.pathname` form failed all 11 cases in `tests/cli.test.mjs` on
+  Windows with "Cannot find module".
+- Windows CLI: offender scan in `tests/cli-migration.test.mts` excludes
+  itself by resolved absolute path so platform-native separators no longer
+  flag the test file as a legacy `bin/openkan` reference.
+- `ok --version` in the compiled `dist/` layout walks up to the filesystem
+  root before giving up on `package.json`; previously `node dist/bin/ok.js
+  --version` printed "ok: version unavailable".
 - Windows CLI: compare entrypoint file URLs correctly so `ok` commands run
   instead of exiting silently; also handle spaces, `#`, and `%` in install paths.
 
