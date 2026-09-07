@@ -628,8 +628,17 @@
     if (!tasks.length) return "";
     return `<div class="chat-task-reference-banners" aria-label="Referenced tasks">${tasks.map((task) => {
       const id = typeof task?.id === "string" ? task.id : "task";
-      const title = typeof task?.title === "string" ? task.title : "";
-      return `<span class="chat-task-reference-banner" title="${esc(title || id)}"><span aria-hidden="true">↗</span> Task #${esc(id.replace(/^tsk-/, "").slice(0, 6))}</span>`;
+      const title = typeof task?.title === "string" && task.title.trim()
+        ? task.title.trim()
+        : "Untitled task";
+      const column = typeof task?.column === "string" ? task.column : "";
+      const bannerTitle = column ? `${title} · ${columnLabel(column)}` : title;
+      const columnHtml = column
+        ? `<span class="chat-task-reference-banner__column chat-task-reference-banner__column--${esc(column)}">${esc(columnLabel(column))}</span>`
+        : "";
+      return `<span class="chat-task-reference-banner" title="${esc(bannerTitle)}">
+        <span class="chat-task-reference-banner__title">${esc(title)}</span>${columnHtml}<span class="chat-task-reference-banner__id">#${esc(shortTaskId(id))}</span>
+      </span>`;
     }).join("")}</div>`;
   }
 
@@ -1353,8 +1362,20 @@
     const input = state.root?.querySelector("#chat-sidebar-input");
     if (!tray || !input) return;
     const active = [...state.taskMentions.values()];
-    tray.hidden = active.length === 0;
     tray.replaceChildren();
+    tray.classList.toggle("chat-sidebar__mention-tray--empty", active.length === 0);
+    if (active.length === 0) {
+      // Empty state: a subtle ghost hint tells the user this region is a
+      // drop target for kanban tasks. The tray stays mounted so its
+      // reserved height never causes a layout shift when a chip lands.
+      const hint = document.createElement("span");
+      hint.className = "chat-sidebar__mention-empty";
+      hint.textContent = "Drop a kanban task to reference it";
+      tray.append(hint);
+      tray.setAttribute("aria-label", "Task references (empty — drop a kanban task to reference it)");
+      return;
+    }
+    tray.setAttribute("aria-label", "Task references");
     for (const task of active) {
       const chip = document.createElement("button");
       chip.type = "button";
@@ -1367,12 +1388,24 @@
       prefix.textContent = "Task";
       const title = document.createElement("span");
       title.className = "chat-sidebar__mention-chip-title";
-      title.textContent = `#${task.id.replace(/^tsk-/, "").slice(0, 6)}`;
+      title.textContent = task.title || "Untitled task";
+      const columnId = task.column || "";
+      if (columnId) {
+        const column = document.createElement("span");
+        column.className = `chat-sidebar__mention-chip-column chat-sidebar__mention-chip-column--${esc(columnId)}`;
+        column.textContent = columnLabel(columnId);
+        chip.append(prefix, title, column);
+      } else {
+        chip.append(prefix, title);
+      }
+      const id = document.createElement("span");
+      id.className = "chat-sidebar__mention-chip-id";
+      id.textContent = `#${shortTaskId(task.id)}`;
       const remove = document.createElement("span");
       remove.className = "chat-sidebar__mention-chip-remove";
       remove.setAttribute("aria-hidden", "true");
       remove.textContent = "×";
-      chip.append(prefix, title, remove);
+      chip.append(id, remove);
       tray.append(chip);
     }
   }
