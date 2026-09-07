@@ -21,6 +21,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   --version` printed "ok: version unavailable".
 - Windows CLI: compare entrypoint file URLs correctly so `ok` commands run
   instead of exiting silently; also handle spaces, `#`, and `%` in install paths.
+- Windows atomic writes: `kanban/io.ts:writeFileAtomic` now uses a unique
+  `<path>.tmp-<pid>-<ts>-<rand8>` suffix per call, retries the rename
+  briefly on EPERM/EBUSY/EACCES (antivirus/indexer/OneDrive holds), and
+  best-effort unlinks the tmp on unrecoverable failure so the next
+  persist never collides with a leftover orphan. POSIX behavior
+  unchanged (single `renameSync` on the happy path).
+- Windows session archive: `kanban/chat.ts:archiveSession` routes through
+  new `kanban/io.ts:moveOver` so re-archiving an already-archived
+  session replaces the destination (Windows EEXIST) and survives brief
+  AV holds via busy-spin retry instead of throwing.
 
 - Chat sidebar: restore the Project / Files / Plugins / Activity tabs row
   that was silently missing from the rendered shell; replace the legacy

@@ -32,7 +32,6 @@ import {
   readdirSync,
   readFileSync,
   readSync,
-  renameSync,
   statSync,
   unlinkSync,
 } from "node:fs";
@@ -41,7 +40,7 @@ import { join, resolve } from "node:path";
 import { basename } from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
-import { ensureDir, writeFileAtomic } from "./io.ts";
+import { ensureDir, writeFileAtomic, moveOver } from "./io.ts";
 import { readAgents, readModelRouter } from "./claude-state.ts";
 
 import { OPENKAN_AGENT_ID, openkanAgentDefinition } from "./agent-profile.ts";
@@ -792,9 +791,9 @@ export function archiveSession(projectRoot: string, sessionId: string): boolean 
   if (!existsSync(active)) return false;
   ensureSessionsDirs(projectRoot);
   const dest = archivedSessionPath(projectRoot, sessionId);
-  // renameSync overwrites the destination on POSIX; on Windows it would fail,
-  // but OpenKan targets Linux/macOS as the primary platforms.
-  renameSync(active, dest);
+  // moveOver replaces any existing destination (Windows-safe) and
+  // retries briefly on transient AV/indexer/OneDrive holds.
+  moveOver(active, dest);
   return true;
 }
 
