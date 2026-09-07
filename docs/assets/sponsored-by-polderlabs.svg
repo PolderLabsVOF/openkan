@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="190" viewBox="0 0 1200 190" role="img" aria-labelledby="title desc">
+  <title id="title">Sponsored by PolderLabs</title>
+  <desc id="desc">PolderLabs logo beside a sponsorship message</desc>
+  <defs>
+    <linearGradient id="sponsor-bg" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#082a42"/><stop offset="1" stop-color="#0e7490"/></linearGradient>
+    <linearGradient id="mark-cyan" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#1BC8F4"/><stop offset="1" stop-color="#15A9DD"/></linearGradient>
+    <linearGradient id="mark-yellow" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FFD64D"/><stop offset="1" stop-color="#FFC52C"/></linearGradient>
+    <clipPath id="mark-top-clip"><path d="M20 75 C37 36 65 18 100 18 H135 C174 18 198 47 198 83 C198 121 173 149 127 157 V98 C127 84 120 75 106 75 H20 Z"/></clipPath>
+  </defs>
+  <rect width="1200" height="190" rx="22" fill="url(#sponsor-bg)"/>
+  <path d="M774 0h426v190H706c80-37 117-92 68-190Z" fill="#0b3c5d" opacity=".6"/>
+  <g transform="translate(46 -11) scale(.84)">
+    <path d="M20 75 C37 36 65 18 100 18 H135 C174 18 198 47 198 83 C198 121 173 149 127 157 V98 C127 84 120 75 106 75 H20 Z" fill="url(#mark-cyan)"/>
+    <path d="M106 75 C120 75 127 84 127 98 V157 C153 152 174 140 187 122 C164 121 145 108 127 90 C122 82 115 77 106 75 Z" fill="#087FAF" opacity=".10" clip-path="url(#mark-top-clip)"/>
+    <path d="M64 104 C37 104 18 127 18 155 V219 H45 C77 219 99 198 99 166 V104 Z" fill="#f7f8f8"/>
+    <circle cx="132" cy="190" r="26" fill="url(#mark-yellow)"/>
+  </g>
+  <text x="230" y="75" fill="#bae6fd" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" letter-spacing="2">SPONSORED BY</text>
+  <text x="230" y="126" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="48" font-weight="700">PolderLabs</text>
+  <text x="230" y="156" fill="#dbeafe" font-family="Arial, Helvetica, sans-serif" font-size="19">Product engineering, Amsterdam.</text>
+</svg>
