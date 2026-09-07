@@ -105,8 +105,17 @@ export function configPath(): string {
 // accurate even when bin/ok.mjs is the entrypoint and the .ts/.js lives
 // one or two levels below the package root (src vs dist).
 export function installedPackageJson(): { name: string; version: string } | null {
-  const here = __dirname;
-  for (const dir of [here, join(here, ".."), join(here, "..", ".."), OPENKAN_ROOT]) {
+  // Walk up from this module to the filesystem root instead of probing a fixed
+  // two levels: the compiled layout (dist/ok/commands) and installed layouts
+  // sit deeper than the source tree, so a bounded list missed package.json and
+  // `--version` printed "version unavailable".
+  const candidates: string[] = [];
+  for (let dir = __dirname; ; dir = dirname(dir)) {
+    candidates.push(dir);
+    if (dirname(dir) === dir) break;
+  }
+  candidates.push(OPENKAN_ROOT);
+  for (const dir of candidates) {
     const candidate = join(dir, "package.json");
     if (existsSync(candidate)) {
       try {

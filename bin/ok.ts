@@ -7,6 +7,7 @@
 
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { BoardContext } from "../kanban/board.ts";
 import { initBoard } from "../kanban/board.ts";
 import { runTask } from "../ok/commands/task.ts";
@@ -223,7 +224,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   return typeof process.exitCode === "number" ? process.exitCode : 0;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   main()
     .then((code) => process.exit(code))
     .catch((e: any) => {
