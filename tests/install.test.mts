@@ -60,9 +60,9 @@ test("installer creates and atomically updates a dedicated OpenKan home", () => 
   assert.equal(first.status, 0, first.stderr || first.stdout);
 
   const installRoot = join(root, "data", "openkan");
-  const command = join(root, "bin", "openkan");
+  const command = join(root, "bin", "ok");
   assert.equal(lstatSync(command).isSymbolicLink(), true);
-  assert.equal(resolve(dirname(command), readlinkSync(command)), join(installRoot, "bin", "openkan.mjs"));
+  assert.equal(resolve(dirname(command), readlinkSync(command)), join(installRoot, "bin", "ok.mjs"));
   assert.equal(statSync(join(installRoot, "kanban", "server.ts")).isFile(), true);
   assert.equal(statSync(join(installRoot, "web", "index.html")).isFile(), true);
   assert.equal(statSync(join(installRoot, "commands", "organize.md")).isFile(), true);
@@ -129,7 +129,7 @@ test("installer bootstraps the complete source tree when piped to bash", () => {
   assert.equal(piped.status, 0, piped.stderr || piped.stdout);
   assert.match(piped.stdout, /Downloading OpenKan/);
   assert.equal(statSync(join(dataHome, "openkan", "kanban", "server.ts")).isFile(), true);
-  assert.equal(lstatSync(join(binDir, "openkan")).isSymbolicLink(), true);
+  assert.equal(lstatSync(join(binDir, "ok")).isSymbolicLink(), true);
 });
 
 test("tracked sources do not carry legacy runtime branding", () => {

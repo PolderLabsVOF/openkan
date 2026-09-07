@@ -61,7 +61,7 @@ describe('install-agent.mjs flag parsing', () => {
       const result = run(['--no'], { CLAUDE_CONFIG_DIR: configDir });
       assert.equal(result.status, 0, result.stderr);
       assert.match(result.stdout, /Skipped agent install/);
-      assert.match(result.stdout, /openkan agent install/);
+      assert.match(result.stdout, /ok skill install/);
       assert.equal(existsSync(join(configDir, 'agents/openkan.md')), false);
       assert.equal(existsSync(join(configDir, 'skills/openkan/SKILL.md')), false);
     } finally {

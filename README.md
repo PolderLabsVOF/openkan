@@ -37,20 +37,20 @@ is optional and only needed for Claude-powered features.
 npm install -g @polderlabs/openkan
 
 cd /path/to/your/project
-openkan init
-openkan start
+ok init
+ok start
 ```
 
 Installation adds the OpenKan Claude agent and skill, preserving locally edited
 files. Chat selects OpenKan by default; use the agent picker for Claude Code or
 another installed profile. To skip automatic installation, set
 `OPENKAN_SKIP_AGENT_INSTALL=1`. If npm scripts are disabled, run
-`openkan agent install` later. Use `--target DIR` for a custom Claude configuration
+`ok skill install` later. Use `--target DIR` for a custom Claude configuration
 directory; `--force` explicitly replaces customized files.
 
 Open [localhost:7777](http://127.0.0.1:7777/) if your browser does not open
 automatically. Keep the server process running while using the dashboard.
-`openkan init` is safe to run again in an existing workspace.
+`ok init` is safe to run again in an existing workspace.
 
 <details>
 <summary><strong>Run without a global install</strong></summary>
@@ -58,8 +58,8 @@ automatically. Keep the server process running while using the dashboard.
 Run these commands from your project directory:
 
 ```sh
-npx --package @polderlabs/openkan openkan init
-npx --package @polderlabs/openkan openkan start
+npx --package @polderlabs/openkan ok init
+npx --package @polderlabs/openkan ok start
 ```
 
 </details>
@@ -68,19 +68,19 @@ npx --package @polderlabs/openkan openkan start
 <summary><strong>Update an existing installation</strong></summary>
 
 ```sh
-openkan stop
+ok stop
 npm install -g @polderlabs/openkan@latest
-openkan start
+ok start
 ```
 
 If you installed the agent skill, refresh it separately:
 
 ```sh
-openkan skill install --agent all --force
+ok skill install --agent all --force
 ```
 
-The package name is **`@polderlabs/openkan`**. Its executables are **`openkan`** and
-**`ok`**; use the scoped name when installing or updating.
+The package name is **`@polderlabs/openkan`**. Its executable is **`ok`**;
+use the scoped name when installing or updating.
 
 </details>
 
@@ -122,7 +122,7 @@ Install the bundled skill so your coding agent can discover and use OpenKan's
 commands instead of constructing HTTP requests:
 
 ```sh
-openkan skill install --agent all
+ok skill install --agent all
 ```
 
 Use `--agent claude` or `--agent codex` to install for one tool, or `--target DIR`
@@ -132,23 +132,23 @@ skill installation is explicit.
 ### Track tasks without a server
 
 Planning commands work directly with `.ok/`. From a project subdirectory, they find
-the nearest existing `.ok/` workspace. `ok` is the shorter planning-only command:
-`ok task list --json` and `openkan task list --json` use the same records.
+the nearest existing `.ok/` workspace. `ok` is the planning-only command:
+`ok task list --json` reads and writes the same records.
 
 ```sh
-openkan task add "Add a regression test" --owner codex --priority p1
-openkan task list --json
+ok task add "Add a regression test" --owner codex --priority p1
+ok task list --json
 
 # Replace TASK_ID with the ID printed by task add.
-openkan task claim TASK_ID --owner codex
-openkan task update TASK_ID --status review
-openkan task complete TASK_ID --owner codex --evidence "npm test passed"
+ok task claim TASK_ID --owner codex
+ok task update TASK_ID --status review
+ok task complete TASK_ID --owner codex --evidence "npm test passed"
 
-openkan progress --json
-openkan doctor
+ok progress --json
+ok doctor
 ```
 
-Claims default to a one-hour lease. Use `openkan task heartbeat TASK_ID --owner
+Claims default to a one-hour lease. Use `ok task heartbeat TASK_ID --owner
 codex` during longer work. Complete tasks only after verification, with evidence
 of what passed.
 
@@ -158,16 +158,16 @@ Goals belong to a **PRD**: a product requirements document describing the intend
 outcome. Plans organize delivery; tasks record individual work items.
 
 ```sh
-openkan prd add "First release" --vision "A tested, installable CLI" --goals "Ship package|Verify install"
+ok prd add "First release" --vision "A tested, installable CLI" --goals "Ship package|Verify install"
 
 # Replace PRD_ID and PLAN_ID with the IDs printed by the preceding commands.
-openkan prd update PRD_ID --status active
-openkan plan add "Release preparation" --prd PRD_ID --summary "Package and verify"
-openkan task add "Test a clean installation" --prd PRD_ID --plan PLAN_ID --owner codex
+ok prd update PRD_ID --status active
+ok plan add "Release preparation" --prd PRD_ID --summary "Package and verify"
+ok task add "Test a clean installation" --prd PRD_ID --plan PLAN_ID --owner codex
 
-openkan goal list --prd PRD_ID --json
-openkan goal update PRD_ID g1 --status in_progress
-openkan progress --prd PRD_ID --json
+ok goal list --prd PRD_ID --json
+ok goal update PRD_ID g1 --status in_progress
+ok progress --prd PRD_ID --json
 ```
 
 Mark a goal `met` when its outcome is verified. Progress reports counts and
@@ -176,17 +176,17 @@ completion percentages; it does not automatically finish goals or plans.
 ### Work with dashboard cards
 
 **Planning tasks and dashboard cards are related but distinct.** Creating a task
-with `openkan task add` does not automatically create a visible board card. Use
-`openkan board` for dashboard work, with the server running:
+with `ok task add` does not automatically create a visible board card. Use
+`ok board` for dashboard work, with the server running:
 
 ```sh
-openkan project list
-openkan project use PROJECT_ID
-openkan board add "Test a clean installation" --column todo
-openkan board list
-openkan board move BOARD_TASK_ID doing
-openkan board comment BOARD_TASK_ID "Clean installation verified" --author agent:codex
-openkan board move BOARD_TASK_ID done
+ok project list
+ok project use PROJECT_ID
+ok board add "Test a clean installation" --column todo
+ok board list
+ok board move BOARD_TASK_ID doing
+ok board comment BOARD_TASK_ID "Clean installation verified" --author agent:codex
+ok board move BOARD_TASK_ID done
 ```
 
 Replace the example IDs with actual project and card IDs. Board commands check
@@ -197,18 +197,18 @@ both surfaces, include the planning task ID in the card description.
 
 | Command | Purpose | Server needed |
 | --- | --- | --- |
-| `openkan task`, `plan`, `prd`, `goal` | Create and maintain planning records | No |
-| `openkan progress --json` | Report planning status and ready tasks | No |
-| `openkan doctor` | Validate the planning store | No |
-| `openkan board` | Manage dashboard cards and comments | Yes |
-| `openkan project list`, `project use ID` | Inspect or switch the dashboard project | Yes |
-| `openkan agent capabilities` | Discover the agent command surface | No |
-| `openkan agent context` | Read the active workspace context | Yes |
-| `openkan agent start ID`, `agent abort ID` | Start or stop agent work for a card | Yes |
+| `ok task`, `plan`, `prd`, `goal` | Create and maintain planning records | No |
+| `ok progress --json` | Report planning status and ready tasks | No |
+| `ok doctor` | Validate the planning store | No |
+| `ok board` | Manage dashboard cards and comments | Yes |
+| `ok project list`, `project use ID` | Inspect or switch the dashboard project | Yes |
+| `ok agent capabilities` | Discover the agent command surface | No |
+| `ok agent context` | Read the active workspace context | Yes |
+| `ok agent start ID`, `agent abort ID` | Start or stop agent work for a card | Yes |
 
-Use `openkan --help` and `ok help` for command syntax. Planning list/show commands
+Use `ok --help` and `ok help` for command syntax. Planning list/show commands
 support `--json`; do not assume all mutation commands return JSON. For advanced
-features, use `openkan api` or `openkan agent call`, as documented in the
+features, use `ok api` or `ok agent call`, as documented in the
 [agent API reference](https://github.com/PolderLabsVOF/openkan/blob/main/skills/openkan/references/api.md).
 These target the dashboard's selected project, which may differ from your shell's
 current directory.
@@ -243,21 +243,21 @@ and modify project files. Use only trusted projects and review agent permissions
 ## Server and troubleshooting
 
 ```sh
-openkan status
-openkan logs --tail 100
-openkan config list
-openkan start --no-open --project /absolute/path/to/project
-openkan stop
+ok status
+ok logs --tail 100
+ok config list
+ok start --no-open --project /absolute/path/to/project
+ok stop
 ```
 
 | Problem | Check |
 | --- | --- |
-| `openkan: command not found` | Ensure your npm global executable directory is on `PATH`. Check `npm prefix -g` and reopen your terminal after changing your shell configuration. |
-| An old install runs after updating | Check `command -v openkan` on macOS/Linux or `where openkan` on Windows. An earlier source install may appear before npm's executable on `PATH`. |
+| `ok: command not found` | Ensure your npm global executable directory is on `PATH`. Check `npm prefix -g` and reopen your terminal after changing your shell configuration. |
+| An old install runs after updating | Check `command -v ok` on macOS/Linux or `where ok` on Windows. An earlier source install may appear before npm's executable on `PATH`. |
 | Port 7777 is occupied | Stop the existing OpenKan server, or start with `--port 7788`. Use the same `--port` for server-backed CLI commands. |
-| Board commands report a project mismatch | Run `openkan project list`, then `openkan project use PROJECT_ID` for the repository you are working in. |
-| Claude chat does not respond | Confirm Claude Code works in your terminal, check the configured provider/model and permissions, then inspect `openkan logs --tail 100`. |
-| Planning records fail validation | Run `openkan doctor` and inspect its reported files before editing or resetting data. |
+| Board commands report a project mismatch | Run `ok project list`, then `ok project use PROJECT_ID` for the repository you are working in. |
+| Claude chat does not respond | Confirm Claude Code works in your terminal, check the configured provider/model and permissions, then inspect `ok logs --tail 100`. |
+| Planning records fail validation | Run `ok doctor` and inspect its reported files before editing or resetting data. |
 
 ## Development
 
@@ -269,8 +269,8 @@ git clone https://github.com/PolderLabsVOF/openkan.git
 cd openkan
 npm ci
 
-npm run openkan -- init
-npm run openkan -- start --no-open
+npm run ok -- init
+npm run ok -- start --no-open
 ```
 
 Run verification in another terminal:
@@ -283,7 +283,7 @@ npm run test:package     # Build, pack, install, and smoke-test the npm artifact
 ```
 
 `npm run build` generates `dist/`. The npm launchers use that compiled output when
-present; use `npm run openkan -- ...` to run directly from edited source rather
+present; use `npm run ok -- ...` to run directly from edited source rather
 than an older build.
 
 <details>
@@ -298,7 +298,7 @@ bash install.sh
 
 The installer defaults to `~/.local/share/openkan` on Linux (respecting
 `XDG_DATA_HOME`) and `~/Library/Application Support/OpenKan` on macOS. It links
-`openkan` in `~/.local/bin`, which must be on `PATH`.
+`ok` in `~/.local/bin`, which must be on `PATH`.
 
 Override locations with `OPENKAN_HOME` and `OPENKAN_BIN_DIR`. This installer additionally installs skills for Codex and shared agents; set `OPENKAN_SKIP_AGENT_SKILLS=1` to
 skip that step. Use the same installation method for subsequent updates to avoid

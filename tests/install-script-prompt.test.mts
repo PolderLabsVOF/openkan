@@ -143,7 +143,7 @@ describe('install.sh agent-skill prompt', () => {
       });
       assert.equal(result.status, 0, result.stderr || result.stdout);
       assert.match(result.stdout, /Skipped agent skill install/);
-      assert.match(result.stdout, /openkan agent install/);
+      assert.match(result.stdout, /ok skill install/);
       assert.throws(() => statSync(join(home, '.codex', 'skills', 'openkan', 'SKILL.md')));
       assert.throws(() => statSync(join(home, '.claude', 'skills', 'openkan', 'SKILL.md')));
       assert.throws(() => statSync(join(home, '.agents', 'skills', 'openkan', 'SKILL.md')));
