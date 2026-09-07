@@ -333,3 +333,9 @@ npm run e2e              # Claude Code + MCP integration smoke test
 ## License
 
 [MIT](LICENSE).
+
+---
+
+<div align="center">
+  <a href="https://polderlabs.io/"><img src="docs/assets/sponsored-by-polderlabs.svg" alt="Sponsored by PolderLabs" width="100%" /></a>
+</div>
