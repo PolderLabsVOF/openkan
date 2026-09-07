@@ -298,6 +298,63 @@ function openUrl(url: string): void {
   }
 }
 
+// Spawn a detached child process running the same CLI entrypoint in foreground
+// mode, so the HTTP listener stays alive after the parent exits. The child
+// inherits the Node runtime flags (e.g. --experimental-strip-types) from the
+// parent's process.execArgv so it runs under the same TS loader.
+//
+// We use detached: true so the child becomes its own process group leader and
+// survives the parent's exit (no SIGHUP propagation). stdio: "ignore" frees the
+// terminal — without it the child would still own the parent's stdio FDs and
+// the user's prompt would not return. On Windows, windowsHide: true is needed
+// to suppress the new console window that `detached: true` creates.
+function spawnBackgroundChild(opts: {
+  host: string;
+  port: number;
+  noOpen: boolean;
+  noAutoDetect: boolean;
+  projectRoot: string | null;
+}): number {
+  const scriptPath = process.argv[1] ?? join(OPENKAN_ROOT, "bin", "ok.ts");
+  const childArgs: string[] = [
+    ...process.execArgv,
+    scriptPath,
+    "start",
+    "--mode=foreground",
+    `--port=${opts.port}`,
+    `--host=${opts.host}`,
+    "--no-open",
+  ];
+  if (opts.noAutoDetect) childArgs.push("--no-auto-detect");
+  if (opts.projectRoot) childArgs.push(`--project=${opts.projectRoot}`);
+
+  const child = spawn(process.execPath, childArgs, {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  child.unref();
+  if (child.pid === undefined) {
+    throw new Error("ok serve: failed to spawn background child (no PID returned)");
+  }
+  return child.pid;
+}
+
+// Poll the HTTP server until it responds (any non-5xx status) or the timeout
+// elapses. We use `fetch` against the configured URL; a connection refused or
+// a 5xx means "still starting" and we retry.
+async function waitForHttpUp(url: string, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(url);
+      if (res.status < 500) return true;
+    } catch { /* not listening yet */ }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return false;
+}
+
 // ─── cmdStart / cmdServe / cmdStartTray ────────────────────────────────────────
 
 export async function cmdStart(ctx: BoardContext, argv: string[]): Promise<void> {
@@ -326,33 +383,51 @@ export async function cmdStart(ctx: BoardContext, argv: string[]): Promise<void>
   }
   // Init board if not already
   await initBoard(ctx);
-  const result = await startOrAttach(ctx, { host, port, webRoot: OPENKAN_WEB, _autoDetect: !noAutoDetect });
   // The tray mode hides the terminal — never auto-open the browser because
   // the user already chose to hide. Foreground keeps the existing behaviour
   // (open unless --no-open). Background also auto-opens by default.
   const effectiveNoOpen = noOpen || mode === "tray";
   if (mode === "foreground") {
+    // Foreground: bind the port in this process and stay alive so Ctrl+C and
+    // SIGTERM hit us directly. The HTTP listener and the keepalive share the
+    // same process, which is the simplest model for foreground.
+    const result = await startOrAttach(ctx, { host, port, webRoot: OPENKAN_WEB, _autoDetect: !noAutoDetect });
     console.log(`OpenKan server running at ${result.url} (pid=${result.pid})\n`);
     // Keep process alive
     await new Promise(() => {});
   } else if (mode === "tray") {
+    // Tray: same in-process model as foreground, plus a system tray icon.
+    const result = await startOrAttach(ctx, { host, port, webRoot: OPENKAN_WEB, _autoDetect: !noAutoDetect });
     return cmdStartTray(ctx, result);
   } else {
-    // Write PID and log files. Format: "pid:port" so status can read both
-    // without re-probing. The port may differ from the config if the
-    // configured port was busy.
-    const pidFile = join(ctx.directory, ".ok", "server.pid");
-    writeFileSync(pidFile, `${result.pid}:${result.port}`, "utf-8");
-    console.log(`OpenKan server at ${result.url} (pid=${result.pid})\n`);
-    if (!effectiveNoOpen) {
-      openUrl(result.url);
+    // Background mode: spawn a detached child process running the same serve
+    // code in foreground mode, then exit the parent immediately so the user's
+    // terminal returns. The child owns the HTTP listener and the pidfile; the
+    // pidfile points at the child PID, so `ok stop` correctly SIGTERMs it.
+    // We deliberately do NOT call startOrAttach in the parent — the parent
+    // never binds the port, so the child can bind it without collision.
+    const childPid = spawnBackgroundChild({ host, port, noOpen, noAutoDetect, projectRoot: projectFlag ?? null });
+    const url = `http://${host}:${port}/`;
+    const serverUp = await waitForHttpUp(url, 8_000);
+    if (!serverUp) {
+      // Server did not come up (port busy, missing permissions, etc.). Kill the
+      // child and surface the error so the user gets a clear message instead of
+      // a silent exit.
+      try { process.kill(childPid, "SIGKILL"); } catch { /* already gone */ }
+      console.error(`ok serve: background child failed to bind — is port ${port} already in use?\n`);
+      process.exit(1);
     }
-    // Background mode: detach from TTY so the terminal returns to the user,
-    // but keep the process alive so the HTTP listener stays up. The pidfile
-    // points at this process's PID; `ok stop` will SIGTERM us, and Node's
-    // default SIGTERM handler exits cleanly.
-    detachForBackground();
-    await new Promise<void>(() => {});
+    // The child has written the pidfile (with just its PID). Overwrite with
+    // "pid:port" format so cmdStatus / cmdOpen can read both values without
+    // a second probe. The child's startOrAttach wrote the pidfile before HTTP
+    // bound, so this overwrite happens after that and "wins".
+    const pidFile = join(ctx.directory, ".ok", "server.pid");
+    writeFileSync(pidFile, `${childPid}:${port}`, "utf-8");
+    console.log(`OpenKan server at ${url} (pid=${childPid})\n`);
+    if (!effectiveNoOpen) {
+      openUrl(url);
+    }
+    process.exit(0);
   }
 }
 
