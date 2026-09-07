@@ -366,8 +366,8 @@
         </div>
       </div>
 
-      <nav class="chat-sidebar__tabs" role="tablist" aria-label="Workspace tabs">
-        <div class="chat-sidebar__tabs-row" role="presentation">
+      <nav class="chat-sidebar__tabs" aria-label="Workspace tabs">
+        <div class="chat-sidebar__tabs-row" role="tablist" aria-label="Chat sidebar tabs">
           <button type="button" class="chat-sidebar__tabs-tab" data-tab="project"
                   role="tab" aria-selected="false" aria-haspopup="true"
                   aria-controls="chat-sidebar-tab-project-popover" title="Project">
@@ -397,16 +397,15 @@
           </button>
           <button type="button" class="chat-sidebar__tabs-tab" data-tab="activity"
                   role="tab" aria-selected="false"
-                  aria-controls="chat-sidebar-activity" title="Activity"
-                  data-chat-sidebar-activity-toggle>
+                  aria-controls="chat-sidebar-activity" title="Activity">
             <svg class="chat-sidebar__tabs-tab-icon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
               <path d="M2 8h2.5L6 4.5 9 12l1.5-4H14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             <span class="chat-sidebar__tabs-tab-label">Activity</span>
           </button>
         </div>
-        <a class="chat-sidebar__tabs-cta" data-tab="desktop-app" role="tab"
-           aria-selected="false" href="https://github.com/PolderLabsVOF/openkan/releases"
+        <a class="chat-sidebar__tabs-cta" data-tab="desktop-app"
+           href="https://github.com/PolderLabsVOF/openkan/releases"
            target="_blank" rel="noopener noreferrer"
            title="Get the OpenKan desktop app">
           <svg class="chat-sidebar__tabs-cta-icon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
@@ -1371,6 +1370,9 @@
       const hint = document.createElement("span");
       hint.className = "chat-sidebar__mention-empty";
       hint.textContent = "Drop a kanban task to reference it";
+      // Visible hint duplicates the tray aria-label — keep it visual only so
+      // screen readers don't announce the same string twice.
+      hint.setAttribute("aria-hidden", "true");
       tray.append(hint);
       tray.setAttribute("aria-label", "Task references (empty — drop a kanban task to reference it)");
       return;
@@ -1441,6 +1443,9 @@
     state.root.addEventListener("change", onChange);
     state.root.addEventListener("keydown", onKeyDown);
     state.root.addEventListener("input", onInput);
+    // ARIA tabs pattern: arrow keys move focus between tab buttons only. The
+    // CTA link is a sibling, not a tab — let the browser handle Enter on it.
+    state.tabsRow?.addEventListener("keydown", onTabsKeydown);
 
     const newMsg = state.root.querySelector("#chat-sidebar-new-messages");
     if (newMsg) newMsg.addEventListener("click", () => {
@@ -1594,6 +1599,34 @@
       state.selectors = { ...state.selectors, [key]: val };
       saveJSON(projectStorageKey(STORAGE_KEYS.selectors), state.selectors);
     }
+  }
+
+  // ARIA keyboard pattern for the tabs row. The CTA link is a sibling, not a
+  // tab, so we ignore keystrokes that originate on it — let the browser
+  // activate it normally on Enter.
+  function onTabsKeydown(e) {
+    if (!state.tabsRow) return;
+    const tabs = Array.from(state.tabsRow.querySelectorAll(".chat-sidebar__tabs-tab"));
+    if (tabs.length === 0) return;
+    const target = e.target;
+    // Bail out if focus is on the CTA link or anything else outside the
+    // tab buttons themselves.
+    const currentIndex = tabs.indexOf(target);
+    const isTabKey = currentIndex !== -1;
+    if (!isTabKey && !target.closest(".chat-sidebar__tabs-row")) return;
+    if (!isTabKey && target !== state.tabsRow) return;
+    const key = e.key;
+    if (key !== "ArrowLeft" && key !== "ArrowRight" && key !== "Home" && key !== "End") return;
+    e.preventDefault();
+    const last = tabs.length - 1;
+    if (key === "Home") { tabs[0].focus(); return; }
+    if (key === "End") { tabs[last].focus(); return; }
+    // ArrowLeft / ArrowRight move and wrap. If focus is currently on the row
+    // (not a tab button), start from -1 so the first arrow moves to index 0.
+    const idx = isTabKey ? currentIndex : -1;
+    const delta = key === "ArrowRight" ? 1 : -1;
+    const next = ((idx + delta) + tabs.length) % tabs.length;
+    tabs[next].focus();
   }
 
   function onKeyDown(e) {
@@ -2439,6 +2472,7 @@
   async function mount(rootEl) {
     if (state.mounted) return;
     state.root = buildShell();
+    state.tabsRow = state.root.querySelector(".chat-sidebar__tabs-row");
     state.mounted = true;
     state.projectScope = await resolveProjectScope();
     // Chat mode owns the main canvas, so it must not inherit a previously
@@ -2496,6 +2530,7 @@
       try { closePopover(); } catch (_err) { /* ignore */ }
       try { state.root.remove(); } catch (_err) { /* ignore */ }
       state.root = null;
+      state.tabsRow = null;
     }
     document.body.classList.remove("chat-sidebar-open", "chat-sidebar-resizing");
     state.mounted = false;
