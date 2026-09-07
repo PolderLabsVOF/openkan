@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Windows CLI: compare entrypoint file URLs correctly so `ok` commands run
+  instead of exiting silently; also handle spaces, `#`, and `%` in install paths.
+
 - Chat sidebar: restore the Project / Files / Plugins / Activity tabs row
   that was silently missing from the rendered shell; replace the legacy
   `display:none` CSS with real pill-row styles matching the topbar tabs.
