@@ -220,3 +220,147 @@ test("stylesheet no longer hides the chat sidebar tabs row", () => {
     "expected an active-tab style",
   );
 });
+
+test("desktop-app CTA is not part of the ARIA tablist", () => {
+  const t = loadTabs();
+  const match = t.shellHtml.match(/<a[^>]*data-tab="desktop-app"[^>]*>/);
+  assert.ok(match, "expected an <a> with data-tab=desktop-app");
+  const tag = match![0];
+  assert.doesNotMatch(tag, /role="tab"/, "desktop-app CTA should not have role=tab");
+  assert.doesNotMatch(tag, /aria-selected/, "desktop-app CTA should not have aria-selected");
+  // The tablist role now lives on the inner row, not the outer <nav>.
+  assert.match(t.shellHtml, /<div class="chat-sidebar__tabs-row" role="tablist"/);
+  assert.doesNotMatch(
+    t.shellHtml.match(/<nav class="chat-sidebar__tabs"[^>]*>/)?.[0] ?? "",
+    /role="tablist"/,
+    "the outer <nav> should no longer carry role=tablist",
+  );
+});
+
+test("activity tab no longer carries the unused activity-toggle data attribute", () => {
+  const t = loadTabs();
+  assert.doesNotMatch(
+    t.shellHtml,
+    /data-chat-sidebar-activity-toggle/,
+    "activity-toggle attribute should be removed (the toggle flows through data-tab)",
+  );
+});
+
+test("tabs row supports ARIA keyboard navigation between tab buttons", () => {
+  // Load the IIFE in isolation so we can capture both the handler and the
+  // mutable state object, then inject a fake tabsRow to drive the handler.
+  const focused: string[] = [];
+  function fakeTab(name: string): any {
+    return {
+      tagName: "BUTTON",
+      classList: { contains: () => true },
+      getAttribute(k: string) { return k === "data-tab" ? name : null; },
+      focus() { focused.push(name); },
+    };
+  }
+  const tabs = ["project", "files", "plugins", "activity"].map(fakeTab);
+  const cta = {
+    tagName: "A",
+    classList: { contains: () => false },
+    getAttribute() { return null; },
+    focus() { focused.push("desktop-app"); },
+    closest() { return null; },
+  };
+  const row: any = {
+    querySelectorAll(sel: string) { return sel === ".chat-sidebar__tabs-tab" ? tabs : []; },
+  };
+  function createElement(tag: string): any {
+    const attrs = new Map<string, string>();
+    const set = new Set<string>();
+    return {
+      tagName: tag.toUpperCase(),
+      id: "",
+      className: "",
+      hidden: false,
+      children: [],
+      attributes: attrs,
+      classList: {
+        add: (c: string) => set.add(c),
+        remove: (c: string) => set.delete(c),
+        toggle(c: string, force?: boolean) {
+          if (force === true) set.add(c);
+          else if (force === false) set.delete(c);
+          else if (set.has(c)) set.delete(c);
+          else set.add(c);
+        },
+        contains: (c: string) => set.has(c),
+      },
+      innerHTML: "",
+      setAttribute(k: string, v: string) { attrs.set(k, v); },
+      getAttribute(k: string) { return attrs.get(k); },
+      appendChild(child: any) { (this.children as any[]).push(child); return child; },
+      addEventListener() {},
+      querySelector() { return null; },
+      querySelectorAll() { return []; },
+      replaceChildren() { this.children = []; },
+      focus() {},
+    };
+  }
+  // Expose the handler and the live state via the same instrumentation
+  // hook as loadTabs().
+  const instrumented = source.replace(
+    "  window.OpenKanChatSidebar =",
+    `window.__testChat = {
+       get state() { return state; },
+       onTabsKeydown,
+     };
+     window.OpenKanChatSidebar =`,
+  );
+  const win: any = { addEventListener() {}, OpenKanAPI: { api: async () => ({}) }, __testChat: {} };
+  const doc: any = {
+    readyState: "loading",
+    addEventListener() {},
+    body: { appendChild() {} },
+    createElement,
+  };
+  new Function("window", "document", "localStorage", instrumented)(win, doc, { getItem: () => null, setItem() {}, removeItem() {} });
+  const onTabsKeydown = win.__testChat.onTabsKeydown;
+  assert.ok(onTabsKeydown, "onTabsKeydown should be exposed for tests");
+  // The handler reads `state.tabsRow`; inject our fake row.
+  win.__testChat.state.tabsRow = row;
+
+  // ArrowRight from project -> files.
+  focused.length = 0;
+  onTabsKeydown({ key: "ArrowRight", target: tabs[0], preventDefault() {} });
+  assert.deepEqual(focused, ["files"]);
+
+  // ArrowLeft from files -> project.
+  focused.length = 0;
+  onTabsKeydown({ key: "ArrowLeft", target: tabs[1], preventDefault() {} });
+  assert.deepEqual(focused, ["project"]);
+
+  // ArrowLeft wraps from project -> activity.
+  focused.length = 0;
+  onTabsKeydown({ key: "ArrowLeft", target: tabs[0], preventDefault() {} });
+  assert.deepEqual(focused, ["activity"]);
+
+  // ArrowRight wraps from activity -> project.
+  focused.length = 0;
+  onTabsKeydown({ key: "ArrowRight", target: tabs[3], preventDefault() {} });
+  assert.deepEqual(focused, ["project"]);
+
+  // Home from any tab -> project.
+  focused.length = 0;
+  onTabsKeydown({ key: "Home", target: tabs[2], preventDefault() {} });
+  assert.deepEqual(focused, ["project"]);
+
+  // End from any tab -> activity.
+  focused.length = 0;
+  onTabsKeydown({ key: "End", target: tabs[1], preventDefault() {} });
+  assert.deepEqual(focused, ["activity"]);
+
+  // Target is the CTA link — handler must NOT move focus onto it.
+  focused.length = 0;
+  onTabsKeydown({ key: "ArrowRight", target: cta, preventDefault() {} });
+  assert.deepEqual(focused, []);
+
+  // Unrelated keys are ignored.
+  focused.length = 0;
+  onTabsKeydown({ key: "Enter", target: tabs[0], preventDefault() {} });
+  assert.deepEqual(focused, []);
+});

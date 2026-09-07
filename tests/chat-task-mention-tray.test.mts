@@ -207,3 +207,32 @@ test("taskReferenceBannersHTML returns empty string when no mentions", () => {
   assert.equal(t.taskReferenceBannersHTML({ taskMentions: [] }), "");
   assert.equal(t.taskReferenceBannersHTML({}), "");
 });
+
+test("renderTaskMentionTray empty hint is decorative so the aria-label is the sole announcement", () => {
+  // Run with a tray stub that records setAttribute calls.
+  const calls: Array<[string, string]> = [];
+  const trayChildren: any[] = [];
+  const tray: any = {
+    children: trayChildren,
+    classList: {
+      add() {}, remove() {},
+      toggle() {},
+      contains() { return false; },
+      _set: new Set<string>(),
+    },
+    setAttribute(k: string, v: string) { calls.push([k, String(v)]); },
+    replaceChildren(...children: any[]) { trayChildren.length = 0; trayChildren.push(...children); },
+    append(child: any) { trayChildren.push(child); },
+    getAttribute() { return null; },
+  };
+  const input: any = { focus() {} };
+  const t = loadTray();
+  t.state.root = makeFakeRoot(tray, input);
+  t.renderTaskMentionTray();
+  // Source-level guard: the visible hint span must be marked aria-hidden so
+  // screen readers announce the tray aria-label only, not the duplicate
+  // visible text.
+  const hintBlock = source.match(/mention-empty[\s\S]{0,260}/)?.[0] ?? "";
+  assert.match(hintBlock, /hint\.setAttribute\(\s*"aria-hidden"\s*,\s*"true"\s*\)/, "empty hint span should be marked aria-hidden");
+  assert.ok(calls.some(([k, v]) => k === "aria-label" && /Task references \(empty/.test(v)), "tray aria-label still set on empty tray");
+});
