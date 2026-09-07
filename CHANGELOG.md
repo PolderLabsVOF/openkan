@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Chat sidebar: restore the Project / Files / Plugins / Activity tabs row
+  that was silently missing from the rendered shell; replace the legacy
+  `display:none` CSS with real pill-row styles matching the topbar tabs.
+
+### Changed
+
+- Chat sidebar: kanban task references now show the task title prominently,
+  the column as a small colored pill, and the truncated task ID as a small
+  monospace badge — both in the mention tray and in turn banners. The
+  mention tray empty state shows a clear hint.
+
+### Accessibility
+
+- Chat sidebar: the desktop-app CTA is no longer marked as an ARIA tab, so
+  screen readers announce it as a regular link rather than as part of the
+  Workspace tabs list.
+- Chat sidebar: the tabs row now supports the ARIA keyboard pattern
+  (Left/Right arrows move focus between tab buttons with wrap, Home/End jump
+  to first/last).
+- Chat sidebar: the mention tray empty hint is marked `aria-hidden` so the
+  visible hint text isn't announced twice alongside the tray's `aria-label`.
+
 ## [0.5.1] - 2026-09-07
 
 ### Fixed
