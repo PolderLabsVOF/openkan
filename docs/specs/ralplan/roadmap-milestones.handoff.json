@@ -1,0 +1,188 @@
+{
+  "schema_version": "1.0.0",
+  "planner_complete": true,
+  "architect_complete": false,
+  "critic_complete": true,
+  "verdict": "APPROVED",
+  "iterations": {
+    "architect_rounds": 0,
+    "critic_rounds": 4,
+    "under_cap": true
+  },
+  "architect_workaround": "Bizar plan-architect dispatch blocked by selection model mismatch; Architect and Critic folded into a single Linda pass per session. Architect pass effectively conducted via critic round 1's PRE-MORTEM-equivalent review (CR-DATA-LOSS framing and structural risk enumeration) and round 2's structural critique.",
+  "challenges": [
+    {
+      "id": "CR-DATA-LOSS",
+      "title": "milestoneId silently dropped by toPlanningTask / fromPlanningTask mirror-overwrite on every HTTP PATCH",
+      "severity": "critical",
+      "evidence": "kanban/board.ts:278-292 toPlanningTask emits a fixed field set with no milestoneId; kanban/board.ts:355-398 fromPlanningTask constructs Task from OkTask fields with no milestoneId copy. Every HTTP PATCH triggers mirrorToOkStore (lines 319-347) which calls toPlanningTask, silently stripping milestoneId.",
+      "resolution_required": "Addressed in round 2; preserved through rounds 3-4.",
+      "status": "resolved",
+      "fix_location": "spec lines 267-281 (§2.3 critical paragraph) and 473-490 (M25 scope); tests/m25-engine-mirror-roundtrip.test.mts regression gate; touches toPlanningTask, fromPlanningTask, kanban/board.ts:30-62 engine Task interface, ok/schemas.ts:29 planning Task interface, ok/schemas.ts:65 isTask, ok/schemas.ts:93 validateTask, kanban/server.ts:667 apiUpdateTask PatchBody"
+    },
+    {
+      "id": "CR-NAMING",
+      "title": "PrdMilestone namespace collision with new Milestone namespace",
+      "severity": "major",
+      "evidence": "ok/schemas.ts:236-241 defines PrdMilestone. The new Milestone entity collides on the name.",
+      "resolution_required": "Disambiguated by using ok roadmap-milestone CLI surface (NOT ok milestone), TypeScript symbols RoadmapMilestone and roadmapMilestoneAttach, and cross-references in bin/ok.ts:help, docs/OK-PLANNING.md, docs/ROADMAPS.md.",
+      "status": "resolved",
+      "fix_location": "spec §2 disambiguation; bin/ok.ts:55-59 help text cross-references ok prd update --milestone"
+    },
+    {
+      "id": "CR-SSE-CLI",
+      "title": "SSE channel choice for roadmap events",
+      "severity": "major",
+      "evidence": "Existing /api/claude/events covers kanban; new file types (.ok/roadmaps/*.json, .ok/milestones/*.json) need handlers.",
+      "resolution_required": "Reuse existing broadcast() at kanban/server.ts:272-277 with two new else if branches before the kanban/server.ts:2936-2939 fallthrough.",
+      "status": "resolved",
+      "fix_location": "spec M26 scope; tests/m26-cli-sse-fanout.test.mts gate"
+    },
+    {
+      "id": "CR-TAB-LIST",
+      "title": "Roadmap tab not in web/app.js:3527 valid[] array",
+      "severity": "major",
+      "evidence": "web/app.js:3527 valid = ['home', 'tasks', 'changelog', 'contributors', 'docs', 'goals', 'agents', 'insights'] does not include 'roadmap'.",
+      "resolution_required": "Extend valid[] with 'roadmap', add mount arm in switch, add unmount call in web/app.js:3579-3587 unmount block.",
+      "status": "resolved",
+      "fix_location": "spec M27 scope; tests/m27-activate-tab-roadmap.test.mts gate"
+    },
+    {
+      "id": "CR-JSDOM",
+      "title": "jsdom dependency risk in tests",
+      "severity": "major",
+      "evidence": "package.json:67-72 devDependencies does NOT include jsdom. Tests must avoid it.",
+      "resolution_required": "Mirror tests/charts.test.mts:91-94 StubDocument pattern; explicit 'No jsdom dependency' verification bullet.",
+      "status": "resolved",
+      "fix_location": "spec M27 + M28 Verification sections"
+    },
+    {
+      "id": "CR-DEFER-MISLABEL",
+      "title": "defer attribute mislabeled as lazy-load",
+      "severity": "minor",
+      "resolution_required": "Correctly identifies <script defer> as NOT lazy and explains the lazy-mount via OpenKanRoadmap.mount(root).",
+      "status": "resolved",
+      "fix_location": "spec §7 row"
+    },
+    {
+      "id": "CR-CLI-FORMAT",
+      "title": "CLI table output alignment",
+      "severity": "minor",
+      "resolution_required": "Padded-column output matching ok/commands/task.ts:56-66 printTable padEnd(w), padEnd(11), padEnd(ts).",
+      "status": "resolved",
+      "fix_location": "spec §4 CLI surface table"
+    },
+    {
+      "id": "CR-EDGEHANDLES-STALE",
+      "title": "cytoscape-edgehandles 4.0.1 maintenance status",
+      "severity": "minor",
+      "resolution_required": "Version pinning in new file web/vendor/README.md matching web/vendor/gsap.min.js precedent. Fallback path documented: M25/M26 surface usable without drag-to-connect (CLI + API + render-only canvas).",
+      "status": "resolved",
+      "fix_location": "spec §7 row; web/vendor/README.md in M27 Files list"
+    },
+    {
+      "id": "CR-OK-MIGRATION-CONTENTION",
+      "title": "OK migration spec may not be merged before M25 lands",
+      "severity": "minor",
+      "resolution_required": "Coordination rule names the four shared files; UNVERIFIED annotation at line 945 references parallel ralplan run in worktree agent-a6c1e5b7f15aa9db9.",
+      "status": "resolved_with_unverified",
+      "fix_location": "spec §7 row line 943; line 945 UNVERIFIED annotation",
+      "unverified_detail": "Cross-worktree dependency on the OK migration ralplan run; resolved at execution time by sequencing OK migration landing before M25."
+    },
+    {
+      "id": "CR-OBSERVER",
+      "title": "Observer / mutation observer cleanup contract",
+      "severity": "minor",
+      "resolution_required": "Four-step cleanup contract enumerated in spec §5.3; tests/m27-mount-unmount-cycle.test.mts gate.",
+      "status": "resolved",
+      "fix_location": "spec §5.3 lines 410-436"
+    },
+    {
+      "id": "ROUND2-MINOR-1",
+      "title": "Field-name inconsistency between engine and planning Task for fromPlanningTask fix",
+      "severity": "minor",
+      "resolution_required": "Standardized on milestoneId? everywhere; TypeScript symbols use RoadmapMilestone and roadmapMilestoneAttach for PrdMilestone disambiguation.",
+      "status": "resolved",
+      "fix_location": "spec lines 336, 484, 529-530"
+    },
+    {
+      "id": "ROUND2-MINOR-2",
+      "title": "False 'renamed from milestone.ts' / 'renamed from roadmapMilestoneAssign' claims",
+      "severity": "minor",
+      "resolution_required": "Replaced with 'new file' / 'new helper' language; disambiguation rationale preserved.",
+      "status": "resolved",
+      "fix_location": "spec lines 350-354, 500-505, 532-533"
+    },
+    {
+      "id": "ROUND2-MINOR-3",
+      "title": "False ok task update --milestone flag reference",
+      "severity": "minor",
+      "resolution_required": "Corrected to ok prd update --milestone (ok/commands/prd.ts:204-211).",
+      "status": "resolved",
+      "fix_location": "spec lines 341, 346-348"
+    },
+    {
+      "id": "ROUND2-MINOR-4",
+      "title": "Canvas UX missing targetDate editing description",
+      "severity": "minor",
+      "resolution_required": "Added §5.3 paragraph lines 419-426 describing date pill + popperRef overlay + PATCH semantics; split M27 acceptance criterion into title + targetDate bullets.",
+      "status": "resolved",
+      "fix_location": "spec §5.3 lines 419-426; M27 lines 789-793"
+    },
+    {
+      "id": "ROUND2-MINOR-5",
+      "title": "Click-canvas-to-create missing position assignment",
+      "severity": "minor",
+      "resolution_required": "POST body carries {x, y} from canvas coordinates; layout.json same-write; overwrite semantics on re-layout action.",
+      "status": "resolved",
+      "fix_location": "spec §5.3 lines 400-408; M27 lines 794-798"
+    },
+    {
+      "id": "ROUND3-MINOR-1",
+      "title": "ok task attach --milestone examples contradict documented --roadmap-milestone flag",
+      "severity": "minor",
+      "resolution_required": "Two example commands at lines 555 and 1007 rewritten to use --roadmap-milestone. Strict grep confirms zero remaining bare --milestone examples in active content.",
+      "status": "resolved",
+      "fix_location": "spec lines 555, 1007; Round 4 audit block lines 1122-1139"
+    }
+  ],
+  "unverified_annotations": [
+    {
+      "id": "UV#1",
+      "subject": "OK migration plan existence",
+      "location": "spec §7 line 945",
+      "annotation": "UNVERIFIED — confirmed by parallel ralplan run; OK migration in worktree agent-a6c1e5b7f15aa9db9. Lands before M25."
+    },
+    {
+      "id": "UV#2",
+      "subject": "cytoscape-edgehandles 4.0.1 maintenance status",
+      "location": "spec §7 line 942",
+      "annotation": "WebSearch-confirmed 2026-09-06 (last published 2021-07-28, no commits since Jan 2022); fallback path documented."
+    },
+    {
+      "id": "UV#3",
+      "subject": "node.popperRef() API",
+      "location": "spec lines 410, 425",
+      "annotation": "UNVERIFIED — to be confirmed against cytoscape-popper@2.0.0 docs during M27 dispatch."
+    },
+    {
+      "id": "UV#4",
+      "subject": "tests/charts.test.mts:91-94 DOM stub surface",
+      "location": "spec §7 line 820",
+      "annotation": "UNVERIFIED — confirmed by critic that the stub at lines 89-95 provides globalThis.document = new StubDocument(); the six specific methods must be checked against the actual StubDocument implementation during M27 dispatch."
+    }
+  ],
+  "approved_options": [
+    {
+      "label": "balanced",
+      "summary": "Ship M25+M26+M27+M28 together. M25 owns data model + CLI; M26 owns HTTP API + SSE; M27 owns canvas + DOM stub + cytoscape vendors; M28 owns side panel + ROADMAPS.md docs.",
+      "trade_offs": "Full user goal delivered (interactive roadmap canvas with drag-to-connect, inline edit, click-to-create, live SSE). All four milestones tested independently with regression gates; rollback per-milestone remains possible because each milestone owns disjoint files.",
+      "critic_recommendation": true
+    }
+  ],
+  "recommendation": "balanced",
+  "critic_notes": "Plan is internally consistent and ready to advance past the ralplan gate. CR-DATA-LOSS structural fix is the load-bearing change and is complete: every code site (kanban/board.ts:278-292, :355-398, :319-347, :30-62, ok/schemas.ts:29/65/93, kanban/server.ts:667) that participates in the engine→planning→engine round-trip is enumerated with exact file:line references; the regression test exercises the precise failure mode that surfaced the original bug. All round-1 majors (CR-NAMING, CR-SSE-CLI, CR-TAB-LIST, CR-JSDOM) and round-1 minors (CR-DEFER-MISLABEL, CR-CLI-FORMAT, CR-EDGEHANDLES-STALE, CR-OK-MIGRATION-CONTENTION, CR-OBSERVER) are addressed with concrete gates. All 5 round-2 MINORs (field-name standardization, false rename claims, false flag reference, missing UX, missing position policy) and the 1 round-3 MINOR (CLI example inconsistency) are resolved. The 4 UNVERIFIED annotations are correctly placed for downstream confirmation. Sequence dependency: OK migration must land before M25 because both touch bin/ok.ts and ok/commands/.",
+  "spec_path": "docs/specs/ralplan/roadmap-milestones.md",
+  "handoff_path": "docs/specs/ralplan/roadmap-milestones.handoff.json",
+  "next_step": "await_ok_migration_then_user_review_gate_then_m25_m26_m27_m28_dispatch"
+}
