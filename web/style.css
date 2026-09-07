@@ -7330,7 +7330,96 @@ body.chat-sidebar-resizing .chat-sidebar__resize-handle::after { opacity: 1; bac
 .chat-sidebar__session-badge[data-source="claude-code"] { color: var(--accent); border-color: var(--accent); background: transparent; }
 .chat-sidebar__session-badge[data-source="history-fallback"] { color: var(--ink-50); border-color: var(--border); background: transparent; }
 .chat-sidebar__activity { display: none; }
-.chat-sidebar__tabs { display: none; }
+
+/* Chat sidebar tabs row — mirrors the topbar-tabs visual language but is
+   scoped to the narrower sidebar footprint. The 4 tab buttons sit inside a
+   single rounded pill; the "Get desktop app" CTA is a separate link with
+   its own chrome so the desktop download doesn't masquerade as a tab state. */
+.chat-sidebar__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 8px 12px 6px;
+}
+.chat-sidebar__tabs-row {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.chat-sidebar__tabs-row::-webkit-scrollbar { display: none; }
+.chat-sidebar__tabs-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-60);
+  cursor: pointer;
+  font: 700 11px/1.1 inherit;
+  letter-spacing: .01em;
+  white-space: nowrap;
+  transition: background var(--transition), color var(--transition);
+}
+.chat-sidebar__tabs-tab:hover,
+.chat-sidebar__tabs-tab:focus-visible {
+  background: var(--bg-elev-2);
+  color: var(--ink-100);
+  outline: none;
+}
+.chat-sidebar__tabs-tab-icon { flex: 0 0 auto; opacity: .85; }
+.chat-sidebar__tabs-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-sidebar__tabs-tab--active {
+  background: color-mix(in srgb, var(--chat-accent, var(--coral)) 18%, var(--bg-elev-2));
+  color: var(--ink-100);
+  box-shadow: inset 0 -2px 0 var(--chat-accent, var(--coral));
+}
+.chat-sidebar__tabs-tab--active .chat-sidebar__tabs-tab-icon { opacity: 1; color: var(--chat-accent, var(--coral)); }
+.chat-sidebar__tabs-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  padding: 5px 8px 5px 7px;
+  border: 1px solid color-mix(in srgb, var(--chat-accent, var(--coral)) 36%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--chat-accent, var(--coral)) 8%, var(--bg-elev));
+  color: var(--ink-80);
+  font: 700 11px/1.1 inherit;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+.chat-sidebar__tabs-cta:hover,
+.chat-sidebar__tabs-cta:focus-visible {
+  background: color-mix(in srgb, var(--chat-accent, var(--coral)) 16%, var(--bg-elev));
+  border-color: var(--chat-accent, var(--coral));
+  color: var(--ink-100);
+  outline: none;
+}
+.chat-sidebar__tabs-cta-icon { flex: 0 0 auto; color: var(--chat-accent, var(--coral)); }
+.chat-sidebar__tabs-cta-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-sidebar__tabs-cta-arrow { flex: 0 0 auto; opacity: .75; }
+@media (max-width: 900px) {
+  .chat-sidebar__tabs { padding: 7px 10px 5px; gap: 8px; }
+  .chat-sidebar__tabs-row { flex-basis: 100%; }
+  .chat-sidebar__tabs-cta { flex: 1 1 auto; justify-content: center; }
+}
 
 #chat-sidebar-toggle-btn.btn-icon { font-size: 16px; }
 @media (max-width: 860px) {

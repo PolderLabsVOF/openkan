@@ -120,6 +120,10 @@ active at a time.
 - **Activity** — toggles the slide-in activity footer that mounts the
   existing `claude-pane.js` (subagent / team / workflow visibility).
 
+A right-aligned **Get desktop app** CTA sits next to the tab pill and
+opens the [GitHub releases page](https://github.com/PolderLabsVOF/openkan/releases)
+in a new tab — it is not a tab state and never shows an active class.
+
 The active tab uses the coral accent underline; click the same tab
 again to close it.
 
