@@ -19,6 +19,41 @@ import { initBoard, setProjectRoot } from "../../kanban/board.ts";
 import { ensureDir } from "../../kanban/io.ts";
 import { createTray, defaultIconDir, TrayUnavailableError } from "../../bin/tray.ts";
 
+/**
+ * Background mode and the tray-unavailable fallback both run the HTTP server
+ * in the CLI process itself. When the user picks background (or tray init
+ * fails), the terminal returns — but the process must NOT exit, otherwise the
+ * HTTP listener dies and the pidfile points at a dead PID.
+ *
+ * Detach from the controlling terminal so the user sees the prompt back,
+ * put the process into its own process group (so a parent shell exit doesn't
+ * deliver SIGHUP), and ignore SIGHUP for the same reason. SIGTERM (sent by
+ * `ok stop`) and SIGINT (Ctrl+C in foreground) fall through to Node's
+ * default handlers, which exit cleanly. We do NOT install a custom SIGTERM
+ * handler here because `cmdStop` already has the in-process graceful-stop
+ * path (getServer().stop()) when run from a separate CLI invocation, and
+ * direct SIGTERM is fine for the daemon case.
+ */
+export function detachForBackground(): void {
+  // Detach from TTY so the terminal returns to the user.
+  if (process.stdin.isTTY) {
+    try { process.stdin.unref(); } catch { /* best effort */ }
+  }
+  if (process.stdout.isTTY) {
+    try { process.stdout.unref(); } catch { /* best effort */ }
+  }
+  if (process.stderr.isTTY) {
+    try { process.stderr.unref(); } catch { /* best effort */ }
+  }
+  // Put the process in its own group so a parent shell exit (which sends
+  // SIGHUP to the foreground process group) does not propagate to us.
+  // `process.setpgid` is not in the bundled @types/node typings yet, so
+  // cast through `any`; Node.js exposes it at runtime.
+  try { (process as any).setpgid?.(0, 0); } catch { /* not supported on Windows */ }
+  // Survive SIGHUP if it does arrive (CI without setpgid, weird shells).
+  process.on("SIGHUP", () => { /* stay alive */ });
+}
+
 // Resolve the openkan repo's web/ folder so the static UI is served no matter
 // where the user invokes the CLI from. `import.meta.url` → bin/ok.ts → `../web`
 // is the bundled UI.
@@ -303,6 +338,12 @@ export async function cmdStart(ctx: BoardContext, argv: string[]): Promise<void>
     if (!effectiveNoOpen) {
       openUrl(result.url);
     }
+    // Background mode: detach from TTY so the terminal returns to the user,
+    // but keep the process alive so the HTTP listener stays up. The pidfile
+    // points at this process's PID; `ok stop` will SIGTERM us, and Node's
+    // default SIGTERM handler exits cleanly.
+    detachForBackground();
+    await new Promise<void>(() => {});
   }
 }
 
@@ -359,10 +400,11 @@ async function cmdStartTray(
         `ok serve: system tray init failed (${(e as Error).message}). Falling back to background mode.\n`,
       );
     }
-    // Background fallback: keep the server running (the HTTP listener does
-    // that for us) and exit cleanly. The pid file was already written by
-    // startOrAttach.
-    return;
+    // Background fallback: detach from TTY and keep the process alive so the
+    // HTTP listener survives the CLI exit. Same rationale as cmdStart's
+    // background branch.
+    detachForBackground();
+    await new Promise<void>(() => {});
   }
   // The tray process stays alive while the tray subprocess is alive. Block
   // here so cmdStart doesn't return to main(); otherwise main() would exit
