@@ -1,0 +1,147 @@
+{
+  "schema_version": "1.0.0",
+  "planner_complete": true,
+  "architect_complete": false,
+  "critic_complete": true,
+  "verdict": "APPROVED",
+  "iterations": {
+    "architect_rounds": 0,
+    "critic_rounds": 6,
+    "under_cap": false,
+    "cap_reached": true,
+    "cap_escape": "Direct patch + re-review per user choice after cap reached"
+  },
+  "architect_workaround": "Bizar plan-architect dispatch blocked by selection model mismatch; Architect and Critic folded into a single Linda pass per session.",
+  "approval_path": {
+    "phase_1_to_5": "Standard ralplan cycle. Round 1-3 fixed CR7 contradiction + cleanup; round 4 applied user's M1 shim removal choice; round 5 propagated cascade (10 test-file rewrites moved M4→M1). Reached 5-iteration cap with round-5 critic returning CHANGES REQUIRED (2 CRITICAL + 2 MAJOR + 1 MINOR + 3 UNVERIFIED).",
+    "phase_6_direct_patch": "User chose 'Direct patch + re-review' over fresh ralplan run. Applied 5 mechanical fixes (F1-F5): M4 Scope 7-bullet removal, CR1/CR2 historical notes, M4 Goal rewrite, M5 release.yml Files/Acceptance/Verification, frontmatter inputs extension. Spec 1555→1495 lines.",
+    "phase_7_re_review": "Single Linda re-review pass returned CHANGES REQUIRED with 3 findings: M1 (count mismatch: 7 should be 10), C1 (CRITICAL pre-existing: tests/install-script-prompt.test.mts not in any Files list), m1 (schedule trigger not mentioned). UNVERIFIED-2 confirmed (workflow file matches spec description).",
+    "phase_8_final_patch": "Applied 3 fixes from re-review. M1: 7→10 count fix at line 721. C1: tests/install-script-prompt.test.mts added to M2 Files list (line 146 assertion rewrite) + matching acceptance bullet. m1: schedule trigger clarification appended to R-NEW-1. New section 9.14b documents the 3 fixes. Spec 1495→1545 lines.",
+    "phase_9_self_verification": "Mike self-verified 4 anchor points (line 721 count fix, line 496 install-script-prompt Files entry, line 521 acceptance bullet, line 1009 schedule clarification, line 1505 9.14b section). All confirmed."
+  },
+  "challenges": [
+    {
+      "id": "CR-DATA-LOSS",
+      "title": "toPlanningTask silently drops milestoneId; mirror overwrites planning files",
+      "severity": "critical",
+      "resolution_required": "Not addressed in OK migration scope; relevant only to milestones plan (resolved there at kanban/board.ts:278-292 / :355-398).",
+      "status": "not_applicable_to_ok_migration"
+    },
+    {
+      "id": "ROUND5-CRITICAL-1",
+      "title": "M4 Scope section contradicts M4 Files list (cascade propagation incomplete)",
+      "severity": "critical",
+      "resolution_required": "Resolved in direct patch F1: 7 per-line rewrite bullets removed from M4 Scope, replaced with cross-reference to M1.",
+      "status": "resolved",
+      "fix_location": "spec section 9.14 (Direct patch audit); M4 Scope now reads 'These 10 test-file rewrites were moved to M1's atomic commit' at line 721"
+    },
+    {
+      "id": "ROUND5-CRITICAL-2",
+      "title": "M4 CR1/CR2 sub-bullets still instruct test rewrites in M4",
+      "severity": "critical",
+      "resolution_required": "Resolved in direct patch F2: CR1/CR2 sub-bullets now lead with '**Note (iteration 5 — historical):**' and resolve to cross-references at M1.",
+      "status": "resolved",
+      "fix_location": "spec lines 767-782"
+    },
+    {
+      "id": "REVIEW-CRITICAL-1",
+      "title": "tests/install-script-prompt.test.mts not in any Files list (pre-existing)",
+      "severity": "critical",
+      "resolution_required": "Resolved in final patch C1: file added to M2 Files list at line 496 with line 146 assertion rewrite instruction; matching acceptance bullet at line 521.",
+      "status": "resolved",
+      "fix_location": "spec lines 496-497 (Files), 521-522 (Acceptance); section 9.14b"
+    },
+    {
+      "id": "ROUND5-MAJOR-1",
+      "title": "M4 Goal still describes test rewrites moved to M1",
+      "severity": "major",
+      "resolution_required": "Resolved in direct patch F3: M4 Goal rewritten to lead with cli-migration.test.mts and acknowledge 10 M1 rewrites.",
+      "status": "resolved",
+      "fix_location": "spec lines 709-715 (rewritten in direct patch F3)"
+    },
+    {
+      "id": "ROUND5-MAJOR-2",
+      "title": "R-NEW-1 mitigation step (b) not in M5 Scope/Files list",
+      "severity": "major",
+      "resolution_required": "Resolved in direct patch F4: .github/workflows/release.yml added to M5 Files list with workflow file modify instruction; matching acceptance and verification bullets added.",
+      "status": "resolved",
+      "fix_location": "spec lines 861-862 (Files), 879-880 (Acceptance), 898-900 (Verification)"
+    },
+    {
+      "id": "REVIEW-MAJOR-1",
+      "title": "M4 Scope cross-reference says '7' but M1 owns 10",
+      "severity": "major",
+      "resolution_required": "Resolved in final patch M1: line 721 '7 test-file rewrites' → '10 test-file rewrites'.",
+      "status": "resolved",
+      "fix_location": "spec line 721"
+    },
+    {
+      "id": "ROUND5-MINOR-1",
+      "title": "Frontmatter inputs list stale (7 test files)",
+      "severity": "minor",
+      "resolution_required": "Resolved in direct patch F5: frontmatter inputs extended to all 11 test files.",
+      "status": "resolved",
+      "fix_location": "spec line 16"
+    },
+    {
+      "id": "REVIEW-MINOR-1",
+      "title": "schedule: trigger not mentioned in R-NEW-1",
+      "severity": "minor",
+      "resolution_required": "Resolved in final patch m1: 4-line clarification appended to R-NEW-1 at line 1009 noting schedule: trigger is intentionally retained for nightly releases.",
+      "status": "resolved",
+      "fix_location": "spec line 1009"
+    }
+  ],
+  "verified_during_review": {
+    "UNVERIFIED-1": "tests/install-script-prompt.test.mts — REVEALED as additional gap, fixed via C1 (added to M2 Files list). Other test files with bin/openkan.ts references: verified none beyond the 10 already in CR-NEW-1 list.",
+    "UNVERIFIED-2": "VERIFIED via reading .github/workflows/release.yml lines 3-8: triggers are push: [main, beta], schedule: cron '17 2 * * *', workflow_dispatch:. Spec's R-NEW-1 mitigation correctly targets push+workflow_dispatch; schedule retained for nightly.",
+    "UNVERIFIED-3": "M1 atomic commit reviewability: 12 files in M1 Files list (10 test-file modify + bin/tray.ts modify + 1 new cli-migration.test.mts guard). Reviewable as relocation+deletion+test-update in one commit."
+  },
+  "preserved_invariants": [
+    "Round 3 CR7 contradiction fix at section 9.11 line 1249 (M3 Files-list mirror for docs/specs/ralplan/agent-profiles-and-mcp.md)",
+    "Round 4 shim removal at section 9.12 line 1259 (M1 deletes bin/openkan.ts immediately per user choice)",
+    "Round 5 cascade propagation at section 9.13 line 1332 (10 test-file rewrites moved M4→M1, comment-only cleanup split, files lists updated)",
+    "Direct patch audit at section 9.14 line 1452 (F1-F5 fixes documented)",
+    "Linda re-review audit at section 9.14b line 1505 (M1, C1, m1 fixes documented)",
+    "M1 atomic-commit acceptance criterion (M1 deletes bin/openkan.ts; npm test passes; cli-migration.test.mts guard)",
+    "RELEASE_VERSION=0.5.0 callout at M2 (lines 369-374), M5 (lines 888-892), and M5 acceptance precondition (line 925)",
+    "scripts/release.mjs patch-only bump limitation called out; override form RELEASE_VERSION=0.5.0 RELEASE_CHANNEL=stable RELEASE_SHA=<sha> documented",
+    "R-NEW-1 release workflow double-publish risk (push+workflow_dispatch) with schedule trigger clarification"
+  ],
+  "user_choices": [
+    {
+      "id": "DIRECT-PATCH-CHoice",
+      "decision": "Direct patch + re-review (vs fresh ralplan run vs accept partial state vs defer)",
+      "rationale": "User chose to apply 5 mechanical fixes directly and re-review once, bypassing the consensus gate cycle.",
+      "location": "AskUserQuestion response"
+    },
+    {
+      "id": "ROUND4-CHOICE",
+      "decision": "M1 deletes bin/openkan.ts immediately (no transitional shim)",
+      "rationale": "User accepted the bisect risk of a larger M1 atomic commit; rejected M1 keeps shim / M2 deletes",
+      "location": "spec section 9.12 line 1259"
+    },
+    {
+      "id": "INITIAL-CHOICE",
+      "decision": "Hard cutover to ok only (no soft alias)",
+      "rationale": "User chose hard cutover over soft alias/shim path",
+      "location": "spec section 1 Goals"
+    },
+    {
+      "id": "INITIAL-VERSION",
+      "decision": "Minor bump to 0.5.0 (not 0.4.10)",
+      "rationale": "scripts/release.mjs only knows patch bumps; requires RELEASE_VERSION=0.5.0 override",
+      "location": "spec section 9.3 line 1209 (historical); M2 scope"
+    }
+  ],
+  "execution_sequence": {
+    "step_1": "M1: Relocate commands from bin/openkan.ts into bin/ok.ts + ok/commands/*.ts. Delete bin/openkan.ts. Rewrite 10 test files (bin/openkan.ts → bin/ok.ts). Update bin/tray.ts + bin/ok.ts stale comments. Add cli-migration.test.mts guard. One atomic commit.",
+    "step_2": "M2: Delete bin/openkan.mjs (published shim). Flip package.json bin field (drop 'openkan' entry; 'ok' already correct). Bump version to 0.5.0 via RELEASE_VERSION=0.5.0 override. Update bin/install-agent.mjs to print '[ok] skill install'. Rewrite tests/install-script-prompt.test.mts line 146. Update README, CHANGELOG, install.sh, install-agent.mjs, release.mjs references. Update test fixtures.",
+    "step_3": "M3: Apply docs/ rewrite to agent-profiles-and-mcp.md per CR7 fix (every openkan <cmd> / bin/openkan.ts reference → ok <cmd> / bin/ok.ts; footer note under frontmatter related: block).",
+    "step_4": "M4: Add tests/cli-migration.test.mts with assert.equal(existsSync('bin/openkan.ts'), false) guard plus other post-cutover invariants.",
+    "step_5": "M5: Run scripts/release.mjs with RELEASE_VERSION=0.5.0 RELEASE_CHANNEL=stable RELEASE_SHA=<sha>. Update .github/workflows/release.yml to drop push: trigger, retain workflow_dispatch only. Verify gh workflow view release.yml shows only workflow_dispatch. Publish v0.5.0."
+  },
+  "spec_path": "docs/specs/ralplan/ok-migration.md",
+  "handoff_path": "docs/specs/ralplan/ok-migration.handoff.json",
+  "next_step": "user_review_gate_then_merge_worktrees_then_m1_m2_m3_m4_m5_dispatch"
+}
