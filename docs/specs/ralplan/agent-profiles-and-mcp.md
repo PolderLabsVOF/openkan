@@ -20,6 +20,8 @@ related:
   - docs/specs/ralplan/agent-profiles-and-mcp.handoff.json
 ---
 
+**Note (2026-09-07):** The CLI commands previously named `openkan <cmd>` were renamed to `ok <cmd>` in v0.5.0 (M1 of `docs/specs/ralplan/ok-migration.md`). All references in this document have been updated to reflect the new CLI namespace. The `bin/openkan.ts` reference paths have been rewritten to `bin/ok.ts`.
+
 # Agent Profiles, Onboarding, and MCP Transport for OpenKan
 
 ## 1. One-paragraph summary
@@ -46,7 +48,7 @@ must reference them rather than propose alternatives.
 |---|---|---|
 | `.ok/` data layer | `.ok/`, `ok/schemas.ts`, `ok/storage.ts` | Canonical task/plan/PRD store; atomic writes via tmp-then-rename. |
 | `ok` CLI | `bin/ok.ts`, `ok/commands/*.ts` | Subcommand family for tasks/plans/PRDs/doctor/index/migrate. |
-| OpenKan engine | `kanban/`, `bin/openkan.ts` | Reads `.ok/`, serves REST + WebSocket on `127.0.0.1:7777`. |
+| OpenKan engine | `kanban/`, `bin/ok.ts` | Reads `.ok/`, serves REST + WebSocket on `127.0.0.1:7777`. |
 | Claude-native runtime | `kanban/server.ts:2439-2564`, `web/claude-pane.js` | `/api/claude/ws`, `/api/claude/events` SSE, `claude-pane` UI tab. |
 | Transcript tail | `kanban/claude-state.ts` (M18) | Default Claude Code state reader, no Bizar required. |
 | Relay hook | `.claude/hooks/claude-activity-relay.mjs` (in repo), `docs/HOOKS.md` | Opt-in sub-200 ms relay. |
@@ -59,13 +61,13 @@ must reference them rather than propose alternatives.
 
 ### In scope
 - **Agent profile schema** stored in `.ok/openkan.json` under `agents.profiles`.
-- **First-class onboarding command** `openkan onboard` that drives a guided
+- **First-class onboarding command** `ok onboard` that drives a guided
   flow: pick profile (Claude Code default), confirm port, optionally
   install relay hook, optionally register MCP server for non-Claude clients.
 - **`openkan` skill rewrite** at `skills/openkan/SKILL.md` — rewrite to the
   voice of `ok-planning` (verbs, no jargon, declarative). An agent with the
   rewritten skill can run onboarding itself.
-- **MCP stdio server** (`openkan mcp`) wrapping the existing REST API in a
+- **MCP stdio server** (`ok mcp`) wrapping the existing REST API in a
   tool/resource surface for MCP-aware agents. Stdio first; Streamable HTTP
   deferred.
 - **Profile-aware dispatcher** so the CLI / engine know which profile is
@@ -157,7 +159,7 @@ Validation rules (mirroring the style of existing schema validators in
   engine exposes `bizar` as a synthetic profile of `kind: "bizar"` for
   compatibility. Not a config-edit; a reader wrapper.
 
-### 4.2 Onboarding — `openkan onboard` (Shape A: onboarding second)
+### 4.2 Onboarding — `ok onboard` (Shape A: onboarding second)
 
 A guided, non-interactive-default flow with a hard cap of **3 questions**
 in interactive mode (5 questions if relay hook is opted in). The agent
@@ -177,7 +179,7 @@ Interactive flow (the user only sees this many questions):
 Non-interactive (agent-driven, CI-friendly):
 
 ```sh
-openkan onboard \
+ok onboard \
   --profile claude-code \
   --port 7777 \
   --install-relay-hook \
@@ -185,7 +187,7 @@ openkan onboard \
   --seed-starter
 ```
 
-The flow must be **idempotent**: re-running `openkan onboard` does not
+The flow must be **idempotent**: re-running `ok onboard` does not
 overwrite existing choices; it reports the current state and asks only
 about unset items. Re-running with `--reset` writes defaults but never
 deletes existing tasks, plans, or profiles unless the user confirms
@@ -204,7 +206,7 @@ required; the section editor handles profile CRUD.
 
 ### 4.3 MCP transport — stdio first (Shape A: transport third)
 
-`openkan mcp` launches an MCP server over stdio. The server reads the
+`ok mcp` launches an MCP server over stdio. The server reads the
 active profile from `.ok/openkan.json`, opens a connection to the
 loopback HTTP API on `127.0.0.1:<port>`, and exposes:
 
@@ -236,10 +238,10 @@ HTTP for local servers. Streamable HTTP is deferred to a follow-up —
 reusing the existing REST API for that is a small bounded task once
 stdio is proven.
 
-Discovery: `openkan mcp` writes the standard
+Discovery: `ok mcp` writes the standard
 `~/.config/<client>/mcp.json` snippet for each supported client when
 `--install-mcp` is passed during onboarding. The snippet points at the
-absolute path of the running `openkan` binary with the `mcp` subcommand.
+absolute path of the running `ok` binary with the `mcp` subcommand.
 
 ### 4.4 `openkan` skill rewrite (Shape A: skill fourth)
 
@@ -253,7 +255,7 @@ matched companion to `ok-planning`**. Concretely:
 - Replace `references/api.md` cross-references with `ok <subcommand>` calls.
 - Add a 1-paragraph "What this skill is" that mirrors `ok-planning`'s
   `## Why this skill is self-contained` framing.
-- Add a section "Run onboarding" that points at `openkan onboard
+- Add a section "Run onboarding" that points at `ok onboard
   --non-interactive --profile claude-code` so the agent can run it.
 - Move the verbose curl examples to `references/http-api.md` and link
   from the body without inlining.
@@ -329,7 +331,7 @@ round 1 — resolved here per the Architect's blockers C1 and C2):
   read happens in `kanban/server.ts` at dispatch time as described
   above. `claude-state.ts` is touched only if a future milestone adds
   Claude-specific profile fields.
-- `bin/openkan.ts` — `cmdOnboard` stub that prints
+- `bin/ok.ts` — `cmdOnboard` stub that prints
   "onboard wired in M20" and exits 0; `cmdMcp` stub that prints
   "mcp wired in M21" and exits 1. Both are dispatched-table entries
   so the harness recognizes them; both ship as no-op stubs.
@@ -363,9 +365,9 @@ Acceptance criteria:
   M19's 14-test addition.** M19 ships 14 new tests in
   `tests/m19-profiles.test.mts`, all passing. No existing failing
   tests; regression floor is zero-tolerance.
-- [ ] `openkan onboard` exists as a stub that exits 0 and prints a
+- [ ] `ok onboard` exists as a stub that exits 0 and prints a
   hint.
-- [ ] `openkan mcp` exists as a stub that exits 1 with "not yet wired".
+- [ ] `ok mcp` exists as a stub that exits 1 with "not yet wired".
 - [ ] Schema validators reject the three negative cases above.
 - [ ] `bizar` block survives a round-trip read/write of
   `.ok/openkan.json` (no migration this milestone).
@@ -396,16 +398,16 @@ the engine tolerates its absence.
 | | Milestone | Surface | Approx. work |
 |---|---|---|---|
 | **M19** | Agent profiles (schema + active dispatch) | `agents.profiles`, validators, `/api/config-sections/agents` | 1 bounded task above |
-| **M20** | `openkan onboard` (interactive + non-interactive) | `cmdOnboard`, settings sidebar "Agents" section | 1 bounded task |
+| **M20** | `ok onboard` (interactive + non-interactive) | `cmdOnboard`, settings sidebar "Agents" section | 1 bounded task |
 | **M21** | MCP stdio server (full tool/resource surface) | `cmdMcp`, MCP tool registry, `--install-mcp` discovery snippets | 1 bounded task |
 | **M22** | `openkan` skill rewrite (jargon-free) | `skills/openkan/SKILL.md` body, `references/http-api.md` move | 1 bounded task |
 | **M23** | Multi-agent live dispatch (deferred) | profile-aware session start + relay for non-Claude agents | future, post-validation |
-| **M24** | Streamable HTTP MCP transport (deferred) | `openkan mcp --transport http` | future, post-M21 |
+| **M24** | Streamable HTTP MCP transport (deferred) | `ok mcp --transport http` | future, post-M21 |
 
-### M20 — `openkan onboard` (resolved C4)
+### M20 — `ok onboard` (resolved C4)
 
-`openkan onboard` ships as a new file `ok/commands/onboard.ts` plus a
-dispatch entry in `bin/openkan.ts`. The state-diff logic is concrete:
+`ok onboard` ships as a new file `ok/commands/onboard.ts` plus a
+dispatch entry in `bin/ok.ts`. The state-diff logic is concrete:
 
 - On every entry, `cmdOnboard` reads `.ok/openkan.json` and `.ok/`
   presence via `ok/storage.ts`.
@@ -429,9 +431,9 @@ dispatch entry in `bin/openkan.ts`. The state-diff logic is concrete:
   exits 2 with a usage hint. Idempotent: a second run with no flags
   reports `match` for everything and exits 0 without touching disk.
 
-### M21 — `openkan mcp` (resolved C3)
+### M21 — `ok mcp` (resolved C3)
 
-`cmdMcp` lives in `bin/openkan.ts` and **auto-starts the OpenKan HTTP
+`cmdMcp` lives in `bin/ok.ts` and **auto-starts the OpenKan HTTP
 engine** if it is not already running on the configured port:
 
 - On entry, `cmdMcp` reads `agents.active` from `.ok/openkan.json` and
@@ -462,7 +464,7 @@ verified.
 - **Profile schema lock-in.** If we add a fifth `kind` later, the enum
   rejects unknown values. Mitigation: ship a small `--add-profile
   --kind custom --binary /path/to/x` escape hatch from day one.
-- **`openkan mcp` discovery snippets path quirks.** Different MCP
+- **`ok mcp` discovery snippets path quirks.** Different MCP
   clients have different config file conventions (`.cursor/mcp.json`,
   `~/.config/claude/mcp_servers.json`, etc.). Mitigation: ship a
   `--print-mcp-config <client>` subcommand for each known client and
@@ -474,7 +476,7 @@ verified.
   edits do not affect install/load behavior. See resolved C5 above:
   preflight audit runs before M22 lands.
 - **Bizar compat block becomes inconsistent** if a user removes it.
-  Mitigation: `openkan doctor` flags a missing `bizar` block as a
+  Mitigation: `ok doctor` flags a missing `bizar` block as a
   warning, not an error — explicit opt-in.
 - **Agent-driven onboarding must be idempotent.** Re-running must not
   clobber. Tested by the M20 acceptance via the `diffOnboardingState`
