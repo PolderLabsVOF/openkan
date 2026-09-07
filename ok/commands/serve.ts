@@ -60,7 +60,14 @@ export function detachForBackground(): void {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 export const OPENKAN_ROOT = resolve(__dirname, "..", "..");
-export const OPENKAN_WEB = join(OPENKAN_ROOT, "web");
+// The web UI ships as `dist/web/` in the published package (the `web/`
+// source tree is not in the npm `files` list). Source checkouts also have
+// `dist/web/` because `scripts/build.mjs` copies it there, so the same
+// candidate works for both layouts. `OPENKAN_WEB` is the first existing
+// match; fall back to source `web/` for development checkouts where
+// `dist/` was not rebuilt.
+export const OPENKAN_WEB = [join(OPENKAN_ROOT, "dist", "web"), join(OPENKAN_ROOT, "web")]
+  .find((p) => existsSync(p)) ?? join(OPENKAN_ROOT, "dist", "web");
 export const OPENKAN_BIN = join(OPENKAN_ROOT, "bin");
 
 // ─── Config ───────────────────────────────────────────────────────────────────
