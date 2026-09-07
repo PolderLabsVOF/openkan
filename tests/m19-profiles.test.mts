@@ -282,7 +282,7 @@ test("apiPatchConfigSection default arm: returns 404 for unknown section", async
 
 test("cmdOnboard stub: exits 0 and prints hint", () => {
   const PROJECT_ROOT = new URL("../", import.meta.url).pathname;
-  const CLI = `node --experimental-strip-types ${join(PROJECT_ROOT, "bin", "openkan.ts")}`;
+  const CLI = `node --experimental-strip-types ${join(PROJECT_ROOT, "bin", "ok.ts")}`;
   const dir = mkdtempSync(join(tmpdir(), "openkan-m19-cli-"));
   try {
     const stdout = execSync(`${CLI} onboard`, { cwd: dir, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
@@ -296,7 +296,7 @@ test("cmdOnboard stub: exits 0 and prints hint", () => {
 
 test("cmdMcp stub: exits 1 with not-yet-wired message", () => {
   const PROJECT_ROOT = new URL("../", import.meta.url).pathname;
-  const CLI = `node --experimental-strip-types ${join(PROJECT_ROOT, "bin", "openkan.ts")}`;
+  const CLI = `node --experimental-strip-types ${join(PROJECT_ROOT, "bin", "ok.ts")}`;
   const dir = mkdtempSync(join(tmpdir(), "openkan-m19-cli-"));
   try {
     try {

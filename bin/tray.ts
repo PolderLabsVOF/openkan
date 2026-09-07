@@ -66,8 +66,8 @@ export interface TrayHandle {
   readonly state: TrayState;
 }
 
-// Resolve the bundled tray assets whether the entrypoint is bin/openkan.ts
-// (development) or bin/openkan.mjs (published package). Both live in bin/.
+// Resolve the bundled tray assets whether the entrypoint is bin/ok.ts
+// (development) or bin/ok.mjs (published package). Both live in bin/.
 function loadIconPngBase64(iconDir: string, filename: string): string {
   const path = join(iconDir, filename);
   if (!existsSync(path)) {
@@ -185,8 +185,8 @@ export async function createTray(opts: TrayOptions): Promise<TrayHandle> {
   tray.onError((err) => {
     // Post-init errors: log and keep going. We do not want a tray
     // subprocess crash to kill the CLI; the user can still run
-    // `openkan stop` from a terminal.
-    process.stderr.write(`openkan tray: ${err.message}\n`);
+    // `ok stop` from a terminal.
+    process.stderr.write(`ok tray: ${err.message}\n`);
   });
 
   tray.onClick(async (action) => {
@@ -203,7 +203,7 @@ export async function createTray(opts: TrayOptions): Promise<TrayHandle> {
         setTimeout(() => tray?.kill(), 250);
       }
     } catch (e) {
-      process.stderr.write(`openkan tray: menu handler failed: ${(e as Error).message}\n`);
+      process.stderr.write(`ok tray: menu handler failed: ${(e as Error).message}\n`);
     }
   });
 
@@ -244,7 +244,7 @@ export async function createTray(opts: TrayOptions): Promise<TrayHandle> {
 }
 
 // Resolve the canonical icon directory relative to this source file so the
-// tray works whether invoked from bin/openkan.ts (dev) or bin/openkan.mjs
+// tray works whether invoked from bin/ok.ts (dev) or bin/ok.mjs
 // (published).
 export function defaultIconDir(): string {
   const here = dirname(fileURLToPath(import.meta.url));

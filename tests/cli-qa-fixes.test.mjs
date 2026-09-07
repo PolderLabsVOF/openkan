@@ -1,5 +1,5 @@
 // tests/cli-qa-fixes.test.mjs — regression tests for the six CLI QA findings
-// fixed in bin/openkan.ts. Each test corresponds to one task:
+// fixed in bin/ok.ts. Each test corresponds to one task:
 //   tsk-Ymfa3vwx — `openkan open` errors when no server is running
 //   tsk-pcHKgkao — `openkan reset` refuses to hang in non-TTY mode
 //   tsk-GlARiXAI — `openkan goal` prints help on bare invocation
@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 const PROJECT_ROOT = new URL("../", import.meta.url).pathname;
-const CLI = ["node", "--experimental-strip-types", join(PROJECT_ROOT, "bin", "openkan.ts")];
+const CLI = ["node", "--experimental-strip-types", join(PROJECT_ROOT, "bin", "ok.ts")];
 
 function tmpDir() {
   return mkdtempSync(join(tmpdir(), "openkan-cli-qa-"));
@@ -114,8 +114,8 @@ describe("CLI QA fixes", () => {
         initProject(dir);
         const r = runCli(["goal"], dir);
         assert.equal(r.status, 0, `expected exit 0, got ${r.status} stderr=${r.stderr} stdout=${r.stdout}`);
-        assert.match(r.stdout, /openkan goal/, `expected help line, got ${r.stdout}`);
-        assert.doesNotMatch(r.stderr, /Usage: openkan goal/, `should not fall back to usage error, got ${r.stderr}`);
+        assert.match(r.stdout, /ok goal/, `expected help line, got ${r.stdout}`);
+        assert.doesNotMatch(r.stderr, /Usage: ok goal/, `should not fall back to usage error, got ${r.stderr}`);
       } finally { rmTmp(dir); }
     });
 
@@ -125,7 +125,7 @@ describe("CLI QA fixes", () => {
         initProject(dir);
         const r = runCli(["goal", "--help"], dir);
         assert.equal(r.status, 0);
-        assert.match(r.stdout, /openkan goal/);
+        assert.match(r.stdout, /ok goal/);
       } finally { rmTmp(dir); }
     });
 

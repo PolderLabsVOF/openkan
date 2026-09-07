@@ -20,9 +20,9 @@ export async function runGoal(args: string[]): Promise<number> {
     else output(goals.map(goal => `${goal.prd}/${goal.id}  ${goal.status}  ${goal.text}`).join('\n') || '(no goals)');
     return 0;
   }
-  if (!['add', 'show', 'update'].includes(sub)) throw new Error('Usage: openkan goal list [--prd ID] [--json] | add <prd-id> <text> | show <prd-id> <goal-id> | update <prd-id> <goal-id> --status open|in_progress|met|dropped [--text TEXT]');
+  if (!['add', 'show', 'update'].includes(sub)) throw new Error('Usage: ok goal list [--prd ID] [--json] | add <prd-id> <text> | show <prd-id> <goal-id> | update <prd-id> <goal-id> --status open|in_progress|met|dropped [--text TEXT]');
   const [prdId, goalId, ...extra] = positionals;
-  if (!prdId || !goalId || (sub !== 'add' && extra.length)) throw new Error(`Usage: openkan goal ${sub} <prd-id> <${sub === 'add' ? 'text' : 'goal-id'}>`);
+  if (!prdId || !goalId || (sub !== 'add' && extra.length)) throw new Error(`Usage: ok goal ${sub} <prd-id> <${sub === 'add' ? 'text' : 'goal-id'}>`);
   const prd = await readPrd(p, prdId);
   if (!prd) throw new Error(`no such PRD: ${prdId}`);
   let goal: PrdGoal;
