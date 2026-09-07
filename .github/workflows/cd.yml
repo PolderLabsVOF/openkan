@@ -26,6 +26,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          # The release workflow checks out the exact SHA itself.
+          fetch-depth: 1
       - name: Map base ref to release channel
         id: channel
         run: |
