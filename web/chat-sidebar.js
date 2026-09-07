@@ -9,9 +9,10 @@
 //     sits below the bubble and disappears when the turn completes.
 //   - A composer footer: single rounded bar with attach / textarea /
 //     model pill / mic / send (or abort while streaming) inline.
-//   - A tabs row: Project / Files / Plugins / Get desktop app (link).
-//     Activity footer still exists as a slide-in section but is no
-//     longer a tab.
+//   - A tabs row: Project / Files / Plugins / Activity tabs (each
+//     opens a small popover or toggles the activity footer) plus a
+//     "Get desktop app" CTA link that opens the GitHub releases
+//     page in a new tab.
 //   - Cmd/Ctrl+K focuses the composer when the sidebar is open.
 //
 // Persistence: the last-selected session id and selector state are written
@@ -43,6 +44,16 @@
   const PERMISSION_OPTIONS = [
     "bypassPermissions", "acceptEdits", "auto", "manual", "dontAsk", "plan",
   ];
+  // Mirrors web/app.js COLUMNS. Used to label kanban column IDs (e.g.
+  // "doing" -> "In Progress") when a task is referenced in chat. Keeping
+  // a local copy avoids a cross-script dependency for a tiny lookup.
+  const COLUMN_TITLES = Object.freeze({
+    backlog: "Backlog",
+    todo: "To Do",
+    doing: "In Progress",
+    review: "Review",
+    done: "Done",
+  });
 
   function esc(v) {
     return String(v ?? "")
@@ -118,6 +129,16 @@
     if (!s) return "";
     if (s.length <= max) return s;
     return s.slice(0, Math.max(0, max - 1)) + "…";
+  }
+
+  function columnLabel(id) {
+    if (!id || typeof id !== "string") return "";
+    return COLUMN_TITLES[id] || id;
+  }
+
+  function shortTaskId(id) {
+    if (!id || typeof id !== "string") return "";
+    return id.replace(/^tsk-/, "").slice(0, 6);
   }
 
   // ToolUseRecord -> human label. Mirrors `toolUseLabel` on the server so
@@ -345,6 +366,60 @@
         </div>
       </div>
 
+      <nav class="chat-sidebar__tabs" role="tablist" aria-label="Workspace tabs">
+        <div class="chat-sidebar__tabs-row" role="presentation">
+          <button type="button" class="chat-sidebar__tabs-tab" data-tab="project"
+                  role="tab" aria-selected="false" aria-haspopup="true"
+                  aria-controls="chat-sidebar-tab-project-popover" title="Project">
+            <svg class="chat-sidebar__tabs-tab-icon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M2 5.5A1.5 1.5 0 0 1 3.5 4h2.6l1.4 1.5h4.5A1.5 1.5 0 0 1 13.5 7v5A1.5 1.5 0 0 1 12 13.5H3.5A1.5 1.5 0 0 1 2 12V5.5Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+            </svg>
+            <span class="chat-sidebar__tabs-tab-label">Project</span>
+          </button>
+          <button type="button" class="chat-sidebar__tabs-tab" data-tab="files"
+                  role="tab" aria-selected="false" aria-haspopup="true"
+                  aria-controls="chat-sidebar-tab-files-popover" title="Files">
+            <svg class="chat-sidebar__tabs-tab-icon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M4 2.5h5l2.5 2.5V13A1.5 1.5 0 0 1 10 14.5H4A1.5 1.5 0 0 1 2.5 13V4A1.5 1.5 0 0 1 4 2.5Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+              <path d="M5.5 7.5h5M5.5 10h3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+            </svg>
+            <span class="chat-sidebar__tabs-tab-label">Files</span>
+          </button>
+          <button type="button" class="chat-sidebar__tabs-tab" data-tab="plugins"
+                  role="tab" aria-selected="false" aria-haspopup="true"
+                  aria-controls="chat-sidebar-tab-plugins-popover" title="Plugins">
+            <svg class="chat-sidebar__tabs-tab-icon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M6 2.5v3M10 2.5v3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+              <path d="M5 5.5h6V8a3 3 0 0 1-3 3 3 3 0 0 1-3-3V5.5Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+              <path d="M8 11v2.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+            </svg>
+            <span class="chat-sidebar__tabs-tab-label">Plugins</span>
+          </button>
+          <button type="button" class="chat-sidebar__tabs-tab" data-tab="activity"
+                  role="tab" aria-selected="false"
+                  aria-controls="chat-sidebar-activity" title="Activity"
+                  data-chat-sidebar-activity-toggle>
+            <svg class="chat-sidebar__tabs-tab-icon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M2 8h2.5L6 4.5 9 12l1.5-4H14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span class="chat-sidebar__tabs-tab-label">Activity</span>
+          </button>
+        </div>
+        <a class="chat-sidebar__tabs-cta" data-tab="desktop-app" role="tab"
+           aria-selected="false" href="https://github.com/PolderLabsVOF/openkan/releases"
+           target="_blank" rel="noopener noreferrer"
+           title="Get the OpenKan desktop app">
+          <svg class="chat-sidebar__tabs-cta-icon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="2.5" y="3" width="11" height="7.5" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.3"/>
+            <path d="M5.5 13.5h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
+          <span class="chat-sidebar__tabs-cta-label">Get desktop</span>
+          <svg class="chat-sidebar__tabs-cta-arrow" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+            <path d="M3 7 7 3M3.5 3H7v3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </a>
+      </nav>
+
       <div class="chat-sidebar__hero chat-sidebar-hero" id="chat-sidebar-hero">
         <div class="chat-sidebar__hero-mark" aria-hidden="true">
           <svg width="22" height="22" viewBox="0 0 24 24">
@@ -553,8 +628,17 @@
     if (!tasks.length) return "";
     return `<div class="chat-task-reference-banners" aria-label="Referenced tasks">${tasks.map((task) => {
       const id = typeof task?.id === "string" ? task.id : "task";
-      const title = typeof task?.title === "string" ? task.title : "";
-      return `<span class="chat-task-reference-banner" title="${esc(title || id)}"><span aria-hidden="true">↗</span> Task #${esc(id.replace(/^tsk-/, "").slice(0, 6))}</span>`;
+      const title = typeof task?.title === "string" && task.title.trim()
+        ? task.title.trim()
+        : "Untitled task";
+      const column = typeof task?.column === "string" ? task.column : "";
+      const bannerTitle = column ? `${title} · ${columnLabel(column)}` : title;
+      const columnHtml = column
+        ? `<span class="chat-task-reference-banner__column chat-task-reference-banner__column--${esc(column)}">${esc(columnLabel(column))}</span>`
+        : "";
+      return `<span class="chat-task-reference-banner" title="${esc(bannerTitle)}">
+        <span class="chat-task-reference-banner__title">${esc(title)}</span>${columnHtml}<span class="chat-task-reference-banner__id">#${esc(shortTaskId(id))}</span>
+      </span>`;
     }).join("")}</div>`;
   }
 
@@ -1278,8 +1362,20 @@
     const input = state.root?.querySelector("#chat-sidebar-input");
     if (!tray || !input) return;
     const active = [...state.taskMentions.values()];
-    tray.hidden = active.length === 0;
     tray.replaceChildren();
+    tray.classList.toggle("chat-sidebar__mention-tray--empty", active.length === 0);
+    if (active.length === 0) {
+      // Empty state: a subtle ghost hint tells the user this region is a
+      // drop target for kanban tasks. The tray stays mounted so its
+      // reserved height never causes a layout shift when a chip lands.
+      const hint = document.createElement("span");
+      hint.className = "chat-sidebar__mention-empty";
+      hint.textContent = "Drop a kanban task to reference it";
+      tray.append(hint);
+      tray.setAttribute("aria-label", "Task references (empty — drop a kanban task to reference it)");
+      return;
+    }
+    tray.setAttribute("aria-label", "Task references");
     for (const task of active) {
       const chip = document.createElement("button");
       chip.type = "button";
@@ -1292,12 +1388,24 @@
       prefix.textContent = "Task";
       const title = document.createElement("span");
       title.className = "chat-sidebar__mention-chip-title";
-      title.textContent = `#${task.id.replace(/^tsk-/, "").slice(0, 6)}`;
+      title.textContent = task.title || "Untitled task";
+      const columnId = task.column || "";
+      if (columnId) {
+        const column = document.createElement("span");
+        column.className = `chat-sidebar__mention-chip-column chat-sidebar__mention-chip-column--${esc(columnId)}`;
+        column.textContent = columnLabel(columnId);
+        chip.append(prefix, title, column);
+      } else {
+        chip.append(prefix, title);
+      }
+      const id = document.createElement("span");
+      id.className = "chat-sidebar__mention-chip-id";
+      id.textContent = `#${shortTaskId(task.id)}`;
       const remove = document.createElement("span");
       remove.className = "chat-sidebar__mention-chip-remove";
       remove.setAttribute("aria-hidden", "true");
       remove.textContent = "×";
-      chip.append(prefix, title, remove);
+      chip.append(id, remove);
       tray.append(chip);
     }
   }
@@ -1435,7 +1543,7 @@
     const tabBtn = t.closest("[data-tab]");
     if (tabBtn) {
       const name = tabBtn.getAttribute("data-tab");
-      if (name) { openTab(name); return; }
+      if (name) { openTab(name, e); return; }
     }
     const action = t.closest("[data-chat-action]")?.getAttribute("data-chat-action");
     if (action === "send") void onSend();
@@ -2150,18 +2258,29 @@
    * Tab popovers — Project / Files / Plugins.
    * -------------------------------------------------------------------- */
 
-  function openTab(tab) {
+  function openTab(tab, event) {
     if (!state.root) return;
-    if (state.activeTab === tab) {
-      closeTab();
-      return;
-    }
     // "Get desktop app" is a CTA — open the releases page in a new tab
-    // rather than toggling a popover. It is not a real tab state.
+    // rather than toggling a popover. It is not a real tab state. The
+    // caller may pass the original click event so we can preventDefault
+    // and avoid double-navigation when the trigger is an <a href=…>.
     if (tab === "desktop-app") {
+      if (event && typeof event.preventDefault === "function") event.preventDefault();
       try {
         window.open("https://github.com/PolderLabsVOF/openkan/releases", "_blank", "noopener,noreferrer");
       } catch (_err) { /* ignore */ }
+      return;
+    }
+    // Activity toggles the slide-in footer; it is a tab in the UI sense
+    // but does not anchor a popover.
+    if (tab === "activity") {
+      closeTab();
+      toggleActivity();
+      setActiveTab(state.activityOpen ? "activity" : null);
+      return;
+    }
+    if (state.activeTab === tab) {
+      closeTab();
       return;
     }
     closeTab();
