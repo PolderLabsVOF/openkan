@@ -31,7 +31,6 @@ concurrency:
 
 jobs:
   source:
-    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       channel: ${{ steps.source.outputs.channel }}
