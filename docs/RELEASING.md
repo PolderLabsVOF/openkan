@@ -1,17 +1,27 @@
 # Release process
 
-OpenKan publishes three npm channels from three protected promotion branches.
-The release workflows run CI against the exact commit SHA before publishing and
-fail closed: a missing npm trusted-publishing configuration prevents publication.
-They never use a long-lived npm token.
+OpenKan ships from three long-lived branches that map to three npm release
+channels. Releases are **scheduled** (nightly against `dev`) or **manually
+dispatched** (any channel from any branch). A push to a long-lived branch
+does **not** trigger a release; pushes only run CI.
 
-## Channels and branches
+The release workflow runs the full CI matrix (Node 22 and 24) against the
+exact commit SHA before publishing, fails closed when npm trusted publishing
+is not configured, and never uses a long-lived npm token.
 
-| Branch | Purpose | npm dist-tag | Release type |
+## Branches and channels
+
+| Branch | Channel | npm dist-tag | Triggered by |
 | --- | --- | --- | --- |
-| `main` | Stable releases and the default visitor branch | `latest` | Stable GitHub and npm release |
-| `beta` | Release-candidate testing | `beta` | npm prerelease and prerelease GitHub release |
-| `dev` | Active development | `nightly` | Scheduled npm prerelease |
+| `main` | `stable` | `latest` | Manual `workflow_dispatch` with `channel=stable` |
+| `beta` | `beta` | `beta` | Manual `workflow_dispatch` with `channel=beta` |
+| `dev` | `nightly` | `nightly` | Cron at 02:17 UTC, plus manual `workflow_dispatch` |
+
+`main` is the default visitor branch and only receives stable release work.
+`dev` is the active-development branch and the only branch whose tip is
+published on a schedule.
+
+## Promotion flow
 
 Promote changes through merge pull requests in this order:
 
@@ -19,88 +29,82 @@ Promote changes through merge pull requests in this order:
 feature branch -> dev -> beta -> main
 ```
 
-Do not squash a promotion pull request. The release branch must contain the
-same commits that passed the preceding channel. Contributors start feature
-branches from `dev`; only stable release work lands on `main`.
+Merge each promotion pull request with `git merge --no-ff`; never squash a
+promotion merge. The release branch must contain the same commits that
+passed the preceding channel. Contributors start feature branches from
+`dev`; only stable release work lands on `main`.
 
-## Automated releases
+Each promotion pull request runs CI on Node 22 and 24 but does **not**
+publish a release. Releases happen only when the release workflow is
+dispatched (manually or by cron).
 
-### Stable (`main`)
-
-Every push to `main` runs the stable release workflow. It publishes only when
-the `package.json` stable version does not already exist in npm. Existing
-versions are skipped; the workflow does not replace, unpublish, or roll back a
-published version. A successful stable publication uses the `latest` dist-tag
-and creates a non-prerelease GitHub release with the built package tarball.
-
-### Beta (`beta`)
-
-Every push to `beta` publishes a beta prerelease under the `beta` dist-tag and
-creates a prerelease GitHub release with its package tarball.
-
-### Nightly (`dev`)
-
-The nightly workflow runs at **02:17 UTC**. Its schedule is defined on `main`,
-but it explicitly checks out `dev` before building, testing, and publishing.
-It publishes a nightly prerelease under the `nightly` dist-tag.
-
-GitHub schedules can be delayed during periods of high load and may be disabled
-after 60 days of repository inactivity. See GitHub's
-+[scheduled workflow documentation](https://docs.github.com/actions/reference/events-that-trigger-workflows#schedule).
-
-## Prerelease versioning
+## Versioning
 
 `scripts/release.mjs` computes the next version from the current `latest`
 dist-tag on npm:
 
 | Channel | Formula | Example |
 | --- | --- | --- |
-| `stable` | bump patch of the latest npm version | `0.4.0` → `0.4.1` |
-| `beta` | bump patch, append `-beta.<n>` (monotonic) | `0.4.1-beta.1` → `0.4.1-beta.2` |
-| `nightly` | latest version + `-nightly.<UTC YYYYMMDD>` | `0.4.0-nightly.20260905` |
+| `stable` | bump patch of the latest npm version | `0.5.0` → `0.5.1` |
+| `beta` | bump patch, append `-beta.<n>` (monotonic) | `0.5.1-beta.1` → `0.5.1-beta.2` |
+| `nightly` | latest version + `-nightly.<UTC YYYYMMDD>` | `0.5.0-nightly.20260907` |
 
-A workflow_dispatch run can override the auto-computed version by setting the
-`version` input (or `RELEASE_VERSION` env). This is the supported path for
-stable minor or major releases. The script rejects any version that already
-exists on npm, so retries cannot publish duplicates.
+A `workflow_dispatch` run can override the auto-computed version by setting
+the `version` input (or `RELEASE_VERSION` env). This is the supported path
+for stable minor or major releases. The script rejects any version that
+already exists on npm, so retries cannot publish duplicates.
 
-## Preparing a stable version
+## Triggers and operations
 
-A push to `main` automatically publishes the next patch version of the
-current `latest` npm version (for example, `0.4.0` → `0.4.1`). For minor or
-major stable releases, force the version with the `version` workflow_dispatch
-input (or the `RELEASE_VERSION` environment variable). The script reads the
-current `latest` dist-tag from npm, so manual edits to `package.json`'s
-`version` field are not used at publish time.
+### Nightly cron
 
-Promote changes through pull requests in this sequence so the tested commits
-are preserved:
+The release workflow runs on a schedule:
 
-```text
-feature branch -> dev -> beta -> main
+```yaml
+schedule:
+  - cron: '17 2 * * *'
 ```
 
-Run the local release checks before opening a promotion pull request:
+It fires daily at 02:17 UTC. The `source` job maps the `nightly` channel
+to `dev`, checks out the tip of `dev`, and pins the SHA. `verify` then
+runs CI on that exact SHA, and `publish` packs and publishes under the
+`nightly` dist-tag. GitHub cron can be delayed under load and may be
+disabled after 60 days of repository inactivity. See
++[scheduled workflow documentation](https://docs.github.com/actions/reference/events-that-trigger-workflows#schedule).
 
-```sh
-npm ci
-npm run typecheck
-npm test
-npm run check
-npm run test:package
+### Manual dispatch
+
+Trigger a release from the Actions tab: select **Release**, then
+**Run workflow**. Pick any branch and provide three inputs:
+
+- `channel`: `nightly` (default), `beta`, or `stable`. The `source` job
+  maps the chosen channel to its branch (`stable` → `main`, `beta` →
+  `beta`, `nightly` → `dev`); the dispatch branch is irrelevant.
+- `dry_run`: `true` (default) or `false`. See [Dry runs](#dry-runs).
+- `version`: optional semver override for minor or major stable releases.
+  Ignored for `nightly`.
+
+`source` pins the SHA of the mapped branch tip. `verify` runs CI on that
+SHA, and `publish` packs and publishes.
+
+### Concurrency
+
+```yaml
+concurrency:
+  group: openkan-releases
+  cancel-in-progress: false
 ```
 
-The release workflow repeats this CI sequence on Node.js 22 and 24 before it
-packs and publishes the exact checked-out SHA. The produced tarball is retained
-as a workflow artifact and attached to the GitHub release.
+A single publish runs at a time across all channels. An in-flight publish
+is never cancelled; queued runs wait for the active publish to finish.
 
-## Manual runs
+## Dry runs
 
-The release workflow supports `workflow_dispatch` from `main` only. Select one
-of `stable`, `beta`, or `nightly`. Its `dry_run` input defaults to `true`.
-A dry run performs version calculation, package creation, and release
-validation without publishing to npm or creating a GitHub release. Set
-`dry_run` to `false` only when intentionally running the selected channel.
+`dry_run: true` performs version calculation, package creation, and CI
+validation without publishing to npm and without creating a GitHub release.
+Use dry runs to validate a release path before going live. The default for
+`workflow_dispatch` is `true`; set it to `false` only when intentionally
+publishing.
 
 ## npm trusted publishing
 
@@ -125,3 +129,21 @@ bad stable release as a rollback. Fix the issue, prepare a new patch version,
 and promote it through the normal branch sequence. If needed, document the
 affected version in GitHub Releases and the changelog while the forward fix is
 in progress.
+
+## Manual promotion checklist
+
+Before opening a `dev → beta` or `beta → main` promotion pull request, run
+the release-path checks locally on the candidate branch tip:
+
+```sh
+npm ci
+npm run typecheck
+npm test
+npm run check
+npm run test:package
+```
+
+Open the promotion PR and wait for CI on Node 22 and 24 to pass. Merge with
+`git merge --no-ff`; do not squash. Then dispatch the matching release
+(`channel=beta` from `beta`, or `channel=stable` from `main`) once you are
+ready to publish.

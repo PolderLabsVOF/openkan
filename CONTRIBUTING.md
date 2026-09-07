@@ -85,7 +85,14 @@ install.sh       Atomic dedicated-location installer
 
 ## Releases
 
-The automated channels are documented in [Release process](docs/RELEASING.md).
+Releases follow the channel-and-branch model in
+[docs/RELEASING.md](docs/RELEASING.md):
+
+- `dev` gets nightly rolling builds at 02:17 UTC.
+- `beta` and `main` are published manually via `workflow_dispatch`.
+- Promotion follows `feature -> dev -> beta -> main`, never squash promotion
+  merges.
+
 Contributors normally promote through pull requests; maintainers prepare the
 stable version on `dev` before its promotion to `beta` and `main`.
 
