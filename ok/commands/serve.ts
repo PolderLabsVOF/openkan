@@ -404,10 +404,25 @@ async function cmdStartTray(
       console.error(
         `ok serve: system tray unavailable (${e.message}). Falling back to background mode.\n`,
       );
+      // Surface the full cause chain. bin/tray.ts already logged a WARN line
+      // per failure site, but the error object may still carry a nested
+      // `cause` (e.g. ERR_MODULE_NOT_FOUND or an EACCES from the icon read)
+      // whose message never made it into e.message. Printing name+stack of
+      // every link keeps the fallback from hiding the real failure.
+      let cause: unknown = (e as { cause?: unknown }).cause;
+      while (cause instanceof Error) {
+        console.error(`ok serve:   caused by ${cause.name}: ${cause.message}`);
+        cause = (cause as { cause?: unknown }).cause;
+      }
     } else {
       console.error(
         `ok serve: system tray init failed (${(e as Error).message}). Falling back to background mode.\n`,
       );
+      let cause: unknown = (e as { cause?: unknown }).cause;
+      while (cause instanceof Error) {
+        console.error(`ok serve:   caused by ${cause.name}: ${cause.message}`);
+        cause = (cause as { cause?: unknown }).cause;
+      }
     }
     // Background fallback: detach from TTY and keep the process alive so the
     // HTTP listener survives the CLI exit. Same rationale as cmdStart's
