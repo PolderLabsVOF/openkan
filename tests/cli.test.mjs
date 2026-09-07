@@ -10,8 +10,11 @@ import { execSync } from "node:child_process";
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 
-const PROJECT_ROOT = new URL("../", import.meta.url).pathname;
+// fileURLToPath, not URL.pathname: on Windows pathname is "/C:/..." which
+// join() would turn into "C:\C:\...".
+const PROJECT_ROOT = fileURLToPath(new URL("../", import.meta.url));
 const CLI = `node --experimental-strip-types ${join(PROJECT_ROOT, "bin", "ok.ts")}`;
 
 function tmpDir() {
@@ -137,6 +140,16 @@ describe("CLI", () => {
       const out = runOk("agent --help", tmpdir());
       assert.ok(out.includes("Usage: ok agent"));
       assert.ok(out.includes("capabilities"));
+    });
+  });
+
+  describe("PROJECT_ROOT resolution", () => {
+    // Regression: PROJECT_ROOT used new URL(...).pathname, which on Windows is
+    // "/C:/..."; join() then produced "C:\C:\..." and every spawn failed with
+    // "Cannot find module".
+    it("resolves to a real directory holding package.json", () => {
+      assert.ok(existsSync(join(PROJECT_ROOT, "package.json")), `PROJECT_ROOT=${PROJECT_ROOT}`);
+      assert.ok(existsSync(join(PROJECT_ROOT, "bin", "ok.ts")), `PROJECT_ROOT=${PROJECT_ROOT}`);
     });
   });
 

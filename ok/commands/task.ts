@@ -24,6 +24,7 @@ import {
 } from "../storage.ts";
 import { type ParsedArgs, newId, nowIso, parseArgs, flagString, flagCsv, flagBool, runMain } from "../ids.ts";
 import { claim, heartbeat, release, assertUsable, LockHeldError } from "../lock.ts";
+import { pathToFileURL } from "node:url";
 
 const STATUSES: TaskStatus[] = ["pending", "in_progress", "review", "done", "cancelled"];
 const PRIORITIES: TaskPriority[] = ["p0", "p1", "p2", "p3"];
@@ -401,6 +402,6 @@ async function refreshIndex(p: OkPaths): Promise<void> {
 
 // `node --experimental-strip-types ok/commands/task.ts [args]` invocation
 // (used by bin/ok.ts shell wrapper for per-subprocess isolation).
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   await runMain(async () => runTask(process.argv.slice(2)));
 }
