@@ -27,6 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   best-effort unlinks the tmp on unrecoverable failure so the next
   persist never collides with a leftover orphan. POSIX behavior
   unchanged (single `renameSync` on the happy path).
+- Board load: `kanban/board.ts:readBoardSafe` recovers from structured
+  but broken `board.json` (missing/non-array `tasks` or `columns`, root
+  not an object) by reseeding the empty defaults; only unparseable JSON
+  is fatal, since that means the file itself is damaged. The next
+  persist rewrites the file in its normalised form.
 - Windows session archive: `kanban/chat.ts:archiveSession` routes through
   new `kanban/io.ts:moveOver` so re-archiving an already-archived
   session replaces the destination (Windows EEXIST) and survives brief
