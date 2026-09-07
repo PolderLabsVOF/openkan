@@ -11,7 +11,7 @@ const digest = (content) => createHash('sha256').update(content).digest('hex');
 /**
  * Parse the CLI flags this entry point understands. Only `--help`, `--yes`,
  * `--no`, and their short forms live here — anything else (e.g. `--force`)
- * belongs to `openkan agent install`, not the postinstall path.
+ * belongs to `ok skill install`, not the postinstall path.
  *
  * @param {string[]} argv
  * @returns {{ help: boolean, yes: boolean, no: boolean, unknown: string[] }}
@@ -71,7 +71,7 @@ OPENKAN_SKIP_AGENT_INSTALL=1, install-agent prompts once with [Y/n]
 export function readYesNoPrompt(options = {}) {
   const input = options.input || process.stdin;
   const output = options.output || process.stdout;
-  const prompt = options.prompt || '[openkan] Install OpenKan agent + skill into ~/.claude/? [Y/n] ';
+  const prompt = options.prompt || '[ok] Install OpenKan agent + skill into ~/.claude/? [Y/n] ';
   output.write(prompt);
   return new Promise((resolve) => {
     let buffer = '';
@@ -155,7 +155,7 @@ export function installAgent(options = {}) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const flags = parseInstallAgentFlags(process.argv.slice(2));
   if (flags.unknown.length) {
-    console.error(`[openkan] Unknown option(s): ${flags.unknown.join(', ')}. Pass --help for usage.`);
+    console.error(`[ok] Unknown option(s): ${flags.unknown.join(', ')}. Pass --help for usage.`);
     process.exit(2);
   }
   if (flags.help) {
@@ -175,36 +175,36 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     process.exit(0);
   }
   if (decision === 'skip') {
-    console.log('[openkan] Skipped agent install. Run `openkan agent install` later to add it.');
+    console.log('[ok] Skipped agent install. Run `ok skill install` later to add it.');
     process.exit(0);
   }
   if (decision === 'prompt') {
     readYesNoPrompt().then((answer) => {
       const normalized = (answer || '').trim().toLowerCase();
       if (normalized === 'n' || normalized === 'no') {
-        console.log('[openkan] Skipped agent install. Run `openkan agent install` later to add it.');
+        console.log('[ok] Skipped agent install. Run `ok skill install` later to add it.');
         process.exit(0);
         return;
       }
       try {
         const result = installAgent();
-        console.log(`[openkan] OpenKan agent and skill ready in ${result.configDir}`);
-        if (result.preserved.length) console.warn(`[openkan] Preserved customized files: ${result.preserved.join(', ')}. Use openkan agent install --force to replace them.`);
+        console.log(`[ok] OpenKan agent and skill ready in ${result.configDir}`);
+        if (result.preserved.length) console.warn(`[ok] Preserved customized files: ${result.preserved.join(', ')}. Use ok skill install --force to replace them.`);
       } catch (error) {
-        console.warn(`[openkan] Could not install the Claude agent: ${error.message}. OpenKan remains usable; run openkan agent install to retry.`);
+        console.warn(`[ok] Could not install the Claude agent: ${error.message}. OpenKan remains usable; run ok skill install to retry.`);
         process.exit(1);
       }
     }).catch((error) => {
-      console.warn(`[openkan] Could not read prompt input (${error.message}); skipping agent install. Run openkan agent install to retry.`);
+      console.warn(`[ok] Could not read prompt input (${error.message}); skipping agent install. Run ok skill install to retry.`);
       process.exit(1);
     });
   } else {
     try {
       const result = installAgent();
-      console.log(`[openkan] OpenKan agent and skill ready in ${result.configDir}`);
-      if (result.preserved.length) console.warn(`[openkan] Preserved customized files: ${result.preserved.join(', ')}. Use openkan agent install --force to replace them.`);
+      console.log(`[ok] OpenKan agent and skill ready in ${result.configDir}`);
+      if (result.preserved.length) console.warn(`[ok] Preserved customized files: ${result.preserved.join(', ')}. Use ok skill install --force to replace them.`);
     } catch (error) {
-      console.warn(`[openkan] Could not install the Claude agent: ${error.message}. OpenKan remains usable; run openkan agent install to retry.`);
+      console.warn(`[ok] Could not install the Claude agent: ${error.message}. OpenKan remains usable; run ok skill install to retry.`);
       process.exit(1);
     }
   }

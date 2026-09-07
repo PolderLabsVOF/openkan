@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // bin/ok.mjs — Node launcher: forwards everything to bin/ok.ts with
-// experimental type stripping. Mirrors bin/openkan.mjs.
+// experimental type stripping.
 
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";

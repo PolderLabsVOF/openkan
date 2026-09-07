@@ -19,7 +19,7 @@ try {
   execFileSync(npm, ['run', 'build'], { cwd: root, stdio: 'inherit' });
   const raw = JSON.parse(execFileSync(npm, ['pack', '--ignore-scripts', '--json', '--pack-destination', temp], { cwd: root, encoding: 'utf8' }));
   const pack = Array.isArray(raw) ? raw[0] : raw[packageName];
-  assert.ok(pack.files.some(file => file.path === 'dist/bin/openkan.js'));
+  assert.ok(pack.files.some(file => file.path === 'dist/bin/ok.js'));
   assert.ok(pack.files.some(file => file.path === 'dist/web/index.html'));
   assert.ok(pack.files.every(file => !/(^|\/)\.ok\/|(^|\/)\.omx\/|(^|\/)worktrees\/|(^|\/)\.env|\.ts$/.test(file.path)), 'private state and TypeScript must not ship');
   execFileSync(npm, ['install', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund', join(temp, pack.filename)], { cwd: temp, env: installEnv, stdio: 'pipe' });
@@ -27,9 +27,9 @@ try {
   const home = join(temp, 'home'); mkdirSync(home);
   const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CONFIG_DIR: join(home, '.claude') };
   const installed = join(temp, 'node_modules', packageName);
-  const cli = process.platform === 'win32' ? join(installed, 'bin/openkan.mjs') : join(temp, 'node_modules/.bin/openkan');
+  const cli = process.platform === 'win32' ? join(installed, 'bin/ok.mjs') : join(temp, 'node_modules/.bin/ok');
   const ok = process.platform === 'win32' ? join(installed, 'bin/ok.mjs') : join(temp, 'node_modules/.bin/ok');
-  assert.ok(existsSync(cli), 'npm must link the openkan executable');
+  assert.ok(existsSync(cli), 'npm must link the ok executable');
   assert.ok(existsSync(ok), 'npm must link the ok executable');
   const run = (...args) => execFileSync(process.execPath, [cli, ...args], { cwd: project, env, encoding: 'utf8', timeout: 15000 }).trim();
   assert.match(run('--help'), /progress/);
@@ -47,7 +47,7 @@ try {
   assert.match(execFileSync(process.execPath, [ok, 'task', 'list', '--json'], { cwd: project, env, encoding: 'utf8' }), /Installed task/);
 
   // Use an isolated home and OS-assigned port; never change the user's registry.
-  server = spawn(process.execPath, [join(installed, 'dist/bin/openkan.js'), 'start', '--port', '0', '--foreground', '--no-open', '--no-auto-detect', '--project', project], { cwd: project, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  server = spawn(process.execPath, [join(installed, 'dist/bin/ok.js'), 'start', '--port', '0', '--foreground', '--no-open', '--no-auto-detect', '--project', project], { cwd: project, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let log = '';
   server.stdout.on('data', data => { log += data; });
   server.stderr.on('data', data => { log += data; });

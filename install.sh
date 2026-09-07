@@ -60,7 +60,7 @@ Environment:
 
 Defaults:
   application: ${DEFAULT_INSTALL_ROOT}
-  command:     ${BIN_DIR}/openkan
+  command:     ${BIN_DIR}/ok
 
 When run interactively (stdout is a TTY or /dev/tty is readable) without
 --yes/--no and without OPENKAN_SKIP_AGENT_SKILLS=1, install.sh asks once
@@ -223,7 +223,7 @@ for file in package.json package-lock.json README.md CHANGELOG.md LICENSE; do
   fi
 done
 
-chmod +x "${STAGING_ROOT}/bin/openkan.mjs"
+chmod +x "${STAGING_ROOT}/bin/ok.mjs"
 
 if [[ "${OPENKAN_SKIP_DEPENDENCIES:-0}" != "1" ]]; then
   if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
@@ -254,7 +254,7 @@ STAGING_ROOT=""
 rm -rf "${BACKUP_ROOT}"
 BACKUP_ROOT=""
 
-ln -sfn "${INSTALL_ROOT}/bin/openkan.mjs" "${BIN_DIR}/openkan"
+ln -sfn "${INSTALL_ROOT}/bin/ok.mjs" "${BIN_DIR}/ok"
 
 install_agent_skill() {
   local skills_root="$1"
@@ -275,7 +275,7 @@ if should_install_agent_skills; then
   install_agent_skill "${AGENTS_HOME:-${HOME}/.agents}/skills"
   AGENT_SKILLS_INSTALLED=1
 else
-  echo "[openkan] Skipped agent skill install. Run \`openkan agent install\` later."
+  echo "[openkan] Skipped agent skill install. Run \`ok skill install\` later."
 fi
 
 echo ""
@@ -285,12 +285,12 @@ fi
 
 echo "OpenKan installed successfully."
 echo "  Application: ${INSTALL_ROOT}"
-echo "  Command:     ${BIN_DIR}/openkan"
+echo "  Command:     ${BIN_DIR}/ok"
 if [[ "${AGENT_SKILLS_INSTALLED}" == "1" ]]; then
   echo "  Agent skill: Codex, Claude Code, and shared agent skill directories"
 else
-  echo "  Agent skill: skipped (run 'openkan agent install' later)"
+  echo "  Agent skill: skipped (run 'ok skill install' later)"
 fi
 echo ""
-echo "Run 'openkan init' inside a project, then 'openkan start'."
+echo "Run 'ok init' inside a project, then 'ok start'."
 echo "Dashboard: http://127.0.0.1:7777/"

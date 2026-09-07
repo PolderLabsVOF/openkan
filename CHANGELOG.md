@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-07
+
+### Changed
+
+- OK migration M2 — drops the legacy `openkan` binary; `openkan <cmd>`
+  invocations no longer work after upgrade. The `ok` CLI is the only
+  entry point. README and `install.sh` updated to point at `ok`.
+
 ## [0.4.0] - 2026-09-05
 
 ### Added
