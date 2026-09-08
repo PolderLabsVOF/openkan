@@ -26,7 +26,8 @@ export type TaskStatus = "pending" | "in_progress" | "review" | "done" | "cancel
 
 export type TaskPriority = "p0" | "p1" | "p2" | "p3";
 
-export interface Task {
+/** @deprecated Legacy flat-file task schema; use Task (TaskV2) instead. */
+export interface TaskV1 {
   schema: "ok.task.v1";
   /** Stable identifier; `<kind>-<nanoid>` e.g. `tsk-Vn4kRp2x`. */
   id: string;
@@ -82,7 +83,7 @@ export interface Task {
 }
 
 /** Canonical task record shared by the planning CLI and Kanban board. */
-export interface TaskV2 extends Omit<Task, "schema" | "description" | "priority" | "archived"> {
+export interface TaskV2 extends Omit<TaskV1, "schema" | "description" | "priority" | "archived"> {
   schema: "ok.task.v2";
   description: string;
   column: "backlog" | "todo" | "doing" | "review" | "done";
@@ -112,6 +113,9 @@ export interface TaskV2 extends Omit<Task, "schema" | "description" | "priority"
   offlineMirrorId?: string;
 }
 
+/** Canonical task type; v2 is the only persisted format after Phase 10. */
+export type Task = TaskV2;
+
 export function isTaskV2(obj: unknown): obj is TaskV2 {
   if (typeof obj !== "object" || obj === null) return false;
   const task = obj as Record<string, unknown>;
@@ -140,7 +144,8 @@ export function validateTaskV2(obj: unknown): TaskValidationError | null {
   return { id, reason: "invalid ok.task.v2 shape" };
 }
 
-export function isTask(obj: unknown): obj is Task {
+/** @deprecated Use isTaskV2 for canonical tasks. */
+export function isTask(obj: unknown): obj is TaskV1 {
   if (typeof obj !== "object" || obj === null) return false;
   const t = obj as Record<string, unknown>;
   if (t.schema !== "ok.task.v1") return false;
@@ -221,7 +226,7 @@ const V2_TO_V1_PRIORITY: Record<TaskV2["priority"], TaskPriority> = {
  * the synthesised fields. Use this when migrating legacy flat files
  * (`.ok/tasks/<id>.json`) into the directory form during Phase 3.
  */
-export function convertTaskV1ToV2(t: Task): TaskV2 {
+export function convertTaskV1ToV2(t: TaskV1): TaskV2 {
   return {
     // v1 fields preserved verbatim
     schema: "ok.task.v2",
@@ -275,8 +280,8 @@ export function convertTaskV1ToV2(t: Task): TaskV2 {
  * from v2's enum back to v1's. Used by Phase 1 dual-write to keep
  * the legacy flat file in sync.
  */
-export function convertTaskV2ToV1(t: TaskV2): Task {
-  const out: Task = {
+export function convertTaskV2ToV1(t: TaskV2): TaskV1 {
+  const out: TaskV1 = {
     schema: "ok.task.v1",
     id: t.id,
     title: t.title,
@@ -301,6 +306,7 @@ export function convertTaskV2ToV1(t: TaskV2): Task {
   return out;
 }
 
+/** @deprecated Use validateTaskV2 for canonical tasks. */
 export function validateTask(obj: unknown): TaskValidationError | null {
   if (typeof obj !== "object" || obj === null) {
     return { reason: "task must be an object" };

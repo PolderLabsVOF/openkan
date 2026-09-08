@@ -14,19 +14,18 @@ import * as fsSync from "node:fs";
 import * as path from "node:path";
 import {
   type Task,
+  type TaskV1,
   type TaskV2,
   type Plan,
   type Prd,
   type OkConfig,
   type OkIndex,
-  isTask,
   isTaskV2,
   isPlan,
   isPrd,
   isOkConfig,
   isOkIndex,
   convertTaskV1ToV2,
-  convertTaskV2ToV1,
   type IndexEntry,
 } from "./schemas.ts";
 import { nowIso } from "./ids.ts";
@@ -163,7 +162,7 @@ export async function readTask(p: OkPaths, id: string): Promise<TaskV2 | undefin
  * Accepts either v1 `Task` or v2 `TaskV2`; v1 input is promoted to
  * v2 via `convertTaskV1ToV2` before writing. Phase 8+ is v2-only.
  */
-export async function writeTask(p: OkPaths, task: Task | TaskV2): Promise<void> {
+export async function writeTask(p: OkPaths, task: TaskV1 | TaskV2): Promise<void> {
   const v2: TaskV2 = isTaskV2(task) ? task : convertTaskV1ToV2(task);
   // Write the directory form — this is the Phase 8+ canonical shape.
   await writeTaskV2(p, v2);

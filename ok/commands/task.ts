@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import {
   type Task,
+  type TaskV1,
   type TaskV2,
   type TaskStatus,
   type TaskPriority,
@@ -161,7 +162,7 @@ interface OfflineBoard {
   sessions: Record<string, unknown>;
 }
 
-function offlineBoardTask(task: Task, column: OfflineBoardTask["column"]): OfflineBoardTask {
+function offlineBoardTask(task: TaskV1, column: OfflineBoardTask["column"]): OfflineBoardTask {
   const state = task.status === "in_progress" ? "running" : task.status === "done" ? "done" : task.status === "cancelled" ? "cancelled" : "idle";
   const artifacts = {
     mdxPath: `tasks/${task.id}/task.mdx`,
@@ -200,7 +201,7 @@ function offlineBoardTask(task: Task, column: OfflineBoardTask["column"]): Offli
   };
 }
 
-async function writeOfflineBoardTask(p: OkPaths, task: Task, column: OfflineBoardTask["column"]): Promise<void> {
+async function writeOfflineBoardTask(p: OkPaths, task: TaskV1, column: OfflineBoardTask["column"]): Promise<void> {
   const file = path.join(p.root, "board.json");
   let board: OfflineBoard = {
     version: 1,
@@ -250,7 +251,7 @@ async function cmdTaskAdd(args: string[]): Promise<number> {
   const cfg = (await readConfig(p))!;
   const now = nowIso();
   const localId = newId("tsk");
-  const task: Task = {
+  const task: TaskV1 = {
     schema: "ok.task.v1",
     id: localId,
     title,
