@@ -24,6 +24,7 @@ import {
   taskArtifacts,
   ensureBoardForProject,
   reconcileOkTask,
+  reconcileAllOkTasks,
 } from "./board.ts";
 import { extractMetadata } from "./tags.ts";
 import {
@@ -2961,6 +2962,14 @@ export async function startOrAttach(
   })();
 
   ctx.log("info", `Kanban server started at ${runningServer.url} (primary)`);
+
+  // Boot-time sweep: promote any `.ok/tasks/<id>.json` entries that
+  // were written while the server was down (or where the prior POST
+  // failed offline) so they appear on the board without waiting for a
+  // file-change event. Idempotent; already-synced entries are skipped.
+  reconcileAllOkTasks(dir).catch((e: any) => {
+    process.stderr.write(`reconcileAllOkTasks failed: ${e?.message ?? e}\n`);
+  });
 
   // Auto-detect projects in the background if no active project is set
   if (opts._autoDetect !== false && !activeProject()) {
