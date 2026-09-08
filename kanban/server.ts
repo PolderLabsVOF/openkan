@@ -604,7 +604,12 @@ export async function apiCreateTask(_ctx: BoardContext, req: Request): Promise<R
     if (parent.parentId !== null) return errorResponse("Cannot nest a subtask under another subtask (v1)", 422);
   }
 
-  const id = newId("tsk");
+  // The offline client already minted a stable task id. Reuse it as the
+  // canonical board id so `ok task claim|heartbeat|complete <id>` target
+  // the same record; server-created tasks still receive a fresh id.
+  const id = body.clientId && /^tsk-[A-Za-z0-9_-]+$/.test(body.clientId)
+    ? body.clientId
+    : newId("tsk");
   const arts = taskArtifacts(id);
   const now = nowIso();
 

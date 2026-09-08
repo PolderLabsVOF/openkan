@@ -228,4 +228,50 @@ describe("ok task add → dashboard (integration)", () => {
     assert.ok(found);
     assert.strictEqual(found!.column, "doing");
   });
+
+  it("POST with the same clientId returns one board task", async () => {
+    const clientId = `tsk-clientId${Date.now().toString(36)}`;
+    const payload = { title: "dedupe this POST", clientId, column: "todo" };
+    const first = await fetch(`${baseUrl}/api/tasks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    assert.strictEqual(first.status, 201);
+    const created = await first.json() as { id: string; offlineMirrorId?: string };
+    assert.strictEqual(created.id, clientId);
+    assert.strictEqual(created.offlineMirrorId, clientId);
+
+    const retry = await fetch(`${baseUrl}/api/tasks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    assert.strictEqual(retry.status, 200);
+    const returned = await retry.json() as { id: string };
+    assert.strictEqual(returned.id, clientId);
+
+    const board = await (await fetch(`${baseUrl}/api/board`)).json() as { tasks: Array<{ id: string }> };
+    assert.strictEqual(board.tasks.filter((task) => task.id === clientId).length, 1);
+  });
+
+  it("PATCH moves a board task to the requested column", async () => {
+    const created = await (await fetch(`${baseUrl}/api/tasks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "move a card" }),
+    })).json() as { id: string };
+
+    const patch = await fetch(`${baseUrl}/api/tasks/${created.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ column: "doing" }),
+    });
+    assert.strictEqual(patch.status, 200);
+    const moved = await patch.json() as { column: string };
+    assert.strictEqual(moved.column, "doing");
+
+    const board = await (await fetch(`${baseUrl}/api/board`)).json() as { tasks: Array<{ id: string; column: string }> };
+    assert.strictEqual(board.tasks.find((task) => task.id === created.id)?.column, "doing");
+  });
 });
