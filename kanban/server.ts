@@ -3039,8 +3039,14 @@ export async function startOrAttach(
         // the in-memory board when the id is new; mirror-engine no-op when
         // the task already lives here. Event paths emitted by the watcher
         // are project-root-relative, so they can start with ".ok/" directly.
-        const okIdMatch = ev.path.match(/(?:\/|^)\.ok\/tasks\/([^/]+)\.json$/);
-        const okTaskId = okIdMatch?.[1];
+        // Phase 8+: the canonical write is the v2 directory form
+        // `.ok/tasks/<id>/task.json`, so the id is captured from the
+        // directory segment. The legacy v1 flat-file pattern
+        // `.ok/tasks/<id>.json` is also accepted so any lingering
+        // v1-aware tooling still reconciles.
+        const v2Match = ev.path.match(/(?:\/|^)\.ok\/tasks\/([^/]+)\/task\.json$/);
+        const v1Match = ev.path.match(/(?:\/|^)\.ok\/tasks\/([^/]+)\.json$/);
+        const okTaskId = v2Match?.[1] ?? (v1Match && !v1Match[1].includes("/") ? v1Match[1] : undefined);
         if (okTaskId && /^tsk-[A-Za-z0-9_-]+$/.test(okTaskId)) {
           try {
             const inserted = await reconcileOkTask(okTaskId, dir);
