@@ -4,9 +4,9 @@ import { promises as fsPromises } from "node:fs";
 import { join } from "path";
 import { writeFileAtomic, ensureDir, cleanupStaleTmp, removeDir } from "./io.ts";
 import type { Priority, Effort, Category } from "./tags.ts";
-import { writeTask, readTask as readOkTask, readConfig, writeConfig, paths as okPaths, rebuildIndex } from "../ok/storage.ts";
+import { writeTask, readTask as readOkTask, writeTaskV2, readConfig, writeConfig, paths as okPaths, rebuildIndex, listTasksV2 } from "../ok/storage.ts";
 import { nowIso as okNowIso } from "../ok/ids.ts";
-import type { Task as OkTask } from "../ok/schemas.ts";
+import type { TaskV2 } from "../ok/schemas.ts";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -219,28 +219,70 @@ export async function initBoard(ctx: BoardContext): Promise<{ board: Board; dir:
   ensureDir(dir);
   cleanupStaleTmp(dir);
 
-  // Write tasks.json from board.tasks if tasks.json doesn't exist (migration helper)
-  const tasksIndexPath = join(dir, TASKS_INDEX_FILE);
-  if (!existsSync(tasksIndexPath)) {
-    // Will be written after board is loaded
-  }
-
+  // Phase 7: board.json is metadata-only post-migration. If a legacy
+  // board.json with an embedded `tasks` array is present (pre-Phase-6
+  // projects), promote each entry to the v2 directory form, run the
+  // legacy MDX migration, then drop the array so subsequent boots take
+  // the metadata-only path. This keeps `initBoard` the single upgrade
+  // boundary so projects don't need a separate `migrate-board-to-v2`
+  // invocation before first boot.
   const boardPath = join(dir, BOARD_FILE);
-  if (existsSync(boardPath)) {
-    const raw = readFileSync(boardPath, "utf-8");
-    _board = JSON.parse(raw) as Board;
-    // Apply migrations
-    await migrateLegacyTaskArtifacts(_board);
-    await persist(_board);
+  let metadata: { version: number; columns: Column[]; sessions: Record<string, SessionRecord> };
+  const legacyBoard: Board | null = existsSync(boardPath)
+    ? JSON.parse(readFileSync(boardPath, "utf-8")) as Board
+    : null;
+  const hasLegacyTasks = !!legacyBoard && Array.isArray(legacyBoard.tasks) && legacyBoard.tasks.length > 0;
+  if (legacyBoard) {
+    metadata = {
+      version: legacyBoard.version ?? 1,
+      columns: legacyBoard.columns ?? [...DEFAULT_COLUMNS],
+      sessions: legacyBoard.sessions ?? {},
+    };
   } else {
-    _board = {
+    metadata = {
       version: 1,
       columns: [...DEFAULT_COLUMNS],
-      tasks: [],
       sessions: {},
     };
-    await persist(_board!);
   }
+
+  const okRoot = join(dir, "..");
+  const okP = okPaths(okRoot);
+
+  if (hasLegacyTasks) {
+    // One-shot Phase 6 promotion: write each legacy task to v2 form
+    // (idempotent — already-migrated ids are skipped via writeTaskV2
+    // overwrite). Run MDX migration in-place so the in-memory task list
+    // tracks the new artifact paths.
+    await migrateLegacyTaskArtifacts(legacyBoard!);
+    for (const task of legacyBoard!.tasks) {
+      try {
+        await writeTaskV2(okP, toTaskV2(task));
+      } catch {
+        // best-effort: a corrupt legacy entry shouldn't block the rest
+      }
+    }
+  }
+
+  // Phase 7: load tasks from .ok/tasks/<id>/task.json (v2 directory
+  // form). This replaces the previous tasks.json-array read.
+  const v2Tasks = await listTasksV2(okP);
+  const tasks: Task[] = [];
+  for (const v2 of v2Tasks) {
+    const t = fromPlanningTask(v2);
+    if (t) tasks.push(t);
+  }
+
+  _board = {
+    version: metadata.version as 1,
+    columns: metadata.columns,
+    tasks,
+    sessions: metadata.sessions,
+  };
+  // Mirror in-memory state to disk so the metadata-only board.json is
+  // written even on a cold boot (and the v2 directory form is kept
+  // current by mirrorToOkStore inside persist).
+  await persist(_board);
 
   _loadedProjectRoot = ctx.directory;
   return { board: _board!, dir };
@@ -279,32 +321,69 @@ export async function withWrite<T>(fn: (board: Board) => Promise<T> | T): Promis
 // ─── Persist ─────────────────────────────────────────────────────────────────
 
 /**
- * Map an OpenKan engine `Task` onto the planning-system `ok.task.v1`
- * shape. Column placement (`backlog|todo|doing|review|done`) maps onto
- * the planning status enum (`pending|in_progress|review|done|cancelled`)
- * so a single field is the canonical lifecycle indicator.
+ * Map an OpenKan engine `Task` onto the planning-system `ok.task.v2`
+ * shape. Phase 5 of the unified-task-storage plan: the mirror writes
+ * the v2 directory form directly so the planning-system store is
+ * structurally aligned with the engine board (column, order, state,
+ * agent, assignees, etc. all preserved without round-tripping through
+ * the lossy v1 projection).
  */
-function toPlanningTask(task: Task): OkTask {
+export function toTaskV2(task: Task): TaskV2 {
   const status = mapColumnToStatus(task.column, task.state, task.archived);
-  const ok: OkTask = {
-    schema: "ok.task.v1",
+  const now = okNowIso();
+  return {
+    schema: "ok.task.v2",
     id: task.id.startsWith("tsk-") ? task.id : `tsk-${task.id}`,
     title: task.title || "untitled",
+    description: task.description ?? "",
+    column: task.column,
+    order: task.order ?? 0,
+    sessionId: task.sessionId ?? null,
+    agent: task.agent ?? "",
+    model: task.model ?? null,
     status,
+    state: task.state,
+    lastError: task.lastError ?? null,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
+    artifact: task.artifact ?? "",
+    sessionArtifact: task.sessionArtifact ?? null,
+    artifacts: task.artifacts ?? { mdxPath: "", commentsPath: "", inputsPath: "", statePath: "" },
+    source: task.source,
+    sourceHash: task.sourceHash,
+    stale: task.stale,
+    lastSourceCheck: task.lastSourceCheck,
+    pendingInputs: task.pendingInputs ?? [],
+    tags: task.tags ?? [],
+    category: task.category ?? "task",
+    priority: task.priority ?? "normal",
+    effort: task.effort ?? null,
+    archived: task.archived ?? false,
+    assignees: task.assignees ?? (task.agent ? [task.agent] : []),
+    images: task.images ?? [],
+    parentId: task.parentId ?? null,
+    subtaskIds: task.subtaskIds ?? [],
+    offlineMirrorId: task.offlineMirrorId,
+    // v1 fields preserved for read-compat callers:
+    owner: task.agent ?? undefined,
+    scopes: task.tags && task.tags.length > 0 ? task.tags : undefined,
+    plan: undefined,
+    prd: undefined,
+    deps: undefined,
+    evidence: undefined,
+    acceptance: undefined,
+    startedAt: undefined,
+    completedAt: undefined,
+    mirrorStatus: undefined,
+    mirrorId: undefined,
   };
-  if (task.agent) ok.owner = task.agent;
-  if (task.description && task.description.trim().length > 0) ok.description = task.description;
-  if (task.tags && task.tags.length > 0) ok.scopes = task.tags;
-  return ok;
 }
 
 function mapColumnToStatus(
   column: Task["column"],
   state: Task["state"],
   archived: boolean,
-): OkTask["status"] {
+): TaskV2["status"] {
   if (archived) return "cancelled";
   if (state === "done") return "done";
   if (state === "cancelled" || state === "failed") return "cancelled";
@@ -342,67 +421,65 @@ async function mirrorToOkStore(board: Board): Promise<void> {
     const now = okNowIso();
     await writeConfig(p, { schema: "ok.config.v1", version: 1, createdAt: now, updatedAt: now });
   }
-  // Write one JSON per task, plus idempotent tasks.json index.
+  // Write one v2 task per card, plus idempotent tasks.json index. Phase 5:
+  // the mirror writes the v2 directory form directly. The legacy v1 flat
+  // file is no longer maintained from this path; legacy readers continue
+  // to work via readTask's v2-primary → v1-fallback chain.
   const seen = new Set<string>();
   const indexEntries: { id: string; status: string; title: string; updatedAt: string }[] = [];
   for (const t of board.tasks) {
-    const okTask = toPlanningTask(t);
-    await writeTask(p, okTask);
-    seen.add(okTask.id);
-    indexEntries.push({ id: okTask.id, status: okTask.status, title: okTask.title, updatedAt: okTask.updatedAt });
+    const v2 = toTaskV2(t);
+    await writeTaskV2(p, v2);
+    seen.add(v2.id);
+    indexEntries.push({ id: v2.id, status: v2.status, title: v2.title, updatedAt: v2.updatedAt });
   }
   // Best-effort index rebuild (non-fatal if it fails).
   try { await rebuildIndex(p); } catch { /* swallow */ }
 }
 
 /**
- * Map a planning-system `ok.task.v1` entry onto the engine Task schema.
- * Used when the source of truth for a task lives in `.ok/tasks/<id>.json`
- * (e.g. an agent invoked `ok task add` directly). The reverse direction
- * is `toPlanningTask` above; together they keep both stores coherent.
+ * Map a planning-system `ok.task.v2` entry onto the engine Task schema.
+ * Phase 5: the planning-system store is the v2 directory form now, so
+ * the projection reads v2 fields directly (column, order, state,
+ * agent, assignees, tags, priority, archived, artifact, etc.). Most
+ * v2 fields map 1:1 onto the engine Task — the only synthesised
+ * defaults are the ones a v2 record might leave null when the
+ * offline write arrived without a full kanban view.
  */
-function fromPlanningTask(ok: OkTask): Task | null {
+export function fromPlanningTask(ok: TaskV2): Task | null {
   if (!ok.id || !/^tsk-[A-Za-z0-9_-]+$/.test(ok.id)) return null;
-  const column: Task["column"] =
-    ok.status === "done" ? "done" :
-    ok.status === "review" ? "review" :
-    ok.status === "in_progress" ? "doing" :
-    ok.status === "cancelled" ? "backlog" :
-    ok.status === "pending" ? "todo" :
-    "todo";
-  const state: Task["state"] =
-    ok.status === "done" ? "done" :
-    ok.status === "cancelled" ? "cancelled" :
-    ok.status === "in_progress" ? "running" :
-    "idle";
-  const arts = taskArtifacts(ok.id);
+  const arts = ok.artifacts ?? taskArtifacts(ok.id);
   return {
     id: ok.id,
-    title: ok.title ?? "untitled",
+    title: ok.title || "untitled",
     description: ok.description ?? "",
-    column,
-    order: 0,
-    sessionId: null,
-    agent: ok.owner ?? "",
-    model: null,
-    status: state,
-    state,
-    lastError: null,
+    column: ok.column,
+    order: ok.order ?? 0,
+    sessionId: ok.sessionId ?? null,
+    agent: ok.agent ?? ok.owner ?? "",
+    model: ok.model ?? null,
+    status: ok.state,
+    state: ok.state,
+    lastError: ok.lastError ?? null,
     createdAt: ok.createdAt,
     updatedAt: ok.updatedAt,
-    artifact: arts.mdxPath,
-    sessionArtifact: null,
-    pendingInputs: [],
+    artifact: ok.artifact || arts.mdxPath,
+    sessionArtifact: ok.sessionArtifact ?? null,
     artifacts: arts,
-    tags: ok.scopes ? [...ok.scopes] : [],
-    category: "task",
-    priority: (ok.priority ?? "p3") as Task["priority"],
-    effort: null,
-    archived: ok.status === "cancelled",
-    assignees: ok.owner ? [ok.owner] : [],
-    images: [],
-    parentId: null,
-    subtaskIds: [],
+    source: ok.source,
+    sourceHash: ok.sourceHash,
+    stale: ok.stale,
+    lastSourceCheck: ok.lastSourceCheck,
+    pendingInputs: ok.pendingInputs ?? [],
+    tags: ok.tags ?? ok.scopes ?? [],
+    category: ok.category ?? "task",
+    priority: ok.priority ?? "normal",
+    effort: ok.effort ?? null,
+    archived: ok.archived === true || ok.state === "cancelled" || ok.state === "failed",
+    assignees: ok.assignees ?? (ok.agent ? [ok.agent] : ok.owner ? [ok.owner] : []),
+    images: ok.images ?? [],
+    parentId: ok.parentId ?? null,
+    subtaskIds: ok.subtaskIds ?? [],
     // The planning-system task id is the offline mirror; setting it on
     // the planning→board path closes a race where the file watcher
     // creates the board row before the HTTP POST lands, so a later
@@ -410,7 +487,7 @@ function fromPlanningTask(ok: OkTask): Task | null {
     // it without the marker. With this, both creation paths produce
     // equivalent rows and `ok task add`'s post-write contract (id
     // visible on the board, mirror marked synced) holds in either order.
-    offlineMirrorId: ok.id,
+    offlineMirrorId: ok.offlineMirrorId ?? ok.id,
   };
 }
 
@@ -495,7 +572,21 @@ export async function reconcileAllOkTasks(kanbanDir: string = KANBAN_DIR): Promi
   let count = 0;
   try {
     const files = await fsPromises.readdir(p.tasksDir);
+    // Phase 8+: Check both v1 flat files (<id>.json) and v2 directories (<id>/task.json)
     for (const file of files) {
+      // Check v2 directory first (<id>/task.json)
+      const v2Dir = join(p.tasksDir, file, "task.json");
+      try {
+        const stat = await fsPromises.stat(v2Dir);
+        if (stat.isFile()) {
+          const id = file; // directory name is the task id
+          const inserted = await reconcileOkTask(id, kanbanDir);
+          if (inserted) count += 1;
+          continue;
+        }
+      } catch { /* no v2 directory, check v1 flat file */ }
+
+      // Fallback to v1 flat file (<id>.json) for legacy tasks
       const m = file.match(/^(tsk-[A-Za-z0-9_-]+)\.json$/);
       if (!m) continue;
       const inserted = await reconcileOkTask(m[1], kanbanDir);
@@ -510,13 +601,26 @@ export async function reconcileAllOkTasks(kanbanDir: string = KANBAN_DIR): Promi
  * `"synced"`, recording the server-side id under `mirrorId`. Quietly
  * swallows write errors — losing the marker only means the next sweep
  * re-tries, which is safe under the idempotency contract above.
+ * Phase 8+: reads and writes v2 directory form first, falls back to v1.
  */
 async function markOkMirrorSynced(p: ReturnType<typeof okPaths>, okId: string, serverId: string): Promise<void> {
-  const file = join(p.tasksDir, `${okId}.json`);
+  // Phase 8+: Try v2 directory first, then fall back to v1 flat file
+  const v2File = join(p.tasksDir, okId, "task.json");
   let raw: string;
+  let isV2 = false;
+
+  // Try v2 first
   try {
-    raw = await fsPromises.readFile(file, "utf-8");
-  } catch { return; }
+    raw = await fsPromises.readFile(v2File, "utf-8");
+    isV2 = true;
+  } catch {
+    // Fall back to v1 flat file
+    const file = join(p.tasksDir, `${okId}.json`);
+    try {
+      raw = await fsPromises.readFile(file, "utf-8");
+    } catch { return; }
+  }
+
   let parsed: unknown;
   try { parsed = JSON.parse(raw); } catch { return; }
   if (!parsed || typeof parsed !== "object") return;
@@ -525,18 +629,33 @@ async function markOkMirrorSynced(p: ReturnType<typeof okPaths>, okId: string, s
   rec.mirrorStatus = "synced";
   rec.mirrorId = serverId;
   rec.updatedAt = okNowIso();
+
+  // Write back to the same location we read from
+  const targetFile = isV2 ? v2File : join(p.tasksDir, `${okId}.json`);
   try {
-    const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
+    const tmp = `${targetFile}.tmp-${process.pid}-${Date.now()}`;
     await fsPromises.writeFile(tmp, JSON.stringify(rec, null, 2));
-    await fsPromises.rename(tmp, file);
+    await fsPromises.rename(tmp, targetFile);
   } catch { /* swallow — best effort */ }
 }
 
 export async function persist(board: Board): Promise<void> {
   if (!KANBAN_DIR) return;
   const dest = join(KANBAN_DIR, BOARD_FILE);
-  writeFileAtomic(dest, JSON.stringify(board, null, 2));
+  // Phase 7: the persisted board.json is metadata-only. Tasks are
+  // reconstructed from the v2 directory form on boot (initBoard reads
+  // them via listTasksV2), so writing the in-memory tasks array here
+  // would re-introduce the dual-store staleness the refactor is
+  // designed to eliminate. Columns, sessions, and version are still
+  // authoritative in board.json.
+  const metadataOnly = {
+    version: board.version,
+    columns: board.columns,
+    sessions: board.sessions,
+  };
+  writeFileAtomic(dest, JSON.stringify(metadataOnly, null, 2));
   // Mirror into the planning-system store. Side effect only; failure does
-  // not abort the engine write.
+  // not abort the engine write. Phase 5 already routes this to v2
+  // (writeTaskV2), so the directory form stays current.
   try { await mirrorToOkStore(board); } catch { /* swallow */ }
 }

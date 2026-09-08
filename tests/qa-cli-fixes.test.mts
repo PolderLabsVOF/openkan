@@ -68,7 +68,8 @@ describe("QA CLI fixes (tsk-nbAJzTwD, tsk-x7eazVDe, tsk-HZbMRqHE, tsk-raJ3sY_y)"
       const r = run(root, OPENKAN_CLI, 'task add "qa status in_progress" --status in_progress');
       assert.strictEqual(r.code, 0, `stderr=${r.stderr}`);
       const id = extractId(r.stdout);
-      const file = readFileSync(join(root, ".ok", "tasks", `${id}.json`), "utf-8");
+      // Phase 8+: v2 directory format
+      const file = readFileSync(join(root, ".ok", "tasks", id, "task.json"), "utf-8");
       const task = JSON.parse(file);
       assert.strictEqual(task.status, "in_progress");
     });
@@ -77,7 +78,8 @@ describe("QA CLI fixes (tsk-nbAJzTwD, tsk-x7eazVDe, tsk-HZbMRqHE, tsk-raJ3sY_y)"
       const r = run(root, OPENKAN_CLI, 'task add "qa status review" --status review');
       assert.strictEqual(r.code, 0, `stderr=${r.stderr}`);
       const id = extractId(r.stdout);
-      const file = readFileSync(join(root, ".ok", "tasks", `${id}.json`), "utf-8");
+      // Phase 8+: v2 directory format
+      const file = readFileSync(join(root, ".ok", "tasks", id, "task.json"), "utf-8");
       const task = JSON.parse(file);
       assert.strictEqual(task.status, "review");
     });
@@ -86,7 +88,8 @@ describe("QA CLI fixes (tsk-nbAJzTwD, tsk-x7eazVDe, tsk-HZbMRqHE, tsk-raJ3sY_y)"
       const r = run(root, OPENKAN_CLI, 'task add "qa status default"');
       assert.strictEqual(r.code, 0, `stderr=${r.stderr}`);
       const id = extractId(r.stdout);
-      const file = readFileSync(join(root, ".ok", "tasks", `${id}.json`), "utf-8");
+      // Phase 8+: v2 directory format
+      const file = readFileSync(join(root, ".ok", "tasks", id, "task.json"), "utf-8");
       const task = JSON.parse(file);
       assert.strictEqual(task.status, "pending");
     });
@@ -121,16 +124,17 @@ describe("QA CLI fixes (tsk-nbAJzTwD, tsk-x7eazVDe, tsk-HZbMRqHE, tsk-raJ3sY_y)"
     it("schema-loader error tells the operator which file to delete", () => {
       // Inject a schema-invalid task file. The next command that opens it
       // must produce an actionable error pointing at the exact path.
+      // Phase 8+: v2 directory format
       const badDir = tmp();
       try {
         initScratch(badDir);
-        const badPath = join(badDir, ".ok", "tasks", "tsk-corrupt01.json");
-        mkdirSync(join(badDir, ".ok", "tasks"), { recursive: true });
+        const badPath = join(badDir, ".ok", "tasks", "tsk-corrupt01", "task.json");
+        mkdirSync(join(badDir, ".ok", "tasks", "tsk-corrupt01"), { recursive: true });
         writeFileSync(badPath, JSON.stringify({ schema: "ok.task.v1", id: "tsk-corrupt01", title: "" }));
         const r = run(badDir, OPENKAN_CLI, "task show tsk-corrupt01");
         assert.notStrictEqual(r.code, 0);
-        assert.match(r.stderr, /invalid shape in .*tsk-corrupt01\.json/);
-        assert.match(r.stderr, /rm ".*tsk-corrupt01\.json"/);
+        assert.match(r.stderr, /invalid shape in .*tsk-corrupt01.*task\.json/);
+        assert.match(r.stderr, /rm ".*tsk-corrupt01.*task\.json"/);
       } finally {
         rmSync(badDir, { recursive: true, force: true });
       }

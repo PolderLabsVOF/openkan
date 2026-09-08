@@ -22,6 +22,7 @@ import { writeTaskMdx } from "../kanban/mdx.ts";
 // `async (projectId, req) => Response`. We re-import the same logic via
 // a thin re-export so the test exercises the real implementation.
 import { apiMoveTasksToProject } from "../kanban/server.ts";
+import { listTasksV2 } from "../ok/storage.ts";
 
 interface TaskSeed {
   id: string;
@@ -161,19 +162,39 @@ describe("apiMoveTasksToProject", () => {
       assert.strictEqual(m.column, "todo");
     }
 
-    // Source board.json no longer carries the moved tasks.
-    const source = JSON.parse(readFileSync(join(sourceRoot, ".ok", "board.json"), "utf-8")) as Board;
-    const srcIds = source.tasks.map((t) => t.id);
+    // Phase 7: source board.json no longer carries the moved tasks.
+    // The on-disk source-side tasks now live as v2 directory files.
+    const sourceV2 = await listTasksV2({
+      root: join(sourceRoot, ".ok"),
+      configFile: join(sourceRoot, ".ok", "config.json"),
+      indexFile: join(sourceRoot, ".ok", "index.json"),
+      tasksDir: join(sourceRoot, ".ok", "tasks"),
+      plansDir: join(sourceRoot, ".ok", "plans"),
+      prdsDir: join(sourceRoot, ".ok", "prds"),
+      sessionsDir: join(sourceRoot, ".ok", "sessions"),
+      locksDir: join(sourceRoot, ".ok", "locks"),
+    });
+    const srcIds = sourceV2.map((t) => t.id);
     assert.ok(!srcIds.includes("tsk-s1") && !srcIds.includes("tsk-s2") && !srcIds.includes("tsk-s3"), "source should be empty of moved tasks");
     // Source per-task dirs gone.
     assert.ok(!existsSync(join(sourceRoot, ".ok", "tasks", "tsk-s1")), "source dir for tsk-s1 should be removed");
     assert.ok(!existsSync(join(sourceRoot, ".ok", "tasks", "tsk-s2")), "source dir for tsk-s2 should be removed");
 
-    // Target board.json has the new tasks.
-    const target = JSON.parse(readFileSync(join(targetRoot, ".ok", "board.json"), "utf-8")) as Board;
-    assert.strictEqual(target.tasks.length, 3);
+    // Target now holds moved tasks as v2 directory files; board.json
+    // is metadata-only.
+    const targetV2 = await listTasksV2({
+      root: join(targetRoot, ".ok"),
+      configFile: join(targetRoot, ".ok", "config.json"),
+      indexFile: join(targetRoot, ".ok", "index.json"),
+      tasksDir: join(targetRoot, ".ok", "tasks"),
+      plansDir: join(targetRoot, ".ok", "plans"),
+      prdsDir: join(targetRoot, ".ok", "prds"),
+      sessionsDir: join(targetRoot, ".ok", "sessions"),
+      locksDir: join(targetRoot, ".ok", "locks"),
+    });
+    assert.strictEqual(targetV2.length, 3);
     for (const m of body.moved) {
-      const t = target.tasks.find((x) => x.id === m.id);
+      const t = targetV2.find((x) => x.id === m.id);
       assert.ok(t, `target should hold the moved id ${m.id}`);
       assert.strictEqual(t!.column, "todo");
     }
@@ -301,11 +322,20 @@ describe("apiMoveTasksToProject", () => {
     assert.strictEqual(body.moved.length, 2);
     assert.deepStrictEqual(body.skipped, []);
 
-    const target = JSON.parse(readFileSync(join(targetRoot, ".ok", "board.json"), "utf-8")) as Board;
+    const targetV2 = await listTasksV2({
+      root: join(targetRoot, ".ok"),
+      configFile: join(targetRoot, ".ok", "config.json"),
+      indexFile: join(targetRoot, ".ok", "index.json"),
+      tasksDir: join(targetRoot, ".ok", "tasks"),
+      plansDir: join(targetRoot, ".ok", "plans"),
+      prdsDir: join(targetRoot, ".ok", "prds"),
+      sessionsDir: join(targetRoot, ".ok", "sessions"),
+      locksDir: join(targetRoot, ".ok", "locks"),
+    });
     const parentNewId = body.moved.find((m: any) => m.sourceId === "tsk-parent").id;
     const childNewId = body.moved.find((m: any) => m.sourceId === "tsk-child").id;
-    const parentClone = target.tasks.find((t) => t.id === parentNewId)!;
-    const childClone = target.tasks.find((t) => t.id === childNewId)!;
+    const parentClone = targetV2.find((t) => t.id === parentNewId)!;
+    const childClone = targetV2.find((t) => t.id === childNewId)!;
     assert.deepStrictEqual(parentClone.subtaskIds, [childNewId], "parent should list new child id");
     assert.strictEqual(childClone.parentId, parentNewId, "child should reference new parent id");
   });
@@ -332,8 +362,17 @@ describe("apiMoveTasksToProject", () => {
     assert.strictEqual(res.status, 200);
     const body: any = await res.json();
     assert.strictEqual(body.moved.length, 1);
-    const target = JSON.parse(readFileSync(join(targetRoot, ".ok", "board.json"), "utf-8")) as Board;
-    const cloned = target.tasks.find((t) => t.id === body.moved[0].id)!;
+    const targetV2 = await listTasksV2({
+      root: join(targetRoot, ".ok"),
+      configFile: join(targetRoot, ".ok", "config.json"),
+      indexFile: join(targetRoot, ".ok", "index.json"),
+      tasksDir: join(targetRoot, ".ok", "tasks"),
+      plansDir: join(targetRoot, ".ok", "plans"),
+      prdsDir: join(targetRoot, ".ok", "prds"),
+      sessionsDir: join(targetRoot, ".ok", "sessions"),
+      locksDir: join(targetRoot, ".ok", "locks"),
+    });
+    const cloned = targetV2.find((t) => t.id === body.moved[0].id)!;
     assert.strictEqual(cloned.parentId, null, "orphan subtask should have parentId=null after move");
     assert.deepStrictEqual(cloned.subtaskIds, [], "no subtasks should be linked");
 
@@ -342,8 +381,17 @@ describe("apiMoveTasksToProject", () => {
     // parent's reference would never be the same — but we ensure the
     // child id is NOT in source's subtaskIds either since the child
     // is gone from source).
-    const source = JSON.parse(readFileSync(join(sourceRoot, ".ok", "board.json"), "utf-8")) as Board;
-    const parent = source.tasks.find((t) => t.id === "tsk-orphan-parent")!;
+    const sourceV2 = await listTasksV2({
+      root: join(sourceRoot, ".ok"),
+      configFile: join(sourceRoot, ".ok", "config.json"),
+      indexFile: join(sourceRoot, ".ok", "index.json"),
+      tasksDir: join(sourceRoot, ".ok", "tasks"),
+      plansDir: join(sourceRoot, ".ok", "plans"),
+      prdsDir: join(sourceRoot, ".ok", "prds"),
+      sessionsDir: join(sourceRoot, ".ok", "sessions"),
+      locksDir: join(sourceRoot, ".ok", "locks"),
+    });
+    const parent = sourceV2.find((t) => t.id === "tsk-orphan-parent")!;
     assert.ok(!parent.subtaskIds.includes("tsk-orphan"), "parent's subtaskIds should drop the moved child on the source side");
   });
 

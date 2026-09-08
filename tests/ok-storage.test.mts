@@ -2,7 +2,7 @@
 
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -111,7 +111,9 @@ describe("ok/storage", () => {
     const got = await readTask(p, "tsk-rw000001");
     assert.ok(got);
     assert.strictEqual(got!.title, "round-trip");
-    assert.strictEqual(got!.priority, "p1");
+    // Phase 1 dual-write: writeTask stores the v2 form. The v1 TaskPriority
+    // "p1" is mapped to v2 Priority "high" by convertTaskV1ToV2.
+    assert.strictEqual(got!.priority, "high");
   });
 
   it("writes a v2 task into its task directory", async () => {
@@ -216,16 +218,78 @@ describe("ok/storage", () => {
   });
 
   it("readJson throws on malformed JSON", async () => {
-    const bad = join(p.tasksDir, "tsk-malformed.json");
+    // Phase 8+: v2 directory format
+    const badDir = join(p.tasksDir, "tsk-malformed");
+    mkdirSync(badDir, { recursive: true });
+    const bad = join(badDir, "task.json");
     writeFileSync(bad, "{ not valid json", "utf-8");
     await assert.rejects(() => readTask(p, "tsk-malformed"));
-    rmSync(bad);
+    rmSync(badDir, { recursive: true, force: true });
   });
 
   it("readJson throws on shape mismatch", async () => {
-    const bad = join(p.tasksDir, "tsk-wrongshape.json");
+    // Phase 8+: v2 directory format
+    const badDir = join(p.tasksDir, "tsk-wrongshape");
+    mkdirSync(badDir, { recursive: true });
+    const bad = join(badDir, "task.json");
     writeFileSync(bad, JSON.stringify({ schema: "wrong.schema" }), "utf-8");
     await assert.rejects(() => readTask(p, "tsk-wrongshape"));
-    rmSync(bad);
+    rmSync(badDir, { recursive: true, force: true });
+  });
+
+  // ─── Phase 8: v2-only write ─────────────────────────────────────────
+
+  it("writeTask writes v2 directory only (not flat file)", async () => {
+    const id = "tsk-v2onlywrite01";
+    await writeTask(p, makeTask(id, { title: "v2 only" }));
+    const flat = join(p.tasksDir, `${id}.json`);
+    const dirFile = join(p.tasksDir, id, "task.json");
+    assert.strictEqual(existsSync(flat), false, "v1 flat file NOT written");
+    assert.ok(existsSync(dirFile), "v2 directory task.json written");
+    const v2Raw = JSON.parse(readFileSync(dirFile, "utf-8"));
+    assert.strictEqual(v2Raw.schema, "ok.task.v2");
+    assert.strictEqual(v2Raw.title, "v2 only");
+  });
+
+  // ─── Phase 8: v2-only read ──────────────────────────────────────────
+
+  it("readTask reads v2 directory only, ignores v1 flat file", async () => {
+    const id = "tsk-v2only01";
+    await writeTask(p, makeTask(id, { title: "v2 only" }));
+    // Overwrite the flat file with a sentinel that would fail validation
+    // if read. v2-only read must skip the flat file entirely.
+    const flat = join(p.tasksDir, `${id}.json`);
+    writeFileSync(flat, JSON.stringify({ schema: "wrong.schema" }), "utf-8");
+    const got = await readTask(p, id);
+    assert.ok(got, "v2 directory is read");
+    assert.strictEqual(got!.title, "v2 only");
+  });
+
+  it("readTask returns undefined when v2 directory is missing", async () => {
+    const id = "tsk-nov2dir01";
+    // Write only the v1 flat file (no directory form).
+    const flat = join(p.tasksDir, `${id}.json`);
+    const task = makeTask(id, { title: "v1 only" });
+    writeFileSync(flat, JSON.stringify(task), "utf-8");
+    const got = await readTask(p, id);
+    // Phase 8: v2-only read returns undefined when no v2 exists
+    assert.strictEqual(got, undefined);
+  });
+
+  it("listTasks returns only v2 directory tasks, filters orphaned v1", async () => {
+    // Create a v2 task (should appear in list)
+    await writeTask(p, makeTask("tsk-v2list01", { title: "v2 task" }));
+    // Create a v1-only task (should NOT appear in list - it's orphaned)
+    const v1OnlyPath = join(p.tasksDir, "tsk-v1only01.json");
+    writeFileSync(v1OnlyPath, JSON.stringify(makeTask("tsk-v1only01", { title: "v1 only" })), "utf-8");
+
+    const all = await listTasks(p);
+    const v2Task = all.find((t) => t.id === "tsk-v2list01");
+    const v1Only = all.find((t) => t.id === "tsk-v1only01");
+    assert.ok(v2Task, "v2 task appears in list");
+    assert.strictEqual(v1Only, undefined, "v1-only task is filtered out");
+    // No duplicates by id.
+    const ids = all.map((t) => t.id);
+    assert.strictEqual(new Set(ids).size, ids.length, "no duplicate ids");
   });
 });

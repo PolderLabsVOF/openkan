@@ -19,7 +19,7 @@
 
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
-import { type Task, type TaskStatus } from "./schemas.ts";
+import { type TaskV1, type TaskStatus } from "./schemas.ts";
 import { newId, nowIso } from "./ids.ts";
 import {
   initIfMissing,
@@ -66,7 +66,7 @@ function mapStatus(t: LegacyTask): TaskStatus {
   return "pending";
 }
 
-function mapPriority(p: string | undefined): Task["priority"] | undefined {
+function mapPriority(p: string | undefined): TaskV1["priority"] | undefined {
   if (!p) return undefined;
   if (p === "urgent" || p === "high") return "p0";
   if (p === "normal") return "p2";
@@ -89,7 +89,7 @@ async function importTaskFromJson(p: OkPaths, legacy: LegacyTask, openkanDir: st
   const id = deriveNewId(legacy);
   const existing = await readTask(p, id);
   if (existing) return { id, created: false };
-  const task: Task = {
+  const task: TaskV1 = {
     schema: "ok.task.v1",
     id,
     title: (legacy.title ?? "untitled").slice(0, 200),

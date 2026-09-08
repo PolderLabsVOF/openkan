@@ -67,7 +67,9 @@ describe("ok migrate", () => {
     assert.strictEqual(t!.owner, "alice");
     assert.ok(t!.description!.includes("legacy body"));
     assert.deepStrictEqual(t!.scopes, ["migrated"]);
-    assert.strictEqual(t!.priority, "p0");
+    // Phase 1 dual-write: migrate writes a v1 Task; readTask returns v2
+    // form. The v1 TaskPriority "p0" maps to v2 Priority "urgent".
+    assert.strictEqual(t!.priority, "urgent");
 
     const d = await readTask(p, "tsk-done0001");
     assert.ok(d);

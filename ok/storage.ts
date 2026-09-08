@@ -14,17 +14,18 @@ import * as fsSync from "node:fs";
 import * as path from "node:path";
 import {
   type Task,
+  type TaskV1,
   type TaskV2,
   type Plan,
   type Prd,
   type OkConfig,
   type OkIndex,
-  isTask,
   isTaskV2,
   isPlan,
   isPrd,
   isOkConfig,
   isOkIndex,
+  convertTaskV1ToV2,
   type IndexEntry,
 } from "./schemas.ts";
 import { nowIso } from "./ids.ts";
@@ -145,24 +146,37 @@ export async function listDir(p: string, prefix: string): Promise<string[]> {
     .sort();
 }
 
-export async function readTask(p: OkPaths, id: string): Promise<Task | undefined> {
+/**
+ * Read a task. Phase 8 makes this v2-only: reads the directory form
+ * (`.ok/tasks/<id>/task.json`). Returns undefined if no v2 file exists.
+ * Throws on invalid JSON or schema violations.
+ */
+export async function readTask(p: OkPaths, id: string): Promise<TaskV2 | undefined> {
   if (!/^tsk-[A-Za-z0-9_-]+$/.test(id)) throw new Error(`invalid task id: ${id}`);
-  return readJsonOptional(path.join(p.tasksDir, `${id}.json`), isTask);
+  // Phase 8: v2-only read.
+  return readTaskV2(p, id);
 }
 
-export async function writeTask(p: OkPaths, task: Task): Promise<void> {
-  await fs.mkdir(p.tasksDir, { recursive: true });
-  await writeJson(path.join(p.tasksDir, `${task.id}.json`), task);
+/**
+ * Write a task in v2 directory form (`.ok/tasks/<id>/task.json`).
+ * Accepts either v1 `Task` or v2 `TaskV2`; v1 input is promoted to
+ * v2 via `convertTaskV1ToV2` before writing. Phase 8+ is v2-only.
+ */
+export async function writeTask(p: OkPaths, task: TaskV1 | TaskV2): Promise<void> {
+  const v2: TaskV2 = isTaskV2(task) ? task : convertTaskV1ToV2(task);
+  // Write the directory form — this is the Phase 8+ canonical shape.
+  await writeTaskV2(p, v2);
 }
 
-export async function listTasks(p: OkPaths): Promise<Task[]> {
-  const files = await listDir(p.tasksDir, "tsk");
-  const out: Task[] = [];
-  for (const f of files) {
-    const v = await readJsonOptional(path.join(p.tasksDir, f), isTask);
-    if (v) out.push(v);
-  }
-  return out;
+/**
+ * List every task in `.ok/tasks/`. Phase 8 returns only tasks with
+ * v2 directory form (`.ok/tasks/<id>/task.json`). Tasks with only
+ * legacy flat files are filtered out as orphaned. All entries are
+ * returned as `TaskV2`.
+ */
+export async function listTasks(p: OkPaths): Promise<TaskV2[]> {
+  // Phase 8: v2-only listing.
+  return listTasksV2(p);
 }
 
 /**
@@ -249,7 +263,11 @@ export async function listPrds(p: OkPaths): Promise<Prd[]> {
 
 /** Rebuild `.ok/index.json` from the filesystem. */
 export async function rebuildIndex(p: OkPaths): Promise<OkIndex> {
-  const [tasks, plans, prds] = await Promise.all([listTasks(p), listPlans(p), listPrds(p)]);
+  // Phase 4: index reads from the v2 directory form only. Legacy v1 flat
+  // files are excluded from the index; they remain readable via readTask's
+  // v2-primary → v1-fallback chain for backwards-compat consumers but are
+  // not enumerated in the index.
+  const [tasks, plans, prds] = await Promise.all([listTasksV2(p), listPlans(p), listPrds(p)]);
   const toEntry = (e: { id: string; status: string; title: string; updatedAt: string }): IndexEntry => ({
     id: e.id,
     status: e.status,

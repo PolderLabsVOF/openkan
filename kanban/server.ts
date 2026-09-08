@@ -25,6 +25,8 @@ import {
   ensureBoardForProject,
   reconcileOkTask,
   reconcileAllOkTasks,
+  toTaskV2,
+  fromPlanningTask,
 } from "./board.ts";
 import { extractMetadata } from "./tags.ts";
 import {
@@ -78,7 +80,7 @@ import {
   DEFAULT_AGENTS_CONFIG,
 } from "../ok/schemas.ts";
 import { handleChatRequest, sendTurn } from "./chat.ts";
-import { initIfMissing as initOkIfMissing, listPrds as listOkPrds, readPrd as readOkPrd, writePrd as writeOkPrd, rebuildIndex as rebuildOkIndex } from "../ok/storage.ts";
+import { initIfMissing as initOkIfMissing, listPrds as listOkPrds, readPrd as readOkPrd, writePrd as writeOkPrd, rebuildIndex as rebuildOkIndex, writeTaskV2, listTasksV2, paths as okPaths } from "../ok/storage.ts";
 import type { PrdGoal } from "../ok/schemas.ts";
 import { WebSocketServer, WebSocket } from "ws";
 import { runImport } from "./import.ts";
@@ -1714,17 +1716,25 @@ export async function apiMoveTasksToProject(targetProjectId: string, req: Reques
     }
   }
 
-  // Stage 3: copy per-task artifact directories from source to target.
-  // If a copy fails we roll the cloned record back out of the target
-  // board and surface it as a skipped entry so the response reflects
-  // the true outcome.
+  // Stage 3: copy per-task artifact directories from source to target,
+  // and persist each moved task as a v2 directory file on the target.
+  // If a copy or v2 write fails we roll the cloned record back out of
+  // the target snapshot and surface it as a skipped entry so the
+  // response reflects the true outcome.
   const successful: StageRecord[] = [];
+  const targetOkPaths = okPaths(target.root);
   for (const stage of stages) {
     const srcDir = join(sourceKanbanDir, "tasks", stage.sourceId);
     const destDir = join(targetKanbanDir, "tasks", stage.newId);
     ensureDir(destDir);
     try {
       cpSync(srcDir, destDir, { recursive: true });
+      // Phase 6+/7 mirror: write the v2 form on the target side, then
+      // drop this id from the in-memory target snapshot since target
+      // tasks now live as per-id directory files (board.json is
+      // metadata-only after Phase 7).
+      await writeTaskV2(targetOkPaths, toTaskV2(stage.newTask));
+      targetBoard.tasks = targetBoard.tasks.filter((t) => t.id !== stage.newId);
       successful.push(stage);
     } catch (e) {
       skipped.push({ id: stage.sourceId, reason: `copy failed: ${(e as Error)?.message ?? e}` });
@@ -1748,10 +1758,36 @@ export async function apiMoveTasksToProject(targetProjectId: string, req: Reques
     });
   }
 
-  // Persist the target board atomically and re-render its MDX mirror.
+  // Persist the target board metadata-only (no tasks array — the
+  // per-task v2 directory files are the source of truth on the target
+  // side as well). Re-render the MDX mirror from the surviving on-disk
+  // v2 tasks so the rendered board summary stays accurate.
   ensureDir(targetKanbanDir);
-  writeFileAtomic(targetBoardFile, JSON.stringify(targetBoard, null, 2));
-  writeBoardMdx(targetBoard as unknown as Board, targetKanbanDir);
+  const targetMetadata = {
+    version: targetBoard.version,
+    columns: targetBoard.columns,
+    sessions: targetBoard.sessions,
+  };
+  writeFileAtomic(targetBoardFile, JSON.stringify(targetMetadata, null, 2));
+
+  // Re-render the target board.mdx by reading v2 dirs and rebuilding
+  // the snapshot used by the renderer. We don't need to mutate the
+  // server's in-memory `_board` cache here.
+  try {
+    const targetV2Tasks = await listTasksV2(targetOkPaths);
+    const tasksForMdx: Task[] = [];
+    for (const v2 of targetV2Tasks) {
+      const t = fromPlanningTask(v2);
+      if (t) tasksForMdx.push(t);
+    }
+    const rendered: Board = {
+      version: 1,
+      columns: targetBoard.columns as unknown as Board["columns"],
+      tasks: tasksForMdx,
+      sessions: targetBoard.sessions as any,
+    };
+    writeBoardMdx(rendered, targetKanbanDir);
+  } catch { /* best-effort: MDX mirror is advisory */ }
 
   // Finally, remove the source tasks from the active board and clean
   // their per-task directories. We do this last so a target-write
@@ -3003,8 +3039,14 @@ export async function startOrAttach(
         // the in-memory board when the id is new; mirror-engine no-op when
         // the task already lives here. Event paths emitted by the watcher
         // are project-root-relative, so they can start with ".ok/" directly.
-        const okIdMatch = ev.path.match(/(?:\/|^)\.ok\/tasks\/([^/]+)\.json$/);
-        const okTaskId = okIdMatch?.[1];
+        // Phase 8+: the canonical write is the v2 directory form
+        // `.ok/tasks/<id>/task.json`, so the id is captured from the
+        // directory segment. The legacy v1 flat-file pattern
+        // `.ok/tasks/<id>.json` is also accepted so any lingering
+        // v1-aware tooling still reconciles.
+        const v2Match = ev.path.match(/(?:\/|^)\.ok\/tasks\/([^/]+)\/task\.json$/);
+        const v1Match = ev.path.match(/(?:\/|^)\.ok\/tasks\/([^/]+)\.json$/);
+        const okTaskId = v2Match?.[1] ?? (v1Match && !v1Match[1].includes("/") ? v1Match[1] : undefined);
         if (okTaskId && /^tsk-[A-Za-z0-9_-]+$/.test(okTaskId)) {
           try {
             const inserted = await reconcileOkTask(okTaskId, dir);

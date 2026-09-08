@@ -26,7 +26,8 @@ export type TaskStatus = "pending" | "in_progress" | "review" | "done" | "cancel
 
 export type TaskPriority = "p0" | "p1" | "p2" | "p3";
 
-export interface Task {
+/** @deprecated Legacy flat-file task schema; use Task (TaskV2) instead. */
+export interface TaskV1 {
   schema: "ok.task.v1";
   /** Stable identifier; `<kind>-<nanoid>` e.g. `tsk-Vn4kRp2x`. */
   id: string;
@@ -82,7 +83,7 @@ export interface Task {
 }
 
 /** Canonical task record shared by the planning CLI and Kanban board. */
-export interface TaskV2 extends Omit<Task, "schema" | "description" | "priority" | "archived"> {
+export interface TaskV2 extends Omit<TaskV1, "schema" | "description" | "priority" | "archived"> {
   schema: "ok.task.v2";
   description: string;
   column: "backlog" | "todo" | "doing" | "review" | "done";
@@ -112,6 +113,9 @@ export interface TaskV2 extends Omit<Task, "schema" | "description" | "priority"
   offlineMirrorId?: string;
 }
 
+/** Canonical task type; v2 is the only persisted format after Phase 10. */
+export type Task = TaskV2;
+
 export function isTaskV2(obj: unknown): obj is TaskV2 {
   if (typeof obj !== "object" || obj === null) return false;
   const task = obj as Record<string, unknown>;
@@ -140,7 +144,8 @@ export function validateTaskV2(obj: unknown): TaskValidationError | null {
   return { id, reason: "invalid ok.task.v2 shape" };
 }
 
-export function isTask(obj: unknown): obj is Task {
+/** @deprecated Use isTaskV2 for canonical tasks. */
+export function isTask(obj: unknown): obj is TaskV1 {
   if (typeof obj !== "object" || obj === null) return false;
   const t = obj as Record<string, unknown>;
   if (t.schema !== "ok.task.v1") return false;
@@ -168,6 +173,140 @@ export interface TaskValidationError {
   reason: string;
 }
 
+// ─── Task v1 ↔ v2 conversion ────────────────────────────────────────────────
+//
+// Phase 1 of the unified-task-storage plan needs both directions:
+//   - Phase 1 dual-write: callers that hold a v1 `Task` (e.g. `ok task add`)
+//     must produce a v2 `TaskV2` for the directory form. `convertTaskV1ToV2`
+//     synthesises the v2-only required fields with safe defaults.
+//   - Phase 5 mirror: callers that hold a full `TaskV2` (board.ts) must
+//     also produce a v1 fallback for read-only consumers. `convertTaskV2ToV1`
+//     drops v2-only fields and re-widens v1-optional fields.
+//
+// The conversions are lossy: v1 → v2 synthesises column/order/state/agent
+// etc. from defaults, and v2 → v1 drops those fields. That is acceptable
+// because Phase 2 makes reads v2-primary: the v1 form is a fallback for
+// callers that have not yet migrated, not a source of truth.
+
+const STATUS_TO_STATE: Record<TaskStatus, TaskV2["state"]> = {
+  pending: "idle",
+  in_progress: "running",
+  review: "waiting-for-input",
+  done: "done",
+  cancelled: "cancelled",
+};
+
+const STATE_TO_STATUS: Record<TaskV2["state"], TaskStatus> = {
+  idle: "pending",
+  running: "in_progress",
+  "waiting-for-input": "review",
+  done: "done",
+  failed: "cancelled",
+  cancelled: "cancelled",
+};
+
+const V1_TO_V2_PRIORITY: Record<TaskPriority, TaskV2["priority"]> = {
+  p0: "urgent",
+  p1: "high",
+  p2: "normal",
+  p3: "low",
+};
+
+const V2_TO_V1_PRIORITY: Record<TaskV2["priority"], TaskPriority> = {
+  urgent: "p0",
+  high: "p1",
+  normal: "p2",
+  low: "p3",
+};
+
+/**
+ * Convert a v1 `Task` into a v2 `TaskV2`. Synthesises the v2-only required
+ * fields with safe defaults; the resulting record is structurally a
+ * superset of `t` and round-trips back through `convertTaskV2ToV1` minus
+ * the synthesised fields. Use this when migrating legacy flat files
+ * (`.ok/tasks/<id>.json`) into the directory form during Phase 3.
+ */
+export function convertTaskV1ToV2(t: TaskV1): TaskV2 {
+  return {
+    // v1 fields preserved verbatim
+    schema: "ok.task.v2",
+    id: t.id,
+    title: t.title,
+    status: t.status,
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt,
+    description: t.description ?? "",
+    owner: t.owner,
+    plan: t.plan,
+    prd: t.prd,
+    scopes: t.scopes,
+    deps: t.deps,
+    evidence: t.evidence,
+    acceptance: t.acceptance,
+    startedAt: t.startedAt,
+    completedAt: t.completedAt,
+    mirrorStatus: t.mirrorStatus,
+    mirrorId: t.mirrorId,
+    // v2-only fields synthesised from v1 + defaults
+    column: t.status === "done" ? "done" : t.status === "in_progress" ? "doing" : t.status === "review" ? "review" : t.status === "cancelled" ? "backlog" : "todo",
+    order: 0,
+    sessionId: null,
+    agent: t.owner ?? "",
+    model: null,
+    state: STATUS_TO_STATE[t.status] ?? "idle",
+    lastError: null,
+    artifact: "",
+    sessionArtifact: null,
+    artifacts: { mdxPath: "", commentsPath: "", inputsPath: "", statePath: "" },
+    pendingInputs: [],
+    tags: t.scopes ?? [],
+    category: "task",
+    priority: t.priority ? V1_TO_V2_PRIORITY[t.priority] : "normal",
+    effort: null,
+    archived: t.archived ?? false,
+    assignees: t.owner ? [t.owner] : [],
+    images: [],
+    parentId: null,
+    subtaskIds: [],
+  };
+}
+
+/**
+ * Project a v2 `TaskV2` down to its v1 `Task` form. Drops the v2-only
+ * fields (`column`, `order`, `sessionId`, `agent`, `model`, `state`,
+ * `lastError`, `artifact`, `sessionArtifact`, `artifacts`, `tags`,
+ * `category`, `effort`, `assignees`, `images`, `parentId`,
+ * `subtaskIds`, `pendingInputs`, `offlineMirrorId`). Maps `priority`
+ * from v2's enum back to v1's. Used by Phase 1 dual-write to keep
+ * the legacy flat file in sync.
+ */
+export function convertTaskV2ToV1(t: TaskV2): TaskV1 {
+  const out: TaskV1 = {
+    schema: "ok.task.v1",
+    id: t.id,
+    title: t.title,
+    description: t.description || undefined,
+    status: STATE_TO_STATUS[t.state] ?? t.status,
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt,
+  };
+  if (t.owner !== undefined) out.owner = t.owner;
+  if (t.plan !== undefined) out.plan = t.plan;
+  if (t.prd !== undefined) out.prd = t.prd;
+  if (t.scopes && t.scopes.length > 0) out.scopes = t.scopes;
+  if (t.deps && t.deps.length > 0) out.deps = t.deps;
+  if (t.evidence && t.evidence.length > 0) out.evidence = t.evidence;
+  if (t.acceptance && t.acceptance.length > 0) out.acceptance = t.acceptance;
+  if (t.startedAt !== undefined) out.startedAt = t.startedAt;
+  if (t.completedAt !== undefined) out.completedAt = t.completedAt;
+  if (t.mirrorStatus !== undefined) out.mirrorStatus = t.mirrorStatus;
+  if (t.mirrorId !== undefined) out.mirrorId = t.mirrorId;
+  if (t.archived) out.archived = t.archived;
+  if (t.priority) out.priority = V2_TO_V1_PRIORITY[t.priority];
+  return out;
+}
+
+/** @deprecated Use validateTaskV2 for canonical tasks. */
 export function validateTask(obj: unknown): TaskValidationError | null {
   if (typeof obj !== "object" || obj === null) {
     return { reason: "task must be an object" };
