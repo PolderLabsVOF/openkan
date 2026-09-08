@@ -58,6 +58,11 @@ export interface Task {
   completedAt?: string;
   /** Free-form evidence: commit shas, file:line refs, URLs. */
   evidence?: string[];
+  /** Lifecycle flag. True means this task has been retired and should not
+   *  surface in dashboard views. Independent of `status`: a task can be
+   *  `status: "cancelled", archived: true` (one-shot retire) or
+   *  `status: "done", archived: true` (kept for audit, hidden from board). */
+  archived?: boolean;
   /** Acceptance criteria bullets (the Definition of Done). */
   acceptance?: string[];
   /**
