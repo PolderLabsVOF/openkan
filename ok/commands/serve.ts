@@ -470,7 +470,13 @@ async function preflightExistingServer(
 // ─── cmdStart / cmdServe / cmdStartTray ────────────────────────────────────────
 
 export async function cmdStart(ctx: BoardContext, argv: string[]): Promise<void> {
-  const args = parseArgs(argv);
+  // parseArgs treats argv[0] as the subcommand name, but bin/ok.ts strips
+  // "start" before calling here — so when a caller invokes
+  //   cmdStart(ctx, ["--mode=foreground", "--no-open"])
+  // (as tests/serve-cli.test.mjs does via spawnServe), the flags never get
+  // parsed because the parser sees "--mode=foreground" as the cmd. Prepend
+  // a synthetic placeholder so every argv[i] for i ≥ 1 is parsed correctly.
+  const args = parseArgs(argv.length === 0 || argv[0].startsWith("-") ? ["start", ...argv] : argv);
   if (argv.includes("-h") || argv.includes("--help")) {
     printHelp("start");
     return;

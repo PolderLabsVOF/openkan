@@ -11,16 +11,16 @@
 //   2. Integration: with the server's watcher live, writing the per-task JSON
 //      file fires task.created SSE and bumps GET /api/board.
 
-import { describe, it, before, after, beforeEach } from "node:test";
+import { describe, it, test, before, after, beforeEach } from "node:test";
 import assert from "node:assert";
 import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 
 import { initBoard, getBoard, reconcileOkTask, taskArtifacts, KANBAN_DIR } from "../kanban/board.ts";
 import { writeTask, paths as okPaths, readTask as readOkTask } from "../ok/storage.ts";
 import type { Task as OkTask } from "../ok/schemas.ts";
-import { runTask } from "../ok/commands/task.ts";
 import { startOrAttach, type StartOrAttachResult } from "../kanban/server.ts";
 
 // Module-scoped server reference for signal handler cleanup.
@@ -61,22 +61,27 @@ function makeOkTask(id: string, status: OkTask["status"], title: string): OkTask
 }
 
 async function runOkTask(cwd: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
-  const saved = process.cwd();
-  const stdout: string[] = [];
-  const stderr: string[] = [];
-  const originalStdout = process.stdout.write.bind(process.stdout);
-  const originalStderr = process.stderr.write.bind(process.stderr);
-  process.chdir(cwd);
-  (process.stdout as any).write = (value: string) => { stdout.push(value); return true; };
-  (process.stderr as any).write = (value: string) => { stderr.push(value); return true; };
-  try {
-    const code = await runTask(args);
-    return { code, stdout: stdout.join(""), stderr: stderr.join("") };
-  } finally {
-    (process.stdout as any).write = originalStdout;
-    (process.stderr as any).write = originalStderr;
-    process.chdir(saved);
-  }
+  // Spawn a child process so the test runner's process.stdout events
+  // (test:start, test:complete, test:fail, etc.) cannot leak into the
+  // captured stdout. In-process capture via a stdout.write hook
+  // collides with node --test's reporter, which writes to
+  // process.stdout asynchronously from the same event loop. The child
+  // process is the only fully isolated path.
+  const { spawn } = await import("node:child_process");
+  const scriptPath = fileURLToPath(new URL("../bin/ok.ts", import.meta.url));
+  return new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
+    const child = spawn(
+      process.execPath,
+      ["--experimental-strip-types", scriptPath, "task", ...args],
+      { cwd, env: { ...process.env }, stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (b: Buffer) => { stdout += b.toString("utf-8"); });
+    child.stderr.on("data", (b: Buffer) => { stderr += b.toString("utf-8"); });
+    child.on("close", (code) => resolve({ code: code ?? 0, stdout, stderr }));
+    child.on("error", (err) => resolve({ code: 1, stdout, stderr: stderr + err.message }));
+  });
 }
 
 function taskIdFromOutput(stdout: string): string {
@@ -227,6 +232,12 @@ describe("ok task add → dashboard (integration)", () => {
   let root: string;
   let server: Awaited<ReturnType<typeof startOrAttach>> | null = null;
   let baseUrl = "";
+  // Snapshot OPENKAN_HOST/OPENKAN_PORT so the after() hook can restore them
+  // exactly. Setting them in before() routes every ok task add/claim/complete
+  // call through the test's ephemeral server instead of the developer's live
+  // 127.0.0.1:7777 dashboard (the v0.6.1 fixture-leak shape).
+  let savedHost: string | undefined;
+  let savedPort: string | undefined;
 
   before(async () => {
     root = tmp();
@@ -246,9 +257,18 @@ describe("ok task add → dashboard (integration)", () => {
     serverRef = server;
     baseUrl = `http://127.0.0.1:${port}`;
     writeFileSync(join(root, ".ok", "openkan.json"), JSON.stringify({ host: "127.0.0.1", port }));
+
+    savedHost = process.env.OPENKAN_HOST;
+    savedPort = process.env.OPENKAN_PORT;
+    process.env.OPENKAN_HOST = "127.0.0.1";
+    process.env.OPENKAN_PORT = String(port);
   });
 
   after(async () => {
+    if (savedHost === undefined) delete process.env.OPENKAN_HOST;
+    else process.env.OPENKAN_HOST = savedHost;
+    if (savedPort === undefined) delete process.env.OPENKAN_PORT;
+    else process.env.OPENKAN_PORT = savedPort;
     if (serverRef === server) serverRef = null;
     if (server) await server.stop();
     rmSync(root, { recursive: true, force: true });
@@ -292,13 +312,19 @@ describe("ok task add → dashboard (integration)", () => {
   });
 
   it("ok task add posts the locally-minted id to the board", async () => {
+    // First, confirm which server baseUrl is actually pointing to
+    const diagBoard = await (await fetch(`${baseUrl}/api/board`)).json() as { tasks: any[] };
+    writeFileSync("/tmp/ok-add-debug.log", `baseUrl=${baseUrl} boardTasksBefore=${diagBoard.tasks.length} sampleTitles=${diagBoard.tasks.slice(0, 3).map(t => t.title).join(" | ")}\n`, { flag: "a" });
     const added = await runOkTask(root, ["add", "server-visible task", "--owner", "alice"]);
-    assert.strictEqual(added.code, 0);
+    assert.strictEqual(added.code, 0, `add failed: stdout=${added.stdout} stderr=${added.stderr}`);
     const id = taskIdFromOutput(added.stdout);
-
+    writeFileSync("/tmp/ok-add-debug.log", `id=${id}\nstdout=${added.stdout}\nstderr=${added.stderr}\nenv in parent: HOST=${process.env.OPENKAN_HOST} PORT=${process.env.OPENKAN_PORT}\nbaseUrl=${baseUrl}\n`, { flag: "a" });
+    // Give the watcher / server a moment
+    await new Promise(r => setTimeout(r, 200));
     const board = await (await fetch(`${baseUrl}/api/board`)).json() as {
       tasks: Array<{ id: string; title: string; offlineMirrorId?: string }>;
     };
+    writeFileSync("/tmp/ok-add-debug.log", `board tasks: ${board.tasks.length} titles: ${board.tasks.slice(-5).map(t => `${t.id}=${t.title}`).join(", ")}\n`, { flag: "a" });
     const created = board.tasks.find((task) => task.id === id);
     assert.strictEqual(created?.title, "server-visible task");
     assert.strictEqual(created?.offlineMirrorId, id);
