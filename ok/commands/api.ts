@@ -50,3 +50,66 @@ export async function cmdApi(argv: string[]): Promise<void> {
   printApiResult(response.status, response.statusText, body, args.flags.json === true || args.flags.json === "true");
   if (!response.ok) process.exitCode = 1;
 }
+
+/**
+ * Options for `apiRequest` — the non-printing primitive used by
+ * programmatic callers (e.g. `ok task add`, `ok task claim`) that need
+ * the response body parsed without polluting stdout.
+ */
+export interface ApiRequestOptions {
+  path: string;
+  method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
+  payload?: unknown;
+  /** Per-call overrides; falls back to the active config. */
+  host?: string;
+  port?: number;
+  /** Abort timeout in ms; default 4000. Set to 0 to disable. */
+  timeoutMs?: number;
+}
+
+export interface ApiRequestResult {
+  ok: boolean;
+  status: number;
+  body: unknown;
+  /** True when the request never reached a server (timeout / connection refused). */
+  offline: boolean;
+  error?: string;
+}
+
+/**
+ * Issue a single API request and parse the JSON body. Returns
+ * `{ ok, status, body, offline }` rather than throwing so callers can
+ * treat "server unreachable" as a soft fallback rather than an error.
+ *
+ * `offline` is true when the underlying fetch fails (ECONNREFUSED,
+ * DNS, abort timeout). HTTP error responses (4xx/5xx) set `ok=false`
+ * but `offline=false` so callers can distinguish a real failure from
+ * a missing server.
+ */
+export async function apiRequest(opts: ApiRequestOptions): Promise<ApiRequestResult> {
+  const args = parseArgs(["api", opts.path]);
+  if (opts.host !== undefined) args.flags["host"] = String(opts.host);
+  if (opts.port !== undefined) args.flags["port"] = String(opts.port);
+  const method = opts.method ?? "GET";
+  const headers: Record<string, string> = { Accept: "application/json" };
+  const init: RequestInit = { method, headers };
+  if (opts.payload !== undefined) {
+    headers["content-type"] = "application/json";
+    init.body = JSON.stringify(opts.payload);
+  }
+  const timeoutMs = opts.timeoutMs ?? 4000;
+  if (timeoutMs > 0) init.signal = AbortSignal.timeout(timeoutMs);
+  const url = `${apiBaseUrl(args)}${opts.path}`;
+  let response: Response;
+  try {
+    response = await fetch(url, init);
+  } catch (e: any) {
+    return { ok: false, status: 0, body: null, offline: true, error: e?.message ?? String(e) };
+  }
+  const text = await response.text();
+  let body: unknown = text;
+  if (text.length > 0) {
+    try { body = JSON.parse(text); } catch { /* keep raw text */ }
+  }
+  return { ok: response.ok, status: response.status, body, offline: false };
+}

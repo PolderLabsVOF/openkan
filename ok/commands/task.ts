@@ -25,6 +25,7 @@ import {
 import { type ParsedArgs, newId, nowIso, parseArgs, flagString, flagCsv, flagBool, runMain } from "../ids.ts";
 import { claim, heartbeat, release, assertUsable, LockHeldError } from "../lock.ts";
 import { pathToFileURL } from "node:url";
+import { apiRequest } from "./api.ts";
 
 const STATUSES: TaskStatus[] = ["pending", "in_progress", "review", "done", "cancelled"];
 const PRIORITIES: TaskPriority[] = ["p0", "p1", "p2", "p3"];
@@ -100,17 +101,24 @@ async function cmdTaskAdd(args: string[]): Promise<number> {
   if (title.length > 200) throw new Error("title must be <= 200 chars");
 
   const status = parseStatus(flagString(flags, "status")) ?? "pending";
+  const columnArg = flagString(flags, "column");
+  const column = columnArg ?? "todo";
+  if (column && !["backlog", "todo", "doing", "review", "done"].includes(column)) {
+    throw new Error("column must be backlog|todo|doing|review|done");
+  }
 
   const p = await paths();
   const cfg = (await readConfig(p))!;
   const now = nowIso();
+  const localId = newId("tsk");
   const task: Task = {
     schema: "ok.task.v1",
-    id: newId("tsk"),
+    id: localId,
     title,
     status,
     createdAt: now,
     updatedAt: now,
+    mirrorStatus: "pending",
   };
   const owner = flagString(flags, "owner");
   if (owner) task.owner = owner;
@@ -135,6 +143,55 @@ async function cmdTaskAdd(args: string[]): Promise<number> {
 
   await writeTask(p, task);
   await refreshIndex(p);
+
+  // Attempt to mirror onto the dashboard. If a server is reachable the
+  // task becomes visible on the board immediately; if not, the offline
+  // file stays `mirrorStatus: "pending"` for the reconciler to pick up
+  // on the next server boot. `clientId` lets the server dedupe retries
+  // (network blip after the task was actually created server-side).
+  const payload: Record<string, unknown> = {
+    title,
+    column,
+    clientId: localId,
+  };
+  if (task.owner) payload.assignee = task.owner;
+  if (desc) payload.description = desc;
+
+  const response = await apiRequest({
+    path: "/api/tasks",
+    method: "POST",
+    payload,
+    timeoutMs: 4000,
+  });
+
+  if (response.offline) {
+    process.stderr.write(`ok task add: dashboard unreachable (${response.error ?? "no server"}); kept offline, will reconcile on next server boot\n`);
+  } else if (response.ok) {
+    const serverTask = response.body as { id?: string; offlineMirrorId?: string } | null;
+    const serverId = serverTask?.id;
+    if (serverId && serverId !== localId) {
+      // Server minted a new id (e.g. duplicate detected and existing
+      // returned with a different id). Move the offline cache to mirror
+      // it and record the link so claim/heartbeat/complete route back.
+      await fs.rename(path.join(p.tasksDir, `${localId}.json`), path.join(p.tasksDir, `${serverId}.json`));
+      task.id = serverId;
+      task.mirrorStatus = "synced";
+      task.mirrorId = serverId;
+      await writeTask(p, task);
+      await refreshIndex(p);
+    } else {
+      task.mirrorStatus = "synced";
+      task.mirrorId = serverId ?? localId;
+      await writeTask(p, task);
+      await refreshIndex(p);
+    }
+  } else {
+    // Server replied with a non-2xx (e.g. 422 validation). The offline
+    // cache is the local source of truth; the next retry can re-issue.
+    const errMsg = (response.body as { error?: string })?.error ?? `HTTP ${response.status}`;
+    process.stderr.write(`ok task add: dashboard rejected (${errMsg}); kept offline\n`);
+  }
+
   process.stdout.write(`${task.id}\n`);
   return 0;
 }
