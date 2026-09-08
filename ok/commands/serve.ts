@@ -319,7 +319,7 @@ function spawnBackgroundChild(opts: {
   const childArgs: string[] = [
     ...process.execArgv,
     scriptPath,
-    "start",
+    "serve",
     "--mode=foreground",
     `--port=${opts.port}`,
     `--host=${opts.host}`,
@@ -364,7 +364,8 @@ export async function cmdStart(ctx: BoardContext, argv: string[]): Promise<void>
     return;
   }
   const host = (args.flags["host"] as string) ?? loadConfig().host;
-  const port = parseInt((args.flags["port"] as string) ?? String(loadConfig().port), 10);
+  const portStr = (args.flags["port"] as string) ?? String(loadConfig().port);
+  const port = parseInt(portStr, 10) || DEFAULT_CONFIG.port;
   const noOpen = args.flags["no-open"] === true || args.flags["no-open"] === "true";
   const foreground = args.flags["foreground"] === true || args.flags["foreground"] === "true";
   const noAutoDetect = args.flags["no-auto-detect"] === true || args.flags["no-auto-detect"] === "true";
@@ -506,7 +507,8 @@ export async function cmdServe(ctx: BoardContext, argv: string[]): Promise<void>
   }
   const args = parseArgs(["serve", ...argv]);
   const host = (args.flags["host"] as string) ?? loadConfig().host;
-  const port = parseInt((args.flags["port"] as string) ?? String(loadConfig().port), 10);
+  const portStr = (args.flags["port"] as string) ?? String(loadConfig().port);
+  const port = parseInt(portStr, 10) || DEFAULT_CONFIG.port;
   const noOpen = args.flags["no-open"] === true || args.flags["no-open"] === "true";
   const noAutoDetect = args.flags["no-auto-detect"] === true || args.flags["no-auto-detect"] === "true";
   const projectFlag = args.flags["project"] as string | undefined;
