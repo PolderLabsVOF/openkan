@@ -4,9 +4,14 @@
 //   - duplicate task IDs
 //   - missing source paths (when task has source.path)
 //   - stale tasks sitting in `done` column with stale=true
-//   - orphaned per-task files on disk (no matching task in board.json)
-//   - dangling references in tasks.json / board.json
+//   - orphaned per-task directories on disk (no matching v2 entry)
+//   - dangling references between tasks (parent/subtask links)
 // Exits non-zero on any error.
+//
+// Phase 7: reads the canonical v2 directory form
+// (`.ok/tasks/<id>/task.json`) instead of the legacy `board.tasks`
+// array. Tasks no longer live on board.json post-Phase-7; board.json
+// is metadata-only (columns, sessions, version).
 //
 // Supports OPENKAN_DIR env var for testing (defaults to <cwd>/.ok).
 
@@ -22,15 +27,32 @@ const PROJECT_ROOT = process.env.OPENKAN_DIR
   ? join(process.env.OPENKAN_DIR, "..")
   : process.cwd();
 
-let board: any;
+let board: any = {};
 try {
   board = JSON.parse(readFileSync(join(KANBAN_DIR, "board.json"), "utf-8"));
 } catch {
-  console.error("ERROR: Could not read .ok/board.json");
-  process.exit(1);
+  // board.json may be missing in fresh repos; don't fail the scan.
+  board = {};
 }
 
-const tasks = board.tasks ?? [];
+// Phase 7: load tasks from .ok/tasks/<id>/task.json. Falls back to the
+// legacy board.tasks array so older boards still produce a meaningful
+// scan until the migration runs.
+const tasks: any[] = [];
+const tasksDir = join(KANBAN_DIR, "tasks");
+if (existsSync(tasksDir)) {
+  for (const entry of readdirSync(tasksDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const v2File = join(tasksDir, entry.name, "task.json");
+    try {
+      const t = JSON.parse(readFileSync(v2File, "utf-8"));
+      if (t && t.id) tasks.push(t);
+    } catch { /* malformed — skip */ }
+  }
+}
+if (tasks.length === 0 && Array.isArray(board.tasks)) {
+  for (const t of board.tasks) tasks.push(t);
+}
 
 const errors: string[] = [];
 const warnings: string[] = [];
@@ -59,22 +81,28 @@ for (const t of tasks) {
   }
 }
 
-// 4. Orphaned per-task files
-const tasksDir = join(KANBAN_DIR, "tasks");
+// 4. Orphaned per-task directories (no matching v2 entry). The check
+// excludes legacy v1 flat files (`.ok/tasks/<id>.json`) and the
+// already-validated v2 dirs that contain a `task.json`.
 if (existsSync(tasksDir)) {
-  for (const entry of readdirSync(tasksDir)) {
-    // Skip planning-system per-task JSON files; the orphan check is for
-    // the legacy per-task directory layout (.ok/tasks/<id>/{task.mdx,...}).
-    if (entry.endsWith(".json")) continue;
-    if (!ids.has(entry)) {
-      warnings.push(`orphaned per-task directory: tasks/${entry} (no matching board entry)`);
+  for (const entry of readdirSync(tasksDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    if (!ids.has(entry.name)) {
+      warnings.push(`orphaned per-task directory: tasks/${entry.name} (no matching v2 task entry)`);
     }
   }
 }
 
-// 5. Dangling references (board references a task id not in tasks)
+// 5. Dangling parentId / subtaskIds references
 for (const t of tasks) {
-  if (!ids.has(t.id)) errors.push(`board entry references unknown id: ${t.id}`);
+  if (t.parentId && !ids.has(t.parentId)) {
+    errors.push(`task ${t.id} has dangling parentId: ${t.parentId}`);
+  }
+  for (const sid of t.subtaskIds ?? []) {
+    if (!ids.has(sid)) {
+      errors.push(`task ${t.id} has dangling subtaskId: ${sid}`);
+    }
+  }
 }
 
 // Report

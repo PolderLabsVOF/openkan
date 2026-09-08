@@ -4,7 +4,7 @@ import { promises as fsPromises } from "node:fs";
 import { join } from "path";
 import { writeFileAtomic, ensureDir, cleanupStaleTmp, removeDir } from "./io.ts";
 import type { Priority, Effort, Category } from "./tags.ts";
-import { writeTask, readTask as readOkTask, writeTaskV2, readConfig, writeConfig, paths as okPaths, rebuildIndex } from "../ok/storage.ts";
+import { writeTask, readTask as readOkTask, writeTaskV2, readConfig, writeConfig, paths as okPaths, rebuildIndex, listTasksV2 } from "../ok/storage.ts";
 import { nowIso as okNowIso } from "../ok/ids.ts";
 import type { TaskV2 } from "../ok/schemas.ts";
 
@@ -219,28 +219,70 @@ export async function initBoard(ctx: BoardContext): Promise<{ board: Board; dir:
   ensureDir(dir);
   cleanupStaleTmp(dir);
 
-  // Write tasks.json from board.tasks if tasks.json doesn't exist (migration helper)
-  const tasksIndexPath = join(dir, TASKS_INDEX_FILE);
-  if (!existsSync(tasksIndexPath)) {
-    // Will be written after board is loaded
-  }
-
+  // Phase 7: board.json is metadata-only post-migration. If a legacy
+  // board.json with an embedded `tasks` array is present (pre-Phase-6
+  // projects), promote each entry to the v2 directory form, run the
+  // legacy MDX migration, then drop the array so subsequent boots take
+  // the metadata-only path. This keeps `initBoard` the single upgrade
+  // boundary so projects don't need a separate `migrate-board-to-v2`
+  // invocation before first boot.
   const boardPath = join(dir, BOARD_FILE);
-  if (existsSync(boardPath)) {
-    const raw = readFileSync(boardPath, "utf-8");
-    _board = JSON.parse(raw) as Board;
-    // Apply migrations
-    await migrateLegacyTaskArtifacts(_board);
-    await persist(_board);
+  let metadata: { version: number; columns: Column[]; sessions: Record<string, SessionRecord> };
+  const legacyBoard: Board | null = existsSync(boardPath)
+    ? JSON.parse(readFileSync(boardPath, "utf-8")) as Board
+    : null;
+  const hasLegacyTasks = !!legacyBoard && Array.isArray(legacyBoard.tasks) && legacyBoard.tasks.length > 0;
+  if (legacyBoard) {
+    metadata = {
+      version: legacyBoard.version ?? 1,
+      columns: legacyBoard.columns ?? [...DEFAULT_COLUMNS],
+      sessions: legacyBoard.sessions ?? {},
+    };
   } else {
-    _board = {
+    metadata = {
       version: 1,
       columns: [...DEFAULT_COLUMNS],
-      tasks: [],
       sessions: {},
     };
-    await persist(_board!);
   }
+
+  const okRoot = join(dir, "..");
+  const okP = okPaths(okRoot);
+
+  if (hasLegacyTasks) {
+    // One-shot Phase 6 promotion: write each legacy task to v2 form
+    // (idempotent — already-migrated ids are skipped via writeTaskV2
+    // overwrite). Run MDX migration in-place so the in-memory task list
+    // tracks the new artifact paths.
+    await migrateLegacyTaskArtifacts(legacyBoard!);
+    for (const task of legacyBoard!.tasks) {
+      try {
+        await writeTaskV2(okP, toTaskV2(task));
+      } catch {
+        // best-effort: a corrupt legacy entry shouldn't block the rest
+      }
+    }
+  }
+
+  // Phase 7: load tasks from .ok/tasks/<id>/task.json (v2 directory
+  // form). This replaces the previous tasks.json-array read.
+  const v2Tasks = await listTasksV2(okP);
+  const tasks: Task[] = [];
+  for (const v2 of v2Tasks) {
+    const t = fromPlanningTask(v2);
+    if (t) tasks.push(t);
+  }
+
+  _board = {
+    version: metadata.version as 1,
+    columns: metadata.columns,
+    tasks,
+    sessions: metadata.sessions,
+  };
+  // Mirror in-memory state to disk so the metadata-only board.json is
+  // written even on a cold boot (and the v2 directory form is kept
+  // current by mirrorToOkStore inside persist).
+  await persist(_board);
 
   _loadedProjectRoot = ctx.directory;
   return { board: _board!, dir };
@@ -286,7 +328,7 @@ export async function withWrite<T>(fn: (board: Board) => Promise<T> | T): Promis
  * agent, assignees, etc. all preserved without round-tripping through
  * the lossy v1 projection).
  */
-function toTaskV2(task: Task): TaskV2 {
+export function toTaskV2(task: Task): TaskV2 {
   const status = mapColumnToStatus(task.column, task.state, task.archived);
   const now = okNowIso();
   return {
@@ -404,7 +446,7 @@ async function mirrorToOkStore(board: Board): Promise<void> {
  * defaults are the ones a v2 record might leave null when the
  * offline write arrived without a full kanban view.
  */
-function fromPlanningTask(ok: TaskV2): Task | null {
+export function fromPlanningTask(ok: TaskV2): Task | null {
   if (!ok.id || !/^tsk-[A-Za-z0-9_-]+$/.test(ok.id)) return null;
   const arts = ok.artifacts ?? taskArtifacts(ok.id);
   return {
@@ -585,8 +627,20 @@ async function markOkMirrorSynced(p: ReturnType<typeof okPaths>, okId: string, s
 export async function persist(board: Board): Promise<void> {
   if (!KANBAN_DIR) return;
   const dest = join(KANBAN_DIR, BOARD_FILE);
-  writeFileAtomic(dest, JSON.stringify(board, null, 2));
+  // Phase 7: the persisted board.json is metadata-only. Tasks are
+  // reconstructed from the v2 directory form on boot (initBoard reads
+  // them via listTasksV2), so writing the in-memory tasks array here
+  // would re-introduce the dual-store staleness the refactor is
+  // designed to eliminate. Columns, sessions, and version are still
+  // authoritative in board.json.
+  const metadataOnly = {
+    version: board.version,
+    columns: board.columns,
+    sessions: board.sessions,
+  };
+  writeFileAtomic(dest, JSON.stringify(metadataOnly, null, 2));
   // Mirror into the planning-system store. Side effect only; failure does
-  // not abort the engine write.
+  // not abort the engine write. Phase 5 already routes this to v2
+  // (writeTaskV2), so the directory form stays current.
   try { await mirrorToOkStore(board); } catch { /* swallow */ }
 }

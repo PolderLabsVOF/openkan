@@ -1,6 +1,6 @@
 // OpenKan — append-only JSONL changelog.
 
-import { readFileSync, appendFileSync, existsSync } from "node:fs";
+import { readFileSync, appendFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { nanoid } from "nanoid";
 import { writeFileAtomic } from "./io.ts";
@@ -161,15 +161,22 @@ export function readEvents(
   // completedOnly post-filter: only show events for tasks in "done" column, or terminal kinds
   let finalEvents = filtered;
   if (opts?.completedOnly) {
-    // Load done-column task IDs from board.json (sync, using already-imported readFileSync)
+    // Phase 7: read done-column task IDs from the v2 directory form
+    // (board.json no longer carries the tasks array). Sync scan of
+    // `<dir>/tasks/<id>/task.json` is cheap — directory listings are
+    // bounded by task count and the file reads are tiny.
     const doneTaskIds = new Set<string>();
     if (opts?.kanbanDirForCompletedOnly) {
       try {
-        const boardPath = join(opts.kanbanDirForCompletedOnly, "board.json");
-        if (existsSync(boardPath)) {
-          const board = JSON.parse(readFileSync(boardPath, "utf-8")) as { tasks: Array<{ id: string; column: string }> };
-          for (const t of board.tasks) {
-            if (t.column === "done") doneTaskIds.add(t.id);
+        const tasksRoot = join(opts.kanbanDirForCompletedOnly, "tasks");
+        if (existsSync(tasksRoot)) {
+          for (const entry of readdirSync(tasksRoot, { withFileTypes: true })) {
+            if (!entry.isDirectory()) continue;
+            const v2File = join(tasksRoot, entry.name, "task.json");
+            try {
+              const v2 = JSON.parse(readFileSync(v2File, "utf-8")) as { id: string; column: string };
+              if (v2.column === "done" && v2.id) doneTaskIds.add(v2.id);
+            } catch { /* malformed file — skip */ }
           }
         }
       } catch { /* ignore */ }
