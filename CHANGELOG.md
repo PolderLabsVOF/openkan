@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `ok serve --mode=background` (and `ok start --mode=background`): the v0.5.1 fix
+  (`detachForBackground()` + `await new Promise(() => {})`) only unref'd stdio handles,
+  which does NOT free the controlling terminal while the HTTP listener keeps the Node
+  event loop alive. The CLI process remained attached to the TTY and the user's shell
+  prompt never returned. Replaced with a proper spawn-detach pattern: the parent CLI
+  spawns a detached child running `--mode=foreground` (which binds the port), waits
+  for HTTP to respond, writes `pid:port` to the pidfile, prints the startup message,
+  and exits 0. The detached child owns the HTTP listener; `ok stop` SIGTERMs the
+  child PID. On Windows, `windowsHide: true` suppresses the detached child's console
+  window.
 - Windows CLI: resolve `PROJECT_ROOT` with `fileURLToPath` so test path
   lookups stop emitting `C:\C:\...` and can find `bin/ok.ts`; the previous
   `URL.pathname` form failed all 11 cases in `tests/cli.test.mjs` on
