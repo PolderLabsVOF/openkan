@@ -92,6 +92,113 @@ function titleFromArgs(positionals: string[]): string {
   return positionals.join(" ");
 }
 
+interface OfflineBoardTask {
+  id: string;
+  title: string;
+  description: string;
+  column: "backlog" | "todo" | "doing" | "review" | "done";
+  order: number;
+  sessionId: null;
+  agent: string;
+  model: null;
+  status: "idle" | "running" | "done" | "cancelled";
+  state: "idle" | "running" | "done" | "cancelled";
+  lastError: null;
+  createdAt: string;
+  updatedAt: string;
+  artifact: string;
+  sessionArtifact: null;
+  pendingInputs: string[];
+  artifacts: { mdxPath: string; commentsPath: string; inputsPath: string; statePath: string };
+  tags: string[];
+  category: "task";
+  priority: "normal";
+  effort: null;
+  archived: boolean;
+  assignees: string[];
+  images: string[];
+  parentId: null;
+  subtaskIds: string[];
+  offlineMirrorId: string;
+}
+
+interface OfflineBoard {
+  version: 1;
+  columns: Array<{ id: string; title: string }>;
+  tasks: OfflineBoardTask[];
+  sessions: Record<string, unknown>;
+}
+
+function offlineBoardTask(task: Task, column: OfflineBoardTask["column"]): OfflineBoardTask {
+  const state = task.status === "in_progress" ? "running" : task.status === "done" ? "done" : task.status === "cancelled" ? "cancelled" : "idle";
+  const artifacts = {
+    mdxPath: `tasks/${task.id}/task.mdx`,
+    commentsPath: `tasks/${task.id}/comments.json`,
+    inputsPath: `tasks/${task.id}/inputs.json`,
+    statePath: `tasks/${task.id}/state.json`,
+  };
+  return {
+    id: task.id,
+    title: task.title,
+    description: task.description ?? "",
+    column,
+    order: 0,
+    sessionId: null,
+    agent: task.owner ?? "",
+    model: null,
+    status: state,
+    state,
+    lastError: null,
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt,
+    artifact: artifacts.mdxPath,
+    sessionArtifact: null,
+    pendingInputs: [],
+    artifacts,
+    tags: task.scopes ?? [],
+    category: "task",
+    priority: "normal",
+    effort: null,
+    archived: task.status === "cancelled",
+    assignees: task.owner ? [task.owner] : [],
+    images: [],
+    parentId: null,
+    subtaskIds: [],
+    offlineMirrorId: task.id,
+  };
+}
+
+async function writeOfflineBoardTask(p: OkPaths, task: Task, column: OfflineBoardTask["column"]): Promise<void> {
+  const file = path.join(p.root, "board.json");
+  let board: OfflineBoard = {
+    version: 1,
+    columns: [
+      { id: "backlog", title: "Backlog" },
+      { id: "todo", title: "To Do" },
+      { id: "doing", title: "In Progress" },
+      { id: "review", title: "Review" },
+      { id: "done", title: "Done" },
+    ],
+    tasks: [],
+    sessions: {},
+  };
+  try {
+    const parsed = JSON.parse(await fs.readFile(file, "utf-8")) as Partial<OfflineBoard>;
+    if (Array.isArray(parsed.tasks) && Array.isArray(parsed.columns) && parsed.sessions) {
+      board = { version: 1, columns: parsed.columns, tasks: parsed.tasks, sessions: parsed.sessions };
+    }
+  } catch (e: any) {
+    if (e?.code !== "ENOENT") throw e;
+  }
+  if (board.tasks.some((existing) => existing.id === task.id || existing.offlineMirrorId === task.id)) return;
+  const next = offlineBoardTask(task, column);
+  next.order = board.tasks.filter((existing) => existing.column === column).length;
+  board.tasks.push(next);
+  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
+  await fs.writeFile(tmp, JSON.stringify(board, null, 2), "utf-8");
+  await fs.rename(tmp, file);
+}
+
 async function cmdTaskAdd(args: string[]): Promise<number> {
   const { positionals, flags } = parseArgs(args);
   const title = titleFromArgs(positionals);
@@ -165,7 +272,8 @@ async function cmdTaskAdd(args: string[]): Promise<number> {
   });
 
   if (response.offline) {
-    process.stderr.write(`ok task add: dashboard unreachable (${response.error ?? "no server"}); kept offline, will reconcile on next server boot\n`);
+    await writeOfflineBoardTask(p, task, column as OfflineBoardTask["column"]);
+    process.stderr.write(`ok task add: dashboard unreachable (${response.error ?? "no server"}); wrote board.json fallback and will reconcile on next server boot\n`);
   } else if (response.ok) {
     const serverTask = response.body as { id?: string; offlineMirrorId?: string } | null;
     const serverId = serverTask?.id;
