@@ -5,9 +5,32 @@ import { resolve } from "node:path";
 import { loadConfig, parseArgs, type ParsedArgs } from "./serve.ts";
 
 export function apiBaseUrl(args: ParsedArgs): string {
+  // Fallback chain:
+  // 1. explicit args.flags.host / args.flags.port
+  // 2. process.env.OPENKAN_HOST / process.env.OPENKAN_PORT
+  // 3. loadConfig() (which already merges .ok/openkan.json + env vars)
   const cfg = loadConfig();
-  const host = String(args.flags.host ?? cfg.host);
-  const port = Number.parseInt(String(args.flags.port ?? cfg.port), 10);
+
+  // Determine host: explicit flag > env var > config file
+  let host: string;
+  if (args.flags.host !== undefined) {
+    host = String(args.flags.host);
+  } else if (process.env.OPENKAN_HOST !== undefined) {
+    host = process.env.OPENKAN_HOST;
+  } else {
+    host = cfg.host;
+  }
+
+  // Determine port: explicit flag > env var > config file
+  let port: number;
+  if (args.flags.port !== undefined) {
+    port = Number.parseInt(String(args.flags.port), 10);
+  } else if (process.env.OPENKAN_PORT !== undefined) {
+    port = Number.parseInt(process.env.OPENKAN_PORT, 10);
+  } else {
+    port = cfg.port;
+  }
+
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("--port must be a valid TCP port");
   if (!/^(127\.0\.0\.1|localhost|::1)$/.test(host)) throw new Error("ok api only permits a loopback --host");
   return `http://${host.includes(":") ? `[${host}]` : host}:${port}`;

@@ -138,12 +138,59 @@ export function printInstalledVersion(): void {
   console.log(`${pkg.name} ${pkg.version}\n`);
 }
 
+// Module-scoped flag for the one-time warning about missing explicit config.
+let warnedAboutMissingConfig = false;
+
+// Regex for validating loopback hosts (as per api.ts validation)
+const LOOPBACK_HOST_REGEX = /^(127\.0\.0\.1|localhost|::1)$/;
+
 export function loadConfig(): Config {
+  // Start from defaults
+  let cfg: Config = { ...DEFAULT_CONFIG };
   const p = configPath();
-  if (!existsSync(p)) return { ...DEFAULT_CONFIG };
-  try {
-    return { ...DEFAULT_CONFIG, ...JSON.parse(readFileSync(p, "utf-8")) };
-  } catch { return { ...DEFAULT_CONFIG }; }
+
+  // Overlay .ok/openkan.json if present
+  let hasExplicitConfig = false;
+  if (existsSync(p)) {
+    try {
+      const fileCfg = JSON.parse(readFileSync(p, "utf-8"));
+      cfg = { ...cfg, ...fileCfg };
+      hasExplicitConfig = true;
+    } catch { /* ignore malformed JSON, fall back to defaults */ }
+  }
+
+  // Overlay env vars (if set and valid) - they take precedence
+  const envHost = process.env.OPENKAN_HOST;
+  const envPort = process.env.OPENKAN_PORT;
+
+  if (envPort !== undefined) {
+    const portNum = parseInt(envPort, 10);
+    if (!Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
+      throw new Error(`OPENKAN_PORT must be an integer between 1 and 65535, got: ${envPort}`);
+    }
+    cfg.port = portNum;
+  }
+
+  if (envHost !== undefined) {
+    if (!LOOPBACK_HOST_REGEX.test(envHost)) {
+      throw new Error(`OPENKAN_HOST must be a loopback address (127.0.0.1, localhost, or ::1), got: ${envHost}`);
+    }
+    cfg.host = envHost;
+  }
+
+  // Track whether we had any explicit source (file or env vars)
+  const hadExplicitSource = hasExplicitConfig || envHost !== undefined || envPort !== undefined;
+
+  // Warn once when using defaults without any explicit source
+  if (!warnedAboutMissingConfig && !hadExplicitSource) {
+    warnedAboutMissingConfig = true;
+    console.error(
+      "ok: no .ok/openkan.json and no OPENKAN_HOST/PORT — using defaults (http://127.0.0.1:7777).\n" +
+      "ok: this is exactly the shape that caused the v0.6.1 fixture leak. set OPENKAN_PORT=<ephemeral> in tests, or run 'ok init' in your project.\n"
+    );
+  }
+
+  return cfg;
 }
 
 export function saveConfig(cfg: Config): void {
@@ -235,6 +282,11 @@ export function printHelp(cmd?: string): void {
     console.log("  ok task update <id> [--status ...] [--owner ...] [--priority ...] [--evidence ...] [--acceptance a,b] [--description ...]");
     console.log("\nMigrate:");
     console.log("  ok migrate-from-openkan [--path DIR] [root] [--list]   # --path DIR is the legacy workspace root");
+    console.log("\nEnvironment variables (override .ok/openkan.json and defaults):");
+    console.log("  OPENKAN_HOST=127.0.0.1      # loopback address (127.0.0.1, localhost, or ::1)");
+    console.log("  OPENKAN_PORT=7777           # TCP port (1-65535)");
+    console.log("  OPENKAN_XDG_CONFIG_HOME=   # custom config directory (optional)");
+    console.log("  Example: OPENKAN_PORT=41888 ok serve   # use port 41888 for this command");
     console.log("\nVersion: `ok -v` or `ok --version` prints the installed package name and version.\n");
   }
 }
