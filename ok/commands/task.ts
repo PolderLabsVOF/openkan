@@ -26,6 +26,7 @@ import { type ParsedArgs, newId, nowIso, parseArgs, flagString, flagCsv, flagBoo
 import { claim, heartbeat, release, assertUsable, LockHeldError } from "../lock.ts";
 import { pathToFileURL } from "node:url";
 import { apiRequest } from "./api.ts";
+import { detectFixtureSmells, type SmellDetection } from "../fixture-detector.mts";
 
 const STATUSES: TaskStatus[] = ["pending", "in_progress", "review", "done", "cancelled"];
 const PRIORITIES: TaskPriority[] = ["p0", "p1", "p2", "p3"];
@@ -79,8 +80,9 @@ export async function runTask(args: string[]): Promise<number> {
     case "complete":  return cmdTaskComplete(rest);
     case "cancel":    return cmdTaskCancel(rest);
     case "release":   return cmdTaskRelease(rest);
+    case "cleanup-fixtures": return cmdCleanupFixtures(rest);
     default:
-      process.stderr.write("usage: ok task <add|list|show|update|claim|heartbeat|complete|cancel|release>\n");
+      process.stderr.write("usage: ok task <add|list|show|update|claim|heartbeat|complete|cancel|release|cleanup-fixtures>\n");
       return 2;
   }
 }
@@ -606,6 +608,122 @@ async function cmdTaskRelease(args: string[]): Promise<number> {
   const removed = await release(p, positionals[0], owner);
   process.stdout.write(removed ? `${positionals[0]}\n` : `no lock for ${positionals[0]}\n`);
   return removed ? 0 : 1;
+}
+
+async function cmdCleanupFixtures(args: string[]): Promise<number> {
+  const { flags } = parseArgs(args);
+  const apply = flagBool(flags, "apply");
+  const yes = flagBool(flags, "yes");
+
+  const p = await paths();
+
+  // Detect fixture smells
+  const smells = detectFixtureSmells(p.tasksDir);
+
+  if (smells.length === 0) {
+    process.stdout.write("No fixture tasks found.\n");
+    return 0;
+  }
+
+  // Print summary table
+  process.stdout.write("\n");
+  process.stdout.write("Detected fixture tasks:\n");
+  const tableRows = smells.map((s) => ({
+    id: s.id,
+    title: s.title.slice(0, 40) + (s.title.length > 40 ? "..." : ""),
+    owner: s.owner ?? "(none)",
+    action: apply ? "cancel + archive" : "(dry-run)",
+  }));
+
+  // Use console.table if available, otherwise fall back to manual formatting
+  if (typeof (console as any).table === "function") {
+    console.table(tableRows);
+  } else {
+    process.stdout.write("id".padEnd(14) + " " + "title".padEnd(43) + " " + "owner".padEnd(12) + " " + "action\n");
+    process.stdout.write("".padEnd(14, "-") + " " + "".padEnd(43, "-") + " " + "".padEnd(12, "-") + " " + "".padEnd(20, "-") + "\n");
+    for (const r of tableRows) {
+      process.stdout.write(r.id.padEnd(14) + " " + r.title.padEnd(43) + " " + r.owner.padEnd(12) + " " + r.action + "\n");
+    }
+  }
+
+  if (!apply) {
+    process.stdout.write("\n(dry-run; pass --apply to execute)\n");
+    return 0;
+  }
+
+  // --apply without --yes requires confirmation
+  if (!yes) {
+    process.stderr.write("\nThis will cancel and archive " + smells.length + " fixture tasks.\n");
+    process.stderr.write("To proceed, pass --yes flag: ok task cleanup-fixtures --apply --yes\n");
+    return 1;
+  }
+
+  // Apply the cleanup
+  const now = nowIso();
+  const boardPath = path.join(p.root, "board.json");
+
+  for (const smell of smells) {
+    const taskJsonPath = path.join(p.tasksDir, `${smell.id}.json`);
+
+    // Read existing task
+    let task: Task | undefined;
+    try {
+      const raw = await fs.readFile(taskJsonPath, "utf-8");
+      task = JSON.parse(raw) as Task;
+    } catch {
+      process.stderr.write(`Warning: could not read ${smell.id}.json, skipping\n`);
+      continue;
+    }
+
+    // Update task with cancelled status
+    const updatedTask: Task = {
+      ...task,
+      status: "cancelled",
+      archived: true,
+      completedAt: task.completedAt ?? now,
+      evidence: [
+        ...(task.evidence ?? []),
+        `cleanup-fixtures: detected as test fixture`,
+        `original title: ${smell.title}`,
+        `original owner: ${smell.owner ?? "(none)"}`,
+      ],
+    };
+    await fs.writeFile(taskJsonPath, JSON.stringify(updatedTask, null, 2), "utf-8");
+
+    // Update board.json
+    try {
+      let board: { tasks?: OfflineBoardTask[] } = { tasks: [] };
+      try {
+        const boardRaw = await fs.readFile(boardPath, "utf-8");
+        board = JSON.parse(boardRaw);
+      } catch {
+        // board.json might not exist or be invalid
+      }
+
+      if (board.tasks) {
+        const taskIdx = board.tasks.findIndex(
+          (t) => t.id === smell.id || t.offlineMirrorId === smell.id
+        );
+        if (taskIdx !== -1) {
+          board.tasks[taskIdx] = {
+            ...board.tasks[taskIdx],
+            column: "backlog",
+            state: "cancelled",
+            status: "cancelled",
+            archived: true,
+          };
+          await fs.writeFile(boardPath, JSON.stringify(board, null, 2), "utf-8");
+        }
+      }
+    } catch {
+      // Best-effort board update - don't fail the whole cleanup
+      process.stderr.write(`Warning: could not update board.json for ${smell.id}\n`);
+    }
+  }
+
+  await refreshIndex(p);
+  process.stdout.write(`\nCleaned up ${smells.length} fixture tasks.\n`);
+  return 0;
 }
 
 async function refreshIndex(p: OkPaths): Promise<void> {

@@ -32,6 +32,27 @@ status: in_progress
 }
 
 describe("fixture-smell-detector", () => {
+  describe("detects fixture with test agent owners (alice, cleanup, test)", () => {
+    const t = tmp();
+    beforeEach(() => {
+      // Fixtures with various test agent owners
+      writeTaskMdx(t, "tsk-alice1", "move a card", "alice");
+      writeTaskMdx(t, "tsk-cleanup1", "server-visible task", "cleanup");
+      writeTaskMdx(t, "tsk-test1", "integration in_progress", "test");
+    });
+
+    afterEach(() => {
+      rmSync(t, { recursive: true, force: true });
+    });
+
+    it("detects fixtures with all test agent owners", () => {
+      const smells = detectFixtureSmells(join(t, ".ok", "tasks"));
+      assert.strictEqual(smells.length, 3, `Expected 3 smells, got ${smells.length}: ${JSON.stringify(smells.map(s => s.id))}`);
+      const owners = smells.map(s => s.owner).sort();
+      assert.deepStrictEqual(owners, ["alice", "cleanup", "test"]);
+    });
+  });
+
   describe("detects known fixture patterns", () => {
     const t = tmp();
     beforeEach(() => {

@@ -233,6 +233,7 @@ export function printHelp(cmd?: string): void {
     console.log("  ok task list [--status ...] [--owner X] [--plan pln-...] [--prd prd-...] [--json]");
     console.log("  ok task show <id> [--json]");
     console.log("  ok task update <id> [--status ...] [--owner ...] [--priority ...] [--evidence ...] [--acceptance a,b] [--description ...]");
+    console.log("  ok task cleanup-fixtures [--apply] [--yes]   # cancel+archive fixture-leaked tasks");
     console.log("\nMigrate:");
     console.log("  ok migrate-from-openkan [--path DIR] [root] [--list]   # --path DIR is the legacy workspace root");
     console.log("\nVersion: `ok -v` or `ok --version` prints the installed package name and version.\n");
