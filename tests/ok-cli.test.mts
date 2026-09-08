@@ -16,7 +16,11 @@ function tmp(): string {
 
 function runCli(cwd: string, args: string): { stdout: string; stderr: string; code: number } {
   try {
-    const out = execSync(`${CLI} ${args}`, { cwd, encoding: "utf-8", stdio: "pipe" });
+    const out = execSync(`${CLI} ${args}`, {
+      cwd,
+      encoding: "utf-8",
+      stdio: "pipe",
+    });
     return { stdout: out, stderr: "", code: 0 };
   } catch (e: any) {
     return { stdout: e.stdout?.toString() ?? "", stderr: e.stderr?.toString() ?? "", code: e.status ?? 1 };

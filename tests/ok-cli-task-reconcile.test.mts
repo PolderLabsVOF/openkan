@@ -75,7 +75,16 @@ async function runOkTask(cwd: string, args: string[]): Promise<{ code: number; s
     const child = spawn(
       process.execPath,
       ["--experimental-strip-types", scriptPath, "task", ...args],
-      { cwd, env: { ...process.env }, stdio: ["ignore", "pipe", "pipe"] },
+      // OPENKAN_FORCE_MIRROR=1 opts into the mirror path even when cwd is
+      // not the registry's active project. The test set up its own
+      // server on a free port; without this env var the CLI's
+      // shouldMirrorToActiveServer() guard (ok/commands/task.ts) refuses
+      // to POST to the test's server because the global registry's
+      // active project doesn't match cwd. The guard exists to prevent
+      // a `mkdtempSync`-based fixture from leaking tasks onto the
+      // developer's live dashboard, which is exactly the bug we're
+      // covering in the inverse direction here.
+      { cwd, env: { ...process.env, OPENKAN_FORCE_MIRROR: "1" }, stdio: ["ignore", "pipe", "pipe"] },
     );
     let stdout = "";
     let stderr = "";

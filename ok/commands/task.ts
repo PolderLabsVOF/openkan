@@ -27,6 +27,35 @@ import { claim, heartbeat, release, assertUsable, LockHeldError } from "../lock.
 import { pathToFileURL } from "node:url";
 import { apiRequest } from "./api.ts";
 import { detectFixtureSmells, type SmellDetection } from "../fixture-detector.mts";
+import { resolve as resolvePath } from "node:path";
+import { activeProject } from "../../kanban/projects.ts";
+
+/**
+ * Returns true if the current cwd is the same as the active project root in
+ * the OpenKan registry (or if no active project is registered — i.e., no
+ * server is expected to be running for the registry's project).
+ *
+ * Guards `ok task add|claim|heartbeat|complete` against accidentally posting
+ * to a server that serves a different repository. The CLI mirrors its
+ * mutations to the active dashboard by default (line 269 `apiRequest` etc.),
+ * but a `ok task add` invoked from a *different* project (e.g. a test
+ * fixture running in `mkdtempSync(...)`) would otherwise leak its task onto
+ * the user's active dashboard and pollute the running board.
+ *
+ * Test-only opt-out: `OPENKAN_FORCE_MIRROR=1` ignores the cwd check so
+ * tests that intentionally want to verify the mirror path can still
+ * exercise it.
+ */
+async function shouldMirrorToActiveServer(): Promise<boolean> {
+  if (process.env.OPENKAN_FORCE_MIRROR === "1") return true;
+  try {
+    const active = activeProject();
+    if (!active || !active.root) return true;
+    return resolvePath(active.root) === resolvePath(process.cwd());
+  } catch {
+    return true;
+  }
+}
 
 const STATUSES: TaskStatus[] = ["pending", "in_progress", "review", "done", "cancelled"];
 const PRIORITIES: TaskPriority[] = ["p0", "p1", "p2", "p3"];
@@ -258,6 +287,15 @@ async function cmdTaskAdd(args: string[]): Promise<number> {
   // file stays `mirrorStatus: "pending"` for the reconciler to pick up
   // on the next server boot. `clientId` lets the server dedupe retries
   // (network blip after the task was actually created server-side).
+  //
+  // Guard: only attempt the mirror when `cwd` matches the registry's
+  // active project root. Without this guard, a `ok task add` invoked from
+  // a *different* project (e.g. a test fixture under `mkdtempSync`) leaks
+  // its task onto whichever server happens to be reachable — polluting
+  // the running dashboard with smoke-test fixtures. `shouldMirrorToActiveServer`
+  // returns true only when the cwd is the active project; otherwise we
+  // skip the mirror and write the local offline board file (the same
+  // path the `response.offline` branch takes).
   const payload: Record<string, unknown> = {
     title,
     column,
@@ -266,16 +304,20 @@ async function cmdTaskAdd(args: string[]): Promise<number> {
   if (task.owner) payload.assignee = task.owner;
   if (desc) payload.description = desc;
 
-  const response = await apiRequest({
-    path: "/api/tasks",
-    method: "POST",
-    payload,
-    timeoutMs: 4000,
-  });
+  let response: { ok: boolean; status: number; body: unknown; offline: boolean; error?: string } | undefined;
+  if (await shouldMirrorToActiveServer()) {
+    response = await apiRequest({
+      path: "/api/tasks",
+      method: "POST",
+      payload,
+      timeoutMs: 4000,
+    });
+  }
 
-  if (response.offline) {
+  if (!response || response.offline) {
     await writeOfflineBoardTask(p, task, column as OfflineBoardTask["column"]);
-    process.stderr.write(`ok task add: dashboard unreachable (${response.error ?? "no server"}); wrote board.json fallback and will reconcile on next server boot\n`);
+    const reason = !response ? "skipped: cwd is not the active project" : `dashboard unreachable (${response.error ?? "no server"})`;
+    process.stderr.write(`ok task add: ${reason}; wrote board.json fallback and will reconcile on next server boot\n`);
   } else if (response.ok) {
     const serverTask = response.body as { id?: string; offlineMirrorId?: string } | null;
     const serverId = serverTask?.id;
@@ -447,17 +489,27 @@ async function cmdTaskClaim(args: string[]): Promise<number> {
   // ownership immediately. Patch is best-effort: when the server is
   // unreachable the offline cache still holds the lease and the
   // reconciler will pick up the state on the next server boot.
-  const claimRes = await apiRequest({
-    path: `/api/tasks/${encodeURIComponent(positionals[0])}`,
-    method: "PATCH",
-    payload: {
-      assignees: [owner],
-      state: "running",
-      agent: owner,
-    },
-    timeoutMs: 4000,
-  });
-  if (claimRes.offline) {
+  //
+  // Guard via `shouldMirrorToActiveServer`: skip the mirror when cwd is
+  // not the active project (e.g. a `mkdtempSync` test fixture running
+  // `ok task claim` would otherwise PATCH a card onto whichever
+  // dashboard happens to be reachable and pollute the running board).
+  let claimRes: { ok: boolean; status: number; body: unknown; offline: boolean; error?: string } | undefined;
+  if (await shouldMirrorToActiveServer()) {
+    claimRes = await apiRequest({
+      path: `/api/tasks/${encodeURIComponent(positionals[0])}`,
+      method: "PATCH",
+      payload: {
+        assignees: [owner],
+        state: "running",
+        agent: owner,
+      },
+      timeoutMs: 4000,
+    });
+  }
+  if (!claimRes) {
+    // mirror skipped (different project) — offline lease retained
+  } else if (claimRes.offline) {
     process.stderr.write(`ok task claim: dashboard unreachable (${claimRes.error ?? "no server"}); offline lease retained\n`);
   } else if (!claimRes.ok) {
     const errMsg = (claimRes.body as { error?: string })?.error ?? `HTTP ${claimRes.status}`;
@@ -484,14 +536,18 @@ async function cmdTaskHeartbeat(args: string[]): Promise<number> {
   await heartbeat(p, positionals[0], owner, { leaseMs });
   // Heartbeat is a lease refresh; the board has no lease concept, but
   // we re-affirm the assignee so a dashboard filter still surfaces
-  // active ownership. Idempotent on the server side.
-  const hbRes = await apiRequest({
-    path: `/api/tasks/${encodeURIComponent(positionals[0])}`,
-    method: "PATCH",
-    payload: { assignees: [owner] },
-    timeoutMs: 4000,
-  });
-  if (hbRes.offline) {
+  // active ownership. Idempotent on the server side. Guarded via
+  // `shouldMirrorToActiveServer` — same reasoning as `cmdTaskClaim`.
+  let hbRes: { ok: boolean; status: number; body: unknown; offline: boolean; error?: string } | undefined;
+  if (await shouldMirrorToActiveServer()) {
+    hbRes = await apiRequest({
+      path: `/api/tasks/${encodeURIComponent(positionals[0])}`,
+      method: "PATCH",
+      payload: { assignees: [owner] },
+      timeoutMs: 4000,
+    });
+  }
+  if (hbRes && hbRes.offline) {
     process.stderr.write(`ok task heartbeat: dashboard unreachable; offline lease refreshed\n`);
   }
   process.stdout.write(`${positionals[0]}\n`);
@@ -535,18 +591,25 @@ async function cmdTaskComplete(args: string[]): Promise<number> {
   await refreshIndex(p);
   // Promote the completion onto the board task so the card lands in
   // the Done column with the evidence trail. The HTTP path is
-  // canonical; the offline cache is the lease mirror.
-  const completeRes = await apiRequest({
-    path: `/api/tasks/${encodeURIComponent(positionals[0])}`,
-    method: "PATCH",
-    payload: {
-      column: "done",
-      state: "done",
-      assignees: [owner],
-    },
-    timeoutMs: 4000,
-  });
-  if (completeRes.offline) {
+  // canonical; the offline cache is the lease mirror. Guarded via
+  // `shouldMirrorToActiveServer` so a `mkdtempSync` test fixture
+  // doesn't complete tasks onto the user's live dashboard.
+  let completeRes: { ok: boolean; status: number; body: unknown; offline: boolean; error?: string } | undefined;
+  if (await shouldMirrorToActiveServer()) {
+    completeRes = await apiRequest({
+      path: `/api/tasks/${encodeURIComponent(positionals[0])}`,
+      method: "PATCH",
+      payload: {
+        column: "done",
+        state: "done",
+        assignees: [owner],
+      },
+      timeoutMs: 4000,
+    });
+  }
+  if (!completeRes) {
+    // mirror skipped (different project) — completion persisted offline
+  } else if (completeRes.offline) {
     process.stderr.write(`ok task complete: dashboard unreachable; completion persisted offline\n`);
   } else if (!completeRes.ok) {
     const errMsg = (completeRes.body as { error?: string })?.error ?? `HTTP ${completeRes.status}`;

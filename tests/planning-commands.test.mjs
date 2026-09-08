@@ -10,7 +10,10 @@ import { fileURLToPath } from 'node:url';
 
 const cli = fileURLToPath(new URL('../bin/ok.ts', import.meta.url));
 function run(cwd, ...args) {
-  const result = spawnSync(process.execPath, ['--experimental-strip-types', cli, ...args], { cwd, encoding: 'utf8' });
+  const result = spawnSync(process.execPath, ['--experimental-strip-types', cli, ...args], {
+    cwd,
+    encoding: 'utf8',
+  });
   assert.equal(result.status, 0, result.stderr);
   return result.stdout.trim();
 }
@@ -34,7 +37,10 @@ test('command-only planning lifecycle works offline and from a nested directory'
     assert.equal(progress.tasks.percentComplete, 100);
     const tasks = JSON.parse(run(root, 'task', 'list', '--json'));
     assert.equal(tasks[0].status, 'done');
-    const bad = spawnSync(process.execPath, ['--experimental-strip-types', cli, 'goal', 'update', prd, 'missing', '--status', 'met'], { cwd: root, encoding: 'utf8' });
+    const bad = spawnSync(process.execPath, ['--experimental-strip-types', cli, 'goal', 'update', prd, 'missing', '--status', 'met'], {
+      cwd: root,
+      encoding: 'utf8',
+    });
     assert.notEqual(bad.status, 0);
     assert.match(bad.stderr, /no such goal/i);
   } finally { rmSync(root, { recursive: true, force: true }); }
