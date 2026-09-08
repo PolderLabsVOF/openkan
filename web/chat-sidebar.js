@@ -354,6 +354,14 @@
           </svg>
           <span>New chat</span>
         </button>
+        <button type="button" class="chat-sidebar__overflow-menu" data-chat-action="open-overflow-menu"
+                aria-label="More options" aria-haspopup="true" aria-expanded="false" title="More options">
+          <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+            <circle cx="9" cy="3" r="1.5" fill="currentColor"/>
+            <circle cx="9" cy="9" r="1.5" fill="currentColor"/>
+            <circle cx="9" cy="15" r="1.5" fill="currentColor"/>
+          </svg>
+        </button>
       </header>
 
       <div class="chat-sidebar__workspace-tools" aria-label="Chat shortcuts">
@@ -1562,6 +1570,10 @@
     else if (action === "reference-task") { void openTaskReferencePicker(); return; }
     else if (action === "open-attach-menu") { openAttachMenu(); return; }
     else if (action === "open-session-menu") { openSessionMenu(); return; }
+    else if (action === "open-overflow-menu") { openOverflowMenu(); return; }
+    else if (action === "overflow-project") { openOverflowSubMenu("project"); return; }
+    else if (action === "overflow-files") { openOverflowSubMenu("files"); return; }
+    else if (action === "overflow-plugins") { openOverflowSubMenu("plugins"); return; }
     else if (action === "import-file") { void onImportFileClick(); return; }
     else if (action === "add-to-planning") { void onAddToPlanningClick(); return; }
     else if (action === "pick-session") {
@@ -2285,6 +2297,81 @@
     popover.innerHTML = items.join("");
     state.popoverId = popover.id;
     anchorPopover(popover, trigger);
+  }
+
+  /* ----------------------------------------------------------------------
+   * Overflow menu — Project / Files / Plugins behind a kebab menu.
+   * -------------------------------------------------------------------- */
+
+  function openOverflowMenu() {
+    if (!state.root) return;
+    const trigger = state.root.querySelector(".chat-sidebar__overflow-menu");
+    if (!trigger) return;
+    const popover = ensurePopover("chat-sidebar-overflow-popover", "chat-sidebar__overflow-popover");
+    if (!popover) return;
+    if (state.popoverId === popover.id) {
+      closePopover();
+      return;
+    }
+    closePopover();
+    popover.innerHTML = `
+      <ul class="chat-sidebar__overflow-list" role="menu">
+        <li role="none">
+          <button type="button" role="menuitem" data-chat-action="overflow-project" data-attach="1">
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M2 5.5A1.5 1.5 0 0 1 3.5 4h2.6l1.4 1.5h4.5A1.5 1.5 0 0 1 13.5 7v5A1.5 1.5 0 0 1 12 13.5H3.5A1.5 1.5 0 0 1 2 12V5.5Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+            </svg>
+            Project
+          </button>
+        </li>
+        <li role="none">
+          <button type="button" role="menuitem" data-chat-action="overflow-files" data-attach="1">
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M4 2.5h5l2.5 2.5V13A1.5 1.5 0 0 1 10 14.5H4A1.5 1.5 0 0 1 2.5 13V4A1.5 1.5 0 0 1 4 2.5Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+              <path d="M5.5 7.5h5M5.5 10h3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+            </svg>
+            Files
+          </button>
+        </li>
+        <li role="none">
+          <button type="button" role="menuitem" data-chat-action="overflow-plugins" data-attach="1">
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M6 2.5v3M10 2.5v3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+              <path d="M5 5.5h6V8a3 3 0 0 1-3 3 3 3 0 0 1-3-3V5.5Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+              <path d="M8 11v2.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+            </svg>
+            Plugins
+          </button>
+        </li>
+        <li role="none" class="chat-sidebar__overflow-divider" role="separator" aria-hidden="true"></li>
+        <li role="none">
+          <button type="button" role="menuitem" data-chat-action="open-session-menu" data-attach="1">
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M8 2.5A5.5 5.5 0 1 1 2.5 8 5.5 5.5 0 0 1 8 2.5Z" fill="none" stroke="currentColor" stroke-width="1.4"/>
+              <path d="M8 4.5v4l2.5 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Chat sessions
+          </button>
+        </li>
+        <li role="none">
+          <a class="chat-sidebar__overflow-link" role="menuitem" href="https://github.com/PolderLabsVOF/openkan/releases" target="_blank" rel="noopener noreferrer">
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="2.5" y="3" width="11" height="7.5" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.3"/>
+              <path d="M5.5 13.5h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+            </svg>
+            Get desktop app
+          </a>
+        </li>
+      </ul>
+    `;
+    state.popoverId = popover.id;
+    anchorPopover(popover, trigger);
+  }
+
+  function openOverflowSubMenu(tab) {
+    closePopover();
+    // Delegate to the existing tab popover logic.
+    openTab(tab, null);
   }
 
   /* ----------------------------------------------------------------------
