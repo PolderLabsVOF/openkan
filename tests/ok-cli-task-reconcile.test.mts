@@ -22,6 +22,7 @@ import { initBoard, getBoard, reconcileOkTask, taskArtifacts, KANBAN_DIR } from 
 import { writeTask, paths as okPaths, readTask as readOkTask } from "../ok/storage.ts";
 import type { Task as OkTask } from "../ok/schemas.ts";
 import { startOrAttach, type StartOrAttachResult } from "../kanban/server.ts";
+import { addProject, setRegistryPathForTesting } from "../kanban/projects.ts";
 
 // Module-scoped server reference for signal handler cleanup.
 // This ensures that if npm test is interrupted, the in-process server is stopped.
@@ -69,6 +70,7 @@ async function runOkTask(cwd: string, args: string[]): Promise<{ code: number; s
   // process is the only fully isolated path.
   const { spawn } = await import("node:child_process");
   const scriptPath = fileURLToPath(new URL("../bin/ok.ts", import.meta.url));
+  writeFileSync("/tmp/ok-add-debug.log", `[parent] spawn cwd=${cwd} parentCwd=${process.cwd()}\n`, { flag: "a" });
   return new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
     const child = spawn(
       process.execPath,
@@ -83,6 +85,7 @@ async function runOkTask(cwd: string, args: string[]): Promise<{ code: number; s
     child.on("error", (err) => resolve({ code: 1, stdout, stderr: stderr + err.message }));
   });
 }
+
 
 function taskIdFromOutput(stdout: string): string {
   const id = stdout.match(/tsk-[A-Za-z0-9_-]+/)?.[0];
@@ -241,7 +244,16 @@ describe("ok task add → dashboard (integration)", () => {
 
   before(async () => {
     root = tmp();
+    // Redirect the project registry to a per-suite file so the server's
+    // getActiveProjectRoot() resolves to the test's tmpdir, not the
+    // developer's live dashboard project. Without this, the running
+    // server falls back to the global active project root, and
+    // handleRequest() loads the developer's board.json into _board —
+    // which is the v0.6.1 leak shape that contaminated the live
+    // dashboard with test fixtures.
+    setRegistryPathForTesting(join(root, ".ok", "projects.json"));
     await initBoard({ directory: root, client: null, log: async () => undefined });
+    addProject({ name: "test", root });
 
     // Pick a free port.
     const { createServer } = await import("node:http");
@@ -271,6 +283,7 @@ describe("ok task add → dashboard (integration)", () => {
     else process.env.OPENKAN_PORT = savedPort;
     if (serverRef === server) serverRef = null;
     if (server) await server.stop();
+    setRegistryPathForTesting(null);
     rmSync(root, { recursive: true, force: true });
   });
 
@@ -312,19 +325,13 @@ describe("ok task add → dashboard (integration)", () => {
   });
 
   it("ok task add posts the locally-minted id to the board", async () => {
-    // First, confirm which server baseUrl is actually pointing to
-    const diagBoard = await (await fetch(`${baseUrl}/api/board`)).json() as { tasks: any[] };
-    writeFileSync("/tmp/ok-add-debug.log", `baseUrl=${baseUrl} boardTasksBefore=${diagBoard.tasks.length} sampleTitles=${diagBoard.tasks.slice(0, 3).map(t => t.title).join(" | ")}\n`, { flag: "a" });
     const added = await runOkTask(root, ["add", "server-visible task", "--owner", "alice"]);
-    assert.strictEqual(added.code, 0, `add failed: stdout=${added.stdout} stderr=${added.stderr}`);
+    assert.strictEqual(added.code, 0);
     const id = taskIdFromOutput(added.stdout);
-    writeFileSync("/tmp/ok-add-debug.log", `id=${id}\nstdout=${added.stdout}\nstderr=${added.stderr}\nenv in parent: HOST=${process.env.OPENKAN_HOST} PORT=${process.env.OPENKAN_PORT}\nbaseUrl=${baseUrl}\n`, { flag: "a" });
-    // Give the watcher / server a moment
-    await new Promise(r => setTimeout(r, 200));
+
     const board = await (await fetch(`${baseUrl}/api/board`)).json() as {
       tasks: Array<{ id: string; title: string; offlineMirrorId?: string }>;
     };
-    writeFileSync("/tmp/ok-add-debug.log", `board tasks: ${board.tasks.length} titles: ${board.tasks.slice(-5).map(t => `${t.id}=${t.title}`).join(", ")}\n`, { flag: "a" });
     const created = board.tasks.find((task) => task.id === id);
     assert.strictEqual(created?.title, "server-visible task");
     assert.strictEqual(created?.offlineMirrorId, id);

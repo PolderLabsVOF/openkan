@@ -403,6 +403,14 @@ function fromPlanningTask(ok: OkTask): Task | null {
     images: [],
     parentId: null,
     subtaskIds: [],
+    // The planning-system task id is the offline mirror; setting it on
+    // the planning→board path closes a race where the file watcher
+    // creates the board row before the HTTP POST lands, so a later
+    // dedupe-by-clientId finds a row without offlineMirrorId and returns
+    // it without the marker. With this, both creation paths produce
+    // equivalent rows and `ok task add`'s post-write contract (id
+    // visible on the board, mirror marked synced) holds in either order.
+    offlineMirrorId: ok.id,
   };
 }
 
