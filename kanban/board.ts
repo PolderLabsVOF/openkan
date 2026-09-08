@@ -59,6 +59,14 @@ export interface Task {
   images: string[];       // image file names; mirrors files on disk
   parentId: string | null;   // null for top-level tasks; task.id of the parent for subtasks
   subtaskIds: string[];      // derived; ids of immediate children. Maintained by the api.
+  /**
+   * Stable identity supplied by an offline client (e.g. `ok task add`'s
+   * locally-minted tsk-id). When the server creates a task via POST with
+   * `clientId`, it stores the same value here so retried writes from the
+   * same offline client converge on the same row instead of duplicating.
+   * The HTTP-side `id` is the canonical engine identifier.
+   */
+  offlineMirrorId?: string;
 }
 
 // ─── Task getter / setter helpers ─────────────────────────────────────────────
