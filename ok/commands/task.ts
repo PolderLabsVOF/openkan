@@ -333,6 +333,26 @@ async function cmdTaskClaim(args: string[]): Promise<number> {
     await writeTask(p, next);
     await refreshIndex(p);
   }
+  // Mirror claim onto the board task so the dashboard reflects
+  // ownership immediately. Patch is best-effort: when the server is
+  // unreachable the offline cache still holds the lease and the
+  // reconciler will pick up the state on the next server boot.
+  const claimRes = await apiRequest({
+    path: `/api/tasks/${encodeURIComponent(positionals[0])}`,
+    method: "PATCH",
+    payload: {
+      assignees: [owner],
+      state: "running",
+      agent: owner,
+    },
+    timeoutMs: 4000,
+  });
+  if (claimRes.offline) {
+    process.stderr.write(`ok task claim: dashboard unreachable (${claimRes.error ?? "no server"}); offline lease retained\n`);
+  } else if (!claimRes.ok) {
+    const errMsg = (claimRes.body as { error?: string })?.error ?? `HTTP ${claimRes.status}`;
+    process.stderr.write(`ok task claim: dashboard rejected PATCH (${errMsg})\n`);
+  }
   process.stdout.write(`${positionals[0]}\n`);
   return 0;
 }
@@ -352,6 +372,18 @@ async function cmdTaskHeartbeat(args: string[]): Promise<number> {
   const leaseMs = leaseMsRaw ? Number(leaseMsRaw) : undefined;
   const p = await paths();
   await heartbeat(p, positionals[0], owner, { leaseMs });
+  // Heartbeat is a lease refresh; the board has no lease concept, but
+  // we re-affirm the assignee so a dashboard filter still surfaces
+  // active ownership. Idempotent on the server side.
+  const hbRes = await apiRequest({
+    path: `/api/tasks/${encodeURIComponent(positionals[0])}`,
+    method: "PATCH",
+    payload: { assignees: [owner] },
+    timeoutMs: 4000,
+  });
+  if (hbRes.offline) {
+    process.stderr.write(`ok task heartbeat: dashboard unreachable; offline lease refreshed\n`);
+  }
   process.stdout.write(`${positionals[0]}\n`);
   return 0;
 }
@@ -391,6 +423,25 @@ async function cmdTaskComplete(args: string[]): Promise<number> {
   await writeTask(p, next);
   await release(p, positionals[0], owner);
   await refreshIndex(p);
+  // Promote the completion onto the board task so the card lands in
+  // the Done column with the evidence trail. The HTTP path is
+  // canonical; the offline cache is the lease mirror.
+  const completeRes = await apiRequest({
+    path: `/api/tasks/${encodeURIComponent(positionals[0])}`,
+    method: "PATCH",
+    payload: {
+      column: "done",
+      state: "done",
+      assignees: [owner],
+    },
+    timeoutMs: 4000,
+  });
+  if (completeRes.offline) {
+    process.stderr.write(`ok task complete: dashboard unreachable; completion persisted offline\n`);
+  } else if (!completeRes.ok) {
+    const errMsg = (completeRes.body as { error?: string })?.error ?? `HTTP ${completeRes.status}`;
+    process.stderr.write(`ok task complete: dashboard rejected PATCH (${errMsg})\n`);
+  }
   process.stdout.write(`${next.id}\n`);
   return 0;
 }
