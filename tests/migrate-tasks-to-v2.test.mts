@@ -139,15 +139,12 @@ describe("migrate-tasks-to-v2 (Phase 3)", () => {
     assert.strictEqual(v2!.title, "already migrated");
   });
 
-  it("writes no v1 flat file via writeTask dual-write on top of v2 (Phase 1 verification)", async () => {
-    // After migration, calling writeTask with a v1 input should still
-    // produce both the v2 directory and a flat `.ok/tasks/<id>.json` file
-    // (Phase 1 dual-write). This proves the dual-write path coexists
-    // with the migration: callers can keep using v1 inputs even after
-    // migration, and the legacy form is regenerated for them.
+  it("writes v2 directory only via writeTask (Phase 8 verification)", async () => {
+    // Phase 8+: writeTask only writes v2 directory form.
+    // The v1 flat file is NOT produced.
     const fresh = makeLegacyV1("tsk-migwrite", { title: "post-mig write" });
     await writeTask(p, fresh);
-    assert.ok(existsSync(join(root, ".ok", "tasks", "tsk-migwrite.json")), "dual-write produced flat file");
-    assert.ok(existsSync(join(root, ".ok", "tasks", "tsk-migwrite", "task.json")), "dual-write produced v2 file");
+    assert.strictEqual(existsSync(join(root, ".ok", "tasks", "tsk-migwrite.json")), false, "v1 flat file NOT written");
+    assert.ok(existsSync(join(root, ".ok", "tasks", "tsk-migwrite", "task.json")), "v2 directory task.json written");
   });
 });

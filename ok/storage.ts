@@ -148,75 +148,36 @@ export async function listDir(p: string, prefix: string): Promise<string[]> {
 }
 
 /**
- * Read a task. Phase 2 makes this v2-primary: try the directory form
- * (`.ok/tasks/<id>/task.json`) first, fall back to the legacy flat file
- * (`.ok/tasks/<id>.json`) when v2 is missing. The legacy read is
- * converted to v2 form via `convertTaskV1ToV2` so callers receive a
- * uniform `TaskV2` regardless of which form was on disk.
+ * Read a task. Phase 8 makes this v2-only: reads the directory form
+ * (`.ok/tasks/<id>/task.json`). Returns undefined if no v2 file exists.
+ * Throws on invalid JSON or schema violations.
  */
 export async function readTask(p: OkPaths, id: string): Promise<TaskV2 | undefined> {
   if (!/^tsk-[A-Za-z0-9_-]+$/.test(id)) throw new Error(`invalid task id: ${id}`);
-  // Phase 2: v2-primary read.
-  const v2 = await readTaskV2(p, id);
-  if (v2) return v2;
-  // Fall back to legacy v1 flat file. Best-effort: malformed JSON throws.
-  const v1 = await readJsonOptional(path.join(p.tasksDir, `${id}.json`), isTask);
-  return v1 ? convertTaskV1ToV2(v1) : undefined;
+  // Phase 8: v2-only read.
+  return readTaskV2(p, id);
 }
 
 /**
- * Write a task as both v1 (flat file) and v2 (directory form). Phase 1
- * dual-write: every mutation produces both shapes so legacy readers
- * continue to find the task while v2-aware callers see the canonical
- * directory form. The v1 form is a projection via `convertTaskV2ToV1`
- * and may be lossy for callers passing a v2 with fields that have no
- * v1 equivalent (column, order, assignees, etc.). Accepts either v1
- * `Task` or v2 `TaskV2`; v1 input is promoted to v2 via
- * `convertTaskV1ToV2` before dual-write.
+ * Write a task in v2 directory form (`.ok/tasks/<id>/task.json`).
+ * Accepts either v1 `Task` or v2 `TaskV2`; v1 input is promoted to
+ * v2 via `convertTaskV1ToV2` before writing. Phase 8+ is v2-only.
  */
 export async function writeTask(p: OkPaths, task: Task | TaskV2): Promise<void> {
   const v2: TaskV2 = isTaskV2(task) ? task : convertTaskV1ToV2(task);
-  const v1: Task = convertTaskV2ToV1(v2);
-  // Write the directory form first — this is the Phase 5+ canonical
-  // shape. v2 failures propagate.
+  // Write the directory form — this is the Phase 8+ canonical shape.
   await writeTaskV2(p, v2);
-  // Then mirror to the legacy flat file. Phase 1 dual-write: best-effort
-  // so a transient v1 filesystem error does not roll back the v2 write.
-  try {
-    await fs.mkdir(p.tasksDir, { recursive: true });
-    await writeJson(path.join(p.tasksDir, `${v1.id}.json`), v1);
-  } catch {
-    // v1 fallback is advisory; v2 directory is canonical.
-  }
 }
 
 /**
- * List every task in `.ok/tasks/`. Phase 2 merges both the directory
- * form and the legacy flat file, de-duplicating by id (v2 wins on
- * collision since it is the canonical form). All entries are returned
- * as `TaskV2`.
+ * List every task in `.ok/tasks/`. Phase 8 returns only tasks with
+ * v2 directory form (`.ok/tasks/<id>/task.json`). Tasks with only
+ * legacy flat files are filtered out as orphaned. All entries are
+ * returned as `TaskV2`.
  */
 export async function listTasks(p: OkPaths): Promise<TaskV2[]> {
-  const byId = new Map<string, TaskV2>();
-  // Phase 2: read directory form first.
-  for (const v of await listTasksV2(p)) byId.set(v.id, v);
-  // Fall back to legacy v1 flat files for any id that has no directory form.
-  let names: string[];
-  try {
-    names = await fs.readdir(p.tasksDir);
-  } catch (e: any) {
-    if (e?.code === "ENOENT") return [...byId.values()];
-    throw e;
-  }
-  for (const name of names) {
-    if (!name.endsWith(".json")) continue;
-    const id = name.slice(0, -".json".length);
-    if (!/^tsk-[A-Za-z0-9_-]+$/.test(id)) continue;
-    if (byId.has(id)) continue;
-    const v1 = await readJsonOptional(path.join(p.tasksDir, name), isTask);
-    if (v1) byId.set(id, convertTaskV1ToV2(v1));
-  }
-  return [...byId.values()];
+  // Phase 8: v2-only listing.
+  return listTasksV2(p);
 }
 
 /**

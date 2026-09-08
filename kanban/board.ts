@@ -572,7 +572,21 @@ export async function reconcileAllOkTasks(kanbanDir: string = KANBAN_DIR): Promi
   let count = 0;
   try {
     const files = await fsPromises.readdir(p.tasksDir);
+    // Phase 8+: Check both v1 flat files (<id>.json) and v2 directories (<id>/task.json)
     for (const file of files) {
+      // Check v2 directory first (<id>/task.json)
+      const v2Dir = join(p.tasksDir, file, "task.json");
+      try {
+        const stat = await fsPromises.stat(v2Dir);
+        if (stat.isFile()) {
+          const id = file; // directory name is the task id
+          const inserted = await reconcileOkTask(id, kanbanDir);
+          if (inserted) count += 1;
+          continue;
+        }
+      } catch { /* no v2 directory, check v1 flat file */ }
+
+      // Fallback to v1 flat file (<id>.json) for legacy tasks
       const m = file.match(/^(tsk-[A-Za-z0-9_-]+)\.json$/);
       if (!m) continue;
       const inserted = await reconcileOkTask(m[1], kanbanDir);
@@ -587,13 +601,26 @@ export async function reconcileAllOkTasks(kanbanDir: string = KANBAN_DIR): Promi
  * `"synced"`, recording the server-side id under `mirrorId`. Quietly
  * swallows write errors — losing the marker only means the next sweep
  * re-tries, which is safe under the idempotency contract above.
+ * Phase 8+: reads and writes v2 directory form first, falls back to v1.
  */
 async function markOkMirrorSynced(p: ReturnType<typeof okPaths>, okId: string, serverId: string): Promise<void> {
-  const file = join(p.tasksDir, `${okId}.json`);
+  // Phase 8+: Try v2 directory first, then fall back to v1 flat file
+  const v2File = join(p.tasksDir, okId, "task.json");
   let raw: string;
+  let isV2 = false;
+
+  // Try v2 first
   try {
-    raw = await fsPromises.readFile(file, "utf-8");
-  } catch { return; }
+    raw = await fsPromises.readFile(v2File, "utf-8");
+    isV2 = true;
+  } catch {
+    // Fall back to v1 flat file
+    const file = join(p.tasksDir, `${okId}.json`);
+    try {
+      raw = await fsPromises.readFile(file, "utf-8");
+    } catch { return; }
+  }
+
   let parsed: unknown;
   try { parsed = JSON.parse(raw); } catch { return; }
   if (!parsed || typeof parsed !== "object") return;
@@ -602,26 +629,14 @@ async function markOkMirrorSynced(p: ReturnType<typeof okPaths>, okId: string, s
   rec.mirrorStatus = "synced";
   rec.mirrorId = serverId;
   rec.updatedAt = okNowIso();
+
+  // Write back to the same location we read from
+  const targetFile = isV2 ? v2File : join(p.tasksDir, `${okId}.json`);
   try {
-    const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
+    const tmp = `${targetFile}.tmp-${process.pid}-${Date.now()}`;
     await fsPromises.writeFile(tmp, JSON.stringify(rec, null, 2));
-    await fsPromises.rename(tmp, file);
+    await fsPromises.rename(tmp, targetFile);
   } catch { /* swallow — best effort */ }
-  // Phase 5 prep: also update the v2 directory form when it exists, so
-  // the v2-primary read returns the synced marker. Best-effort; missing
-  // v2 directory (legacy-only entries) is fine.
-  const v2File = join(p.tasksDir, okId, "task.json");
-  try {
-    const v2Raw = await fsPromises.readFile(v2File, "utf-8");
-    const v2 = JSON.parse(v2Raw) as Record<string, unknown>;
-    if (v2.mirrorStatus === "synced" && v2.mirrorId === serverId) return;
-    v2.mirrorStatus = "synced";
-    v2.mirrorId = serverId;
-    v2.updatedAt = okNowIso();
-    const tmp2 = `${v2File}.tmp-${process.pid}-${Date.now()}`;
-    await fsPromises.writeFile(tmp2, JSON.stringify(v2, null, 2));
-    await fsPromises.rename(tmp2, v2File);
-  } catch { /* legacy-only entry — no v2 to update */ }
 }
 
 export async function persist(board: Board): Promise<void> {
