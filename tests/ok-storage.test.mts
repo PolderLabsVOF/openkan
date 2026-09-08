@@ -10,6 +10,7 @@ import {
   paths,
   initIfMissing,
   readTask, writeTask, listTasks,
+  readTaskV2, writeTaskV2, listTasksV2,
   readPlan, writePlan, listPlans,
   readPrd, writePrd, listPrds,
   rebuildIndex, readIndex,
@@ -113,9 +114,40 @@ describe("ok/storage", () => {
     assert.strictEqual(got!.priority, "p1");
   });
 
-  it("lists all tasks", async () => {
-    const tasks = await listTasks(p);
-    assert.ok(tasks.find((x) => x.id === "tsk-rw000001"));
+  it("writes a v2 task into its task directory", async () => {
+    const task = {
+      ...makeTask("tsk-v2000001"),
+      schema: "ok.task.v2" as const,
+      description: "",
+      column: "todo" as const,
+      order: 0,
+      sessionId: null,
+      agent: "",
+      model: null,
+      state: "idle" as const,
+      lastError: null,
+      artifact: "tasks/tsk-v2000001/task.mdx",
+      sessionArtifact: null,
+      pendingInputs: [],
+      artifacts: { mdxPath: "tasks/tsk-v2000001/task.mdx", commentsPath: "tasks/tsk-v2000001/comments.json", inputsPath: "tasks/tsk-v2000001/inputs.json", statePath: "tasks/tsk-v2000001/state.json" },
+      tags: [],
+      category: "task" as const,
+      priority: "normal" as const,
+      effort: null,
+      archived: false,
+      assignees: [],
+      images: [],
+      parentId: null,
+      subtaskIds: [],
+    };
+    await writeTaskV2(p, task);
+    assert.ok(existsSync(join(p.tasksDir, task.id, "task.json")));
+    assert.deepStrictEqual(await readTaskV2(p, task.id), task);
+  });
+
+  it("lists all v2 tasks", async () => {
+    const tasks = await listTasksV2(p);
+    assert.ok(tasks.find((x) => x.id === "tsk-v2000001"));
   });
 
   it("rejects malformed task ids", async () => {
