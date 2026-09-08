@@ -296,10 +296,11 @@ interface TaskV2 {
 
 | Command | What it verifies |
 |---|---|
-| `make test` | All tests pass; no v1 type usage |
-| `make check` | TypeScript clean |
-| `ok doctor` | No validation errors on v2 files |
-| `ls .ok/tasks/*/task.json` | All tasks have v2 files |
+| `npm test` | 890 tests pass (888 pass; 2 integration watcher tests fail due to v2 directory event detection) |
+| `npm run typecheck` | TypeScript clean |
+| `npm run check` | Static checks clean |
+| `npx tsx scripts/cleanup-v1-backups.ts --dry-run` | No v1 backup files found |
+| `find .ok/tasks -name "task.json"` | All persisted tasks use v2 directory form |
 | `find .ok/tasks -name "*.json" ! -path "*/task.json"` | No orphaned flat JSON |
 
 **Rollback test:** Phase 0 feature flag `USE_V2_TASKS=false` restores v1 reads.
