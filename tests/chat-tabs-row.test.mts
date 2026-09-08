@@ -6,8 +6,8 @@
 //   2. The desktop-app CTA links to the GitHub releases page.
 //   3. setActiveTab toggles `chat-sidebar__tabs-tab--active` and
 //      `aria-selected` on the matching tab.
-//   4. The CSS rule that previously hid .chat-sidebar__tabs is gone, so the
-//      row actually shows up at runtime.
+//   4. The tabs nav is hidden via CSS (Project / Files / Plugins are now
+//      reachable via the overflow menu instead).
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -15,7 +15,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const source = readFileSync(resolve("web/chat-sidebar.js"), "utf8");
-const css = readFileSync(resolve("web/style.css"), "utf8");
+const css = readFileSync(resolve("web/style.css"), "utf8") +
+             readFileSync(resolve("web/experience.css"), "utf8");
 
 interface TabNode {
   attributes: Map<string, string>;
@@ -203,21 +204,17 @@ test("setActiveTab toggles the active class on the matching tab only", () => {
   }
 });
 
-test("stylesheet no longer hides the chat sidebar tabs row", () => {
-  assert.doesNotMatch(
-    css,
-    /\.chat-sidebar__tabs\s*{\s*display\s*:\s*none\s*[;}]/,
-    "expected .chat-sidebar__tabs { display: none; } to be removed",
-  );
+test("tabs nav is intentionally hidden; Project/Files/Plugins live in the overflow menu", () => {
   assert.match(
     css,
-    /\.chat-sidebar__tabs\s*{[^}]*display\s*:\s*flex/,
-    "expected a real .chat-sidebar__tabs display rule",
+    /\.chat-sidebar__tabs\s*{\s*display\s*:\s*none\s*[;}]/,
+    "tabs nav should be hidden (Project/Files/Plugins moved to overflow menu)",
   );
+  // The active-tab class styles are still needed since openTab() still sets them.
   assert.match(
     css,
     /\.chat-sidebar__tabs-tab--active/,
-    "expected an active-tab style",
+    "expected an active-tab style (openTab still toggles the class)",
   );
 });
 
