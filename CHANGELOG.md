@@ -5,7 +5,24 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] - 2026-09-08
+
+### Added
+
+- **Board-sync (single-store, dual API).** `ok task add` now posts to the local
+  dashboard with the new `tsk-*` id as `clientId` so the task appears on the
+  board at `http://127.0.0.1:7777/` immediately. When the dashboard is offline,
+  `ok task add` falls back to writing `.ok/board.json` directly; the boot-time
+  reconciler promotes any pending offline entries onto the board on the next
+  server start, idempotent by `clientId`. `apiCreateTask` accepts `clientId`
+  and refuses to create duplicates when a board task already carries that id
+  (new optional `offlineMirrorId?: string` field). `ok task claim`,
+  `ok task heartbeat`, and `ok task complete` now PATCH the matching board
+  task, not just the offline cache, so agent leases are visible to operators
+  on the dashboard.
+- `ok board delete <id>` — new subcommand that calls `DELETE /api/tasks/<id>`.
+  Replaces the previous need to issue raw `DELETE` HTTP calls when an operator
+  needed to clean up an accidental duplicate.
 
 ### Fixed
 
@@ -46,8 +63,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that was silently missing from the rendered shell; replace the legacy
   `display:none` CSS with real pill-row styles matching the topbar tabs.
 
+### Added
+
+- **Tray diagnostics.** `bin/tray.ts` now captures the underlying error from
+  every failure mode (`node-systray` import failure, constructor failure,
+  early-exit failure) and surfaces it verbatim instead of collapsing to a
+  generic "libappindicator missing on Linux" message. The fallback reporter
+  in `ok serve` / `ok start` prints a platform-aware install hint:
+  `apt install libappindicator3-1` on Debian/Ubuntu, `dnf install
+  libappindicator-gtk3` on Fedora, a macOS Go-binary check on Darwin, and a
+  reinstall hint when the bundled `bin/assets/tray/` icons are missing.
+  `tests/tray-error-reporting.test.mts` (16 cases) covers every failure mode
+  end-to-end.
+
 ### Changed
 
+- Chat top bar trimmed to a single 44px row: conversation title and a
+  keyboard-accessible overflow menu (`⋯`). Project, Files, Plugins, Chat
+  sessions, and Get desktop app live behind the menu (each wired to the
+  existing `openTab()` routing). The legacy Project/Files/Plugins tab row
+  is hidden via CSS rather than deleted so the overflow menu continues to
+  work. No new npm dependencies.
 - Chat sidebar: kanban task references now show the task title prominently,
   the column as a small colored pill, and the truncated task ID as a small
   monospace badge — both in the mention tray and in turn banners. The
