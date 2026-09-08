@@ -24,6 +24,7 @@ import {
   taskArtifacts,
   ensureBoardForProject,
   reconcileOkTask,
+  reconcileAllOkTasks,
 } from "./board.ts";
 import { extractMetadata } from "./tags.ts";
 import {
@@ -570,10 +571,29 @@ export async function apiCreateTask(_ctx: BoardContext, req: Request): Promise<R
     tags?: string[]; category?: Category;
     assignee?: string; // explicit assignee; if omitted, auto-assign to current git user
     parentId?: string; // if provided, create as a subtask
+    /**
+     * Stable identity supplied by an offline client (e.g. the tsk-id
+     * minted locally by `ok task add`). When provided, a board task that
+     * already carries this value in `offlineMirrorId` is treated as the
+     * same row — the existing task is returned and no new task is created.
+     * Duplicate POSTs from a reconnecting client therefore converge on
+     * one card instead of spawning duplicates.
+     */
+    clientId?: string;
   }
   let body: CreateBody;
   try { body = await req.json(); } catch { return errorResponse("Invalid JSON"); }
   if (!body.title?.trim()) return errorResponse("title is required", 422);
+
+  // Idempotency by clientId: if the offline client sent the same id before,
+  // return the existing task instead of creating a duplicate. This protects
+  // `ok task add` against retries that race the network blip after the
+  // task was actually created server-side.
+  if (body.clientId && /^tsk-[A-Za-z0-9_-]+$/.test(body.clientId)) {
+    const existingBoard = await getBoard();
+    const dupe = existingBoard.tasks.find(t => t.offlineMirrorId === body.clientId);
+    if (dupe) return jsonResponse(dupe, 200);
+  }
 
   // Validate parentId if provided
   if (body.parentId !== undefined) {
@@ -584,7 +604,12 @@ export async function apiCreateTask(_ctx: BoardContext, req: Request): Promise<R
     if (parent.parentId !== null) return errorResponse("Cannot nest a subtask under another subtask (v1)", 422);
   }
 
-  const id = newId("tsk");
+  // The offline client already minted a stable task id. Reuse it as the
+  // canonical board id so `ok task claim|heartbeat|complete <id>` target
+  // the same record; server-created tasks still receive a fresh id.
+  const id = body.clientId && /^tsk-[A-Za-z0-9_-]+$/.test(body.clientId)
+    ? body.clientId
+    : newId("tsk");
   const arts = taskArtifacts(id);
   const now = nowIso();
 
@@ -631,6 +656,7 @@ export async function apiCreateTask(_ctx: BoardContext, req: Request): Promise<R
     images: [],
     parentId: body.parentId ?? null,
     subtaskIds: [],
+    offlineMirrorId: body.clientId ?? undefined,
   };
 
   let created: Task | undefined;
@@ -2941,6 +2967,14 @@ export async function startOrAttach(
   })();
 
   ctx.log("info", `Kanban server started at ${runningServer.url} (primary)`);
+
+  // Boot-time sweep: promote any `.ok/tasks/<id>.json` entries that
+  // were written while the server was down (or where the prior POST
+  // failed offline) so they appear on the board without waiting for a
+  // file-change event. Idempotent; already-synced entries are skipped.
+  reconcileAllOkTasks(dir).catch((e: any) => {
+    process.stderr.write(`reconcileAllOkTasks failed: ${e?.message ?? e}\n`);
+  });
 
   // Auto-detect projects in the background if no active project is set
   if (opts._autoDetect !== false && !activeProject()) {

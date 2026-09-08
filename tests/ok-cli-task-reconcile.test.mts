@@ -20,6 +20,7 @@ import { tmpdir } from "node:os";
 import { initBoard, getBoard, reconcileOkTask, taskArtifacts, KANBAN_DIR } from "../kanban/board.ts";
 import { writeTask, paths as okPaths, readTask as readOkTask } from "../ok/storage.ts";
 import type { Task as OkTask } from "../ok/schemas.ts";
+import { runTask } from "../ok/commands/task.ts";
 import { startOrAttach } from "../kanban/server.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -42,6 +43,31 @@ function makeOkTask(id: string, status: OkTask["status"], title: string): OkTask
     priority: "p2",
     owner: "agent:test",
   };
+}
+
+async function runOkTask(cwd: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+  const saved = process.cwd();
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  const originalStdout = process.stdout.write.bind(process.stdout);
+  const originalStderr = process.stderr.write.bind(process.stderr);
+  process.chdir(cwd);
+  (process.stdout as any).write = (value: string) => { stdout.push(value); return true; };
+  (process.stderr as any).write = (value: string) => { stderr.push(value); return true; };
+  try {
+    const code = await runTask(args);
+    return { code, stdout: stdout.join(""), stderr: stderr.join("") };
+  } finally {
+    (process.stdout as any).write = originalStdout;
+    (process.stderr as any).write = originalStderr;
+    process.chdir(saved);
+  }
+}
+
+function taskIdFromOutput(stdout: string): string {
+  const id = stdout.match(/tsk-[A-Za-z0-9_-]+/)?.[0];
+  if (!id) throw new Error(`expected task id in ${JSON.stringify(stdout)}`);
+  return id;
 }
 
 // ─── Unit layer ───────────────────────────────────────────────────────────
@@ -123,6 +149,24 @@ describe("reconcileOkTask (unit)", () => {
     assert.strictEqual(inserted!.archived, true);
   });
 
+  it("promotes a pending mirror exactly once and marks it synced", async () => {
+    const id = "tsk-pendingMirror";
+    const p = okPaths(root);
+    const pending = { ...makeOkTask(id, "pending", "pending mirror"), mirrorStatus: "pending" as const };
+    await writeTask(p, pending);
+
+    const first = await reconcileOkTask(id);
+    assert.ok(first);
+    const synchronized = await readOkTask(p, id);
+    assert.strictEqual(synchronized!.mirrorStatus, "synced");
+    assert.strictEqual(synchronized!.mirrorId, id);
+
+    const second = await reconcileOkTask(id);
+    assert.strictEqual(second, null);
+    const board = await getBoard();
+    assert.strictEqual(board.tasks.filter((task) => task.id === id).length, 1);
+  });
+
   it("is a no-op when the board already owns the id", async () => {
     const id = "tsk-reconE";
     const p = okPaths(root);
@@ -185,6 +229,7 @@ describe("ok task add → dashboard (integration)", () => {
       { port, host: "127.0.0.1", _autoDetect: false },
     );
     baseUrl = `http://127.0.0.1:${port}`;
+    writeFileSync(join(root, ".ok", "openkan.json"), JSON.stringify({ host: "127.0.0.1", port }));
   });
 
   after(async () => {
@@ -227,5 +272,95 @@ describe("ok task add → dashboard (integration)", () => {
     const found = board.tasks.find((t) => t.id === id);
     assert.ok(found);
     assert.strictEqual(found!.column, "doing");
+  });
+
+  it("ok task add posts the locally-minted id to the board", async () => {
+    const added = await runOkTask(root, ["add", "server-visible task", "--owner", "alice"]);
+    assert.strictEqual(added.code, 0);
+    const id = taskIdFromOutput(added.stdout);
+
+    const board = await (await fetch(`${baseUrl}/api/board`)).json() as {
+      tasks: Array<{ id: string; title: string; offlineMirrorId?: string }>;
+    };
+    const created = board.tasks.find((task) => task.id === id);
+    assert.strictEqual(created?.title, "server-visible task");
+    assert.strictEqual(created?.offlineMirrorId, id);
+
+    const offline = await readOkTask(okPaths(root), id);
+    assert.strictEqual(offline?.mirrorStatus, "synced");
+  });
+
+  it("ok task claim, heartbeat, and complete update the board card", async () => {
+    const added = await runOkTask(root, ["add", "board lifecycle task"]);
+    const id = taskIdFromOutput(added.stdout);
+
+    assert.strictEqual((await runOkTask(root, ["claim", id, "--owner", "alice"])).code, 0);
+    let board = await (await fetch(`${baseUrl}/api/board`)).json() as {
+      tasks: Array<{ id: string; column: string; state: string; assignees: string[] }>;
+    };
+    let task = board.tasks.find((candidate) => candidate.id === id);
+    assert.strictEqual(task?.state, "running");
+    assert.ok(task?.assignees.includes("alice"));
+
+    assert.strictEqual((await runOkTask(root, ["heartbeat", id, "--owner", "alice"])).code, 0);
+    board = await (await fetch(`${baseUrl}/api/board`)).json() as {
+      tasks: Array<{ id: string; assignees: string[] }>;
+    };
+    task = board.tasks.find((candidate) => candidate.id === id);
+    assert.ok(task?.assignees.includes("alice"));
+
+    assert.strictEqual((await runOkTask(root, ["complete", id, "--owner", "alice", "--evidence", "test evidence"])).code, 0);
+    board = await (await fetch(`${baseUrl}/api/board`)).json() as {
+      tasks: Array<{ id: string; column: string; state: string }>;
+    };
+    task = board.tasks.find((candidate) => candidate.id === id);
+    assert.strictEqual(task?.column, "done");
+    assert.strictEqual(task?.state, "done");
+  });
+
+  it("POST with the same clientId returns one board task", async () => {
+    const clientId = `tsk-clientId${Date.now().toString(36)}`;
+    const payload = { title: "dedupe this POST", clientId, column: "todo" };
+    const first = await fetch(`${baseUrl}/api/tasks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    assert.strictEqual(first.status, 201);
+    const created = await first.json() as { id: string; offlineMirrorId?: string };
+    assert.strictEqual(created.id, clientId);
+    assert.strictEqual(created.offlineMirrorId, clientId);
+
+    const retry = await fetch(`${baseUrl}/api/tasks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    assert.strictEqual(retry.status, 200);
+    const returned = await retry.json() as { id: string };
+    assert.strictEqual(returned.id, clientId);
+
+    const board = await (await fetch(`${baseUrl}/api/board`)).json() as { tasks: Array<{ id: string }> };
+    assert.strictEqual(board.tasks.filter((task) => task.id === clientId).length, 1);
+  });
+
+  it("PATCH moves a board task to the requested column", async () => {
+    const created = await (await fetch(`${baseUrl}/api/tasks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "move a card" }),
+    })).json() as { id: string };
+
+    const patch = await fetch(`${baseUrl}/api/tasks/${created.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ column: "doing" }),
+    });
+    assert.strictEqual(patch.status, 200);
+    const moved = await patch.json() as { column: string };
+    assert.strictEqual(moved.column, "doing");
+
+    const board = await (await fetch(`${baseUrl}/api/board`)).json() as { tasks: Array<{ id: string; column: string }> };
+    assert.strictEqual(board.tasks.find((task) => task.id === created.id)?.column, "doing");
   });
 });

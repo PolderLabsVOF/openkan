@@ -2,7 +2,7 @@
 
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -70,6 +70,20 @@ describe("ok task", () => {
     const t = await readTask(paths(root), id);
     assert.strictEqual(t!.status, "pending");
     assert.strictEqual(t!.title, "Write the README");
+  });
+
+  it("add writes board.json when the dashboard is offline", async () => {
+    writeFileSync(join(root, ".ok", "openkan.json"), JSON.stringify({ host: "127.0.0.1", port: 1 }));
+    const { code, stdout, stderr } = await runOk(root, ["add", "offline board fallback"]);
+    assert.strictEqual(code, 0);
+    const id = extractId(stdout);
+    assert.match(stderr, /wrote board\.json fallback/);
+    const board = JSON.parse(readFileSync(join(root, ".ok", "board.json"), "utf-8")) as {
+      tasks: Array<{ id: string; title: string; offlineMirrorId: string }>;
+    };
+    const created = board.tasks.find((task) => task.id === id);
+    assert.strictEqual(created?.title, "offline board fallback");
+    assert.strictEqual(created?.offlineMirrorId, id);
   });
 
   it("add with --priority and --scope populates fields", async () => {

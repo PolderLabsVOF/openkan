@@ -25,6 +25,7 @@ import {
 import { type ParsedArgs, newId, nowIso, parseArgs, flagString, flagCsv, flagBool, runMain } from "../ids.ts";
 import { claim, heartbeat, release, assertUsable, LockHeldError } from "../lock.ts";
 import { pathToFileURL } from "node:url";
+import { apiRequest } from "./api.ts";
 
 const STATUSES: TaskStatus[] = ["pending", "in_progress", "review", "done", "cancelled"];
 const PRIORITIES: TaskPriority[] = ["p0", "p1", "p2", "p3"];
@@ -91,6 +92,113 @@ function titleFromArgs(positionals: string[]): string {
   return positionals.join(" ");
 }
 
+interface OfflineBoardTask {
+  id: string;
+  title: string;
+  description: string;
+  column: "backlog" | "todo" | "doing" | "review" | "done";
+  order: number;
+  sessionId: null;
+  agent: string;
+  model: null;
+  status: "idle" | "running" | "done" | "cancelled";
+  state: "idle" | "running" | "done" | "cancelled";
+  lastError: null;
+  createdAt: string;
+  updatedAt: string;
+  artifact: string;
+  sessionArtifact: null;
+  pendingInputs: string[];
+  artifacts: { mdxPath: string; commentsPath: string; inputsPath: string; statePath: string };
+  tags: string[];
+  category: "task";
+  priority: "normal";
+  effort: null;
+  archived: boolean;
+  assignees: string[];
+  images: string[];
+  parentId: null;
+  subtaskIds: string[];
+  offlineMirrorId: string;
+}
+
+interface OfflineBoard {
+  version: 1;
+  columns: Array<{ id: string; title: string }>;
+  tasks: OfflineBoardTask[];
+  sessions: Record<string, unknown>;
+}
+
+function offlineBoardTask(task: Task, column: OfflineBoardTask["column"]): OfflineBoardTask {
+  const state = task.status === "in_progress" ? "running" : task.status === "done" ? "done" : task.status === "cancelled" ? "cancelled" : "idle";
+  const artifacts = {
+    mdxPath: `tasks/${task.id}/task.mdx`,
+    commentsPath: `tasks/${task.id}/comments.json`,
+    inputsPath: `tasks/${task.id}/inputs.json`,
+    statePath: `tasks/${task.id}/state.json`,
+  };
+  return {
+    id: task.id,
+    title: task.title,
+    description: task.description ?? "",
+    column,
+    order: 0,
+    sessionId: null,
+    agent: task.owner ?? "",
+    model: null,
+    status: state,
+    state,
+    lastError: null,
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt,
+    artifact: artifacts.mdxPath,
+    sessionArtifact: null,
+    pendingInputs: [],
+    artifacts,
+    tags: task.scopes ?? [],
+    category: "task",
+    priority: "normal",
+    effort: null,
+    archived: task.status === "cancelled",
+    assignees: task.owner ? [task.owner] : [],
+    images: [],
+    parentId: null,
+    subtaskIds: [],
+    offlineMirrorId: task.id,
+  };
+}
+
+async function writeOfflineBoardTask(p: OkPaths, task: Task, column: OfflineBoardTask["column"]): Promise<void> {
+  const file = path.join(p.root, "board.json");
+  let board: OfflineBoard = {
+    version: 1,
+    columns: [
+      { id: "backlog", title: "Backlog" },
+      { id: "todo", title: "To Do" },
+      { id: "doing", title: "In Progress" },
+      { id: "review", title: "Review" },
+      { id: "done", title: "Done" },
+    ],
+    tasks: [],
+    sessions: {},
+  };
+  try {
+    const parsed = JSON.parse(await fs.readFile(file, "utf-8")) as Partial<OfflineBoard>;
+    if (Array.isArray(parsed.tasks) && Array.isArray(parsed.columns) && parsed.sessions) {
+      board = { version: 1, columns: parsed.columns, tasks: parsed.tasks, sessions: parsed.sessions };
+    }
+  } catch (e: any) {
+    if (e?.code !== "ENOENT") throw e;
+  }
+  if (board.tasks.some((existing) => existing.id === task.id || existing.offlineMirrorId === task.id)) return;
+  const next = offlineBoardTask(task, column);
+  next.order = board.tasks.filter((existing) => existing.column === column).length;
+  board.tasks.push(next);
+  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
+  await fs.writeFile(tmp, JSON.stringify(board, null, 2), "utf-8");
+  await fs.rename(tmp, file);
+}
+
 async function cmdTaskAdd(args: string[]): Promise<number> {
   const { positionals, flags } = parseArgs(args);
   const title = titleFromArgs(positionals);
@@ -100,17 +208,24 @@ async function cmdTaskAdd(args: string[]): Promise<number> {
   if (title.length > 200) throw new Error("title must be <= 200 chars");
 
   const status = parseStatus(flagString(flags, "status")) ?? "pending";
+  const columnArg = flagString(flags, "column");
+  const column = columnArg ?? "todo";
+  if (column && !["backlog", "todo", "doing", "review", "done"].includes(column)) {
+    throw new Error("column must be backlog|todo|doing|review|done");
+  }
 
   const p = await paths();
   const cfg = (await readConfig(p))!;
   const now = nowIso();
+  const localId = newId("tsk");
   const task: Task = {
     schema: "ok.task.v1",
-    id: newId("tsk"),
+    id: localId,
     title,
     status,
     createdAt: now,
     updatedAt: now,
+    mirrorStatus: "pending",
   };
   const owner = flagString(flags, "owner");
   if (owner) task.owner = owner;
@@ -135,6 +250,56 @@ async function cmdTaskAdd(args: string[]): Promise<number> {
 
   await writeTask(p, task);
   await refreshIndex(p);
+
+  // Attempt to mirror onto the dashboard. If a server is reachable the
+  // task becomes visible on the board immediately; if not, the offline
+  // file stays `mirrorStatus: "pending"` for the reconciler to pick up
+  // on the next server boot. `clientId` lets the server dedupe retries
+  // (network blip after the task was actually created server-side).
+  const payload: Record<string, unknown> = {
+    title,
+    column,
+    clientId: localId,
+  };
+  if (task.owner) payload.assignee = task.owner;
+  if (desc) payload.description = desc;
+
+  const response = await apiRequest({
+    path: "/api/tasks",
+    method: "POST",
+    payload,
+    timeoutMs: 4000,
+  });
+
+  if (response.offline) {
+    await writeOfflineBoardTask(p, task, column as OfflineBoardTask["column"]);
+    process.stderr.write(`ok task add: dashboard unreachable (${response.error ?? "no server"}); wrote board.json fallback and will reconcile on next server boot\n`);
+  } else if (response.ok) {
+    const serverTask = response.body as { id?: string; offlineMirrorId?: string } | null;
+    const serverId = serverTask?.id;
+    if (serverId && serverId !== localId) {
+      // Server minted a new id (e.g. duplicate detected and existing
+      // returned with a different id). Move the offline cache to mirror
+      // it and record the link so claim/heartbeat/complete route back.
+      await fs.rename(path.join(p.tasksDir, `${localId}.json`), path.join(p.tasksDir, `${serverId}.json`));
+      task.id = serverId;
+      task.mirrorStatus = "synced";
+      task.mirrorId = serverId;
+      await writeTask(p, task);
+      await refreshIndex(p);
+    } else {
+      task.mirrorStatus = "synced";
+      task.mirrorId = serverId ?? localId;
+      await writeTask(p, task);
+      await refreshIndex(p);
+    }
+  } else {
+    // Server replied with a non-2xx (e.g. 422 validation). The offline
+    // cache is the local source of truth; the next retry can re-issue.
+    const errMsg = (response.body as { error?: string })?.error ?? `HTTP ${response.status}`;
+    process.stderr.write(`ok task add: dashboard rejected (${errMsg}); kept offline\n`);
+  }
+
   process.stdout.write(`${task.id}\n`);
   return 0;
 }
@@ -276,6 +441,26 @@ async function cmdTaskClaim(args: string[]): Promise<number> {
     await writeTask(p, next);
     await refreshIndex(p);
   }
+  // Mirror claim onto the board task so the dashboard reflects
+  // ownership immediately. Patch is best-effort: when the server is
+  // unreachable the offline cache still holds the lease and the
+  // reconciler will pick up the state on the next server boot.
+  const claimRes = await apiRequest({
+    path: `/api/tasks/${encodeURIComponent(positionals[0])}`,
+    method: "PATCH",
+    payload: {
+      assignees: [owner],
+      state: "running",
+      agent: owner,
+    },
+    timeoutMs: 4000,
+  });
+  if (claimRes.offline) {
+    process.stderr.write(`ok task claim: dashboard unreachable (${claimRes.error ?? "no server"}); offline lease retained\n`);
+  } else if (!claimRes.ok) {
+    const errMsg = (claimRes.body as { error?: string })?.error ?? `HTTP ${claimRes.status}`;
+    process.stderr.write(`ok task claim: dashboard rejected PATCH (${errMsg})\n`);
+  }
   process.stdout.write(`${positionals[0]}\n`);
   return 0;
 }
@@ -295,6 +480,18 @@ async function cmdTaskHeartbeat(args: string[]): Promise<number> {
   const leaseMs = leaseMsRaw ? Number(leaseMsRaw) : undefined;
   const p = await paths();
   await heartbeat(p, positionals[0], owner, { leaseMs });
+  // Heartbeat is a lease refresh; the board has no lease concept, but
+  // we re-affirm the assignee so a dashboard filter still surfaces
+  // active ownership. Idempotent on the server side.
+  const hbRes = await apiRequest({
+    path: `/api/tasks/${encodeURIComponent(positionals[0])}`,
+    method: "PATCH",
+    payload: { assignees: [owner] },
+    timeoutMs: 4000,
+  });
+  if (hbRes.offline) {
+    process.stderr.write(`ok task heartbeat: dashboard unreachable; offline lease refreshed\n`);
+  }
   process.stdout.write(`${positionals[0]}\n`);
   return 0;
 }
@@ -334,6 +531,25 @@ async function cmdTaskComplete(args: string[]): Promise<number> {
   await writeTask(p, next);
   await release(p, positionals[0], owner);
   await refreshIndex(p);
+  // Promote the completion onto the board task so the card lands in
+  // the Done column with the evidence trail. The HTTP path is
+  // canonical; the offline cache is the lease mirror.
+  const completeRes = await apiRequest({
+    path: `/api/tasks/${encodeURIComponent(positionals[0])}`,
+    method: "PATCH",
+    payload: {
+      column: "done",
+      state: "done",
+      assignees: [owner],
+    },
+    timeoutMs: 4000,
+  });
+  if (completeRes.offline) {
+    process.stderr.write(`ok task complete: dashboard unreachable; completion persisted offline\n`);
+  } else if (!completeRes.ok) {
+    const errMsg = (completeRes.body as { error?: string })?.error ?? `HTTP ${completeRes.status}`;
+    process.stderr.write(`ok task complete: dashboard rejected PATCH (${errMsg})\n`);
+  }
   process.stdout.write(`${next.id}\n`);
   return 0;
 }

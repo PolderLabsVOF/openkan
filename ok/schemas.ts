@@ -60,6 +60,20 @@ export interface Task {
   evidence?: string[];
   /** Acceptance criteria bullets (the Definition of Done). */
   acceptance?: string[];
+  /**
+   * Lifecycle marker for the server-side mirror. `"pending"` means the
+   * offline write has not yet been reconciled into a board task (server
+   * unreachable, network blip, or duplicate retry); `"synced"` means a
+   * board task exists with matching `offlineMirrorId`. Set by `ok task add`
+   * on its write attempt and flipped by the reconciler once it lands.
+   */
+  mirrorStatus?: "pending" | "synced";
+  /**
+   * Server-side task id mirroring this offline entry. Populated when
+   * the offline write is reconciled onto the board so subsequent
+   * `ok task claim|heartbeat|complete` can target the same id.
+   */
+  mirrorId?: string;
 }
 
 export function isTask(obj: unknown): obj is Task {

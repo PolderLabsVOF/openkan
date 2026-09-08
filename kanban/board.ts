@@ -1,5 +1,6 @@
 import { nanoid } from "nanoid";
 import { existsSync, readFileSync } from "fs";
+import { promises as fsPromises } from "node:fs";
 import { join } from "path";
 import { writeFileAtomic, ensureDir, cleanupStaleTmp, removeDir } from "./io.ts";
 import type { Priority, Effort, Category } from "./tags.ts";
@@ -59,6 +60,14 @@ export interface Task {
   images: string[];       // image file names; mirrors files on disk
   parentId: string | null;   // null for top-level tasks; task.id of the parent for subtasks
   subtaskIds: string[];      // derived; ids of immediate children. Maintained by the api.
+  /**
+   * Stable identity supplied by an offline client (e.g. `ok task add`'s
+   * locally-minted tsk-id). When the server creates a task via POST with
+   * `clientId`, it stores the same value here so retried writes from the
+   * same offline client converge on the same row instead of duplicating.
+   * The HTTP-side `id` is the canonical engine identifier.
+   */
+  offlineMirrorId?: string;
 }
 
 // ─── Task getter / setter helpers ─────────────────────────────────────────────
@@ -406,6 +415,12 @@ function fromPlanningTask(ok: OkTask): Task | null {
  *
  * The function intentionally mirrors the `apiCreateTask` shape so the
  * dashboard's broadcast and write-quote semantics stay consistent.
+ *
+ * Idempotency: when the offline file carries `mirrorStatus: "synced"`,
+ * the entry is treated as already-on-board and skipped (returns null).
+ * When a board task already exists with `offlineMirrorId === ok.id`,
+ * the entry is considered the same row — the offline file is flipped
+ * to `"synced"` so subsequent sweeps stay no-op.
  */
 export async function reconcileOkTask(taskId: string, kanbanDir: string = KANBAN_DIR): Promise<Task | null> {
   if (!/^tsk-[A-Za-z0-9_-]+$/.test(taskId)) return null;
@@ -414,13 +429,34 @@ export async function reconcileOkTask(taskId: string, kanbanDir: string = KANBAN
   const p = okPaths(projectRoot);
   const ok = await readOkTask(p, taskId);
   if (!ok) return null;
-  // Skip if the board already has this id — the HTTP path owns updates.
-  if (_board && _board.tasks.some(t => t.id === ok.id)) return null;
+  // Already-synced entries are no-ops so the boot sweep doesn't
+  // re-insert every task on every server start.
+  if (ok.mirrorStatus === "synced") return null;
+  // Match-by-offlineMirrorId: a board row that already carries our id
+  // is the canonical home for this offline task. Flip the marker so
+  // subsequent sweeps stay no-op, and return the row for the broadcast.
+  if (_board) {
+    const byMirror = _board.tasks.find(t => t.offlineMirrorId === ok.id);
+    if (byMirror) {
+      await markOkMirrorSynced(p, ok.id, byMirror.id);
+      return byMirror;
+    }
+  }
+  // Skip if the board already has the same id — the HTTP path owns updates.
+  if (_board && _board.tasks.some(t => t.id === ok.id)) {
+    await markOkMirrorSynced(p, ok.id, ok.id);
+    return null;
+  }
   const task = fromPlanningTask(ok);
   if (!task) return null;
   let inserted: Task | undefined;
   await withWrite(async (board) => {
     // Re-check after queueing; another reconcile could have won.
+    const byMirror = board.tasks.find(t => t.offlineMirrorId === task.id);
+    if (byMirror) {
+      inserted = byMirror;
+      return;
+    }
     if (board.tasks.some(t => t.id === task.id)) {
       inserted = board.tasks.find(t => t.id === task.id);
       return;
@@ -430,7 +466,62 @@ export async function reconcileOkTask(taskId: string, kanbanDir: string = KANBAN
     board.tasks.push(task);
     inserted = task;
   });
+  if (inserted) {
+    await markOkMirrorSynced(p, ok.id, inserted.id);
+  }
   return inserted ?? null;
+}
+
+/**
+ * Sweep every `.ok/tasks/<id>.json` entry on the filesystem and
+ * reconcile pending ones. Idempotent: already-synced entries are
+ * skipped, and the per-task reconcileOkTask is itself a no-op once a
+ * board row with matching offlineMirrorId exists. Intended for the
+ * boot path so entries written while the server was down still land
+ * on the board when the server comes back up.
+ */
+export async function reconcileAllOkTasks(kanbanDir: string = KANBAN_DIR): Promise<number> {
+  if (!kanbanDir) return 0;
+  const projectRoot = join(kanbanDir, "..");
+  const p = okPaths(projectRoot);
+  let count = 0;
+  try {
+    const files = await fsPromises.readdir(p.tasksDir);
+    for (const file of files) {
+      const m = file.match(/^(tsk-[A-Za-z0-9_-]+)\.json$/);
+      if (!m) continue;
+      const inserted = await reconcileOkTask(m[1], kanbanDir);
+      if (inserted) count += 1;
+    }
+  } catch { /* tasksDir missing is fine — no pending entries */ }
+  return count;
+}
+
+/**
+ * Flip an ok-store task file from `mirrorStatus: "pending"` to
+ * `"synced"`, recording the server-side id under `mirrorId`. Quietly
+ * swallows write errors — losing the marker only means the next sweep
+ * re-tries, which is safe under the idempotency contract above.
+ */
+async function markOkMirrorSynced(p: ReturnType<typeof okPaths>, okId: string, serverId: string): Promise<void> {
+  const file = join(p.tasksDir, `${okId}.json`);
+  let raw: string;
+  try {
+    raw = await fsPromises.readFile(file, "utf-8");
+  } catch { return; }
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch { return; }
+  if (!parsed || typeof parsed !== "object") return;
+  const rec = parsed as Record<string, unknown>;
+  if (rec.mirrorStatus === "synced" && rec.mirrorId === serverId) return;
+  rec.mirrorStatus = "synced";
+  rec.mirrorId = serverId;
+  rec.updatedAt = okNowIso();
+  try {
+    const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
+    await fsPromises.writeFile(tmp, JSON.stringify(rec, null, 2));
+    await fsPromises.rename(tmp, file);
+  } catch { /* swallow — best effort */ }
 }
 
 export async function persist(board: Board): Promise<void> {

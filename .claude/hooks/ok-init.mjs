@@ -2,8 +2,12 @@
 // .claude/hooks/ok-init.mjs — Claude Code SessionStart hook.
 //
 // On every session start, ensure the project's `.ok/` planning workspace
-// exists. Runs `ok init` (idempotent) when `.ok/config.json` is missing.
-// Always exits 0: hooks must never block Claude.
+// exists and surface the operator-facing hint that points users at the
+// single-store CLI. Runs `ok init` (idempotent) when `.ok/config.json`
+// is missing. Always exits 0: hooks must never block Claude.
+//
+// stdout is forwarded to Claude Code as `additionalContext`, so the
+// SessionStart hint below reaches the operator on every session open.
 
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -18,7 +22,11 @@ if (!projectDir) {
 
 const okConfig = join(projectDir, ".ok", "config.json");
 if (existsSync(okConfig)) {
-  // Already initialised — fast path.
+  // Already initialised — fast path. Still surface the hint so the
+  // operator is reminded that `ok task add` lands on the dashboard.
+  process.stdout.write(
+    "OpenKan ready. Create work with `ok task add` — visible on the board at the dashboard URL.\n",
+  );
   process.exit(0);
 }
 
@@ -50,4 +58,7 @@ if (res.status !== 0) {
   process.stderr.write(`ok-init hook: ok init exited ${res.status}: ${res.stderr ?? ""}\n`);
 }
 
+process.stdout.write(
+  "OpenKan ready. Create work with `ok task add` — visible on the board at the dashboard URL.\n",
+);
 process.exit(0);
