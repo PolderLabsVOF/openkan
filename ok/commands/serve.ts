@@ -385,6 +385,11 @@ function spawnBackgroundChild(opts: {
     detached: true,
     stdio: "ignore",
     windowsHide: true,
+    // Hand our pid to the detached child so its startOrAttach writes
+    // "pid:port:parentPid" from the very first pidfile write — eliminating
+    // the post-HTTP overwrite race where a test reading the pidfile could
+    // observe "pid:port:" (empty parent) before serve.ts overwrote it.
+    env: { ...process.env, OPENKAN_PARENT_PID: String(process.pid) },
   });
   child.unref();
   if (child.pid === undefined) {
@@ -558,11 +563,11 @@ export async function cmdStart(ctx: BoardContext, argv: string[]): Promise<void>
       console.error(`ok serve: background child failed to bind — is port ${port} already in use?\n`);
       process.exit(1);
     }
-    // The child has written the pidfile (with pid:port:empty). Overwrite with
-    // "pid:port:parentPid" format so cmdStop can SIGTERM both parent and child.
-    // The child's startOrAttach wrote the pidfile before HTTP bound, so this
-    // overwrite happens after that and "wins".
-    writeFileSync(pidFile, `${childPid}:${port}:${process.pid}`, "utf-8");
+    // The child's startOrAttach already wrote "pid:port:parentPid" to the
+    // pidfile (we passed OPENKAN_PARENT_PID=process.pid via env in
+    // spawnBackgroundChild so the parentPid is filled in from the very first
+    // write — no post-HTTP overwrite needed). cmdStop reads parentPid from the
+    // pidfile to SIGTERM both parent and child.
     console.log(`OpenKan server at ${url} (pid=${childPid})\n`);
     if (!effectiveNoOpen) {
       openUrl(url);

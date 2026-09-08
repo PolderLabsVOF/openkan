@@ -2816,12 +2816,19 @@ export interface StartOrAttachResult {
 
 export async function startOrAttach(
   ctx: BoardContext,
-  opts: { host?: string; port?: number; maxPortTries?: number; webRoot?: string; _autoDetect?: boolean; force?: boolean } = {},
+  opts: { host?: string; port?: number; maxPortTries?: number; webRoot?: string; _autoDetect?: boolean; force?: boolean; parentPid?: number | null } = {},
 ): Promise<StartOrAttachResult> {
   const host = opts.host ?? "127.0.0.1";
   const basePort = opts.port ?? 7777;
   const maxTries = opts.maxPortTries ?? 10;
   const force = opts.force ?? false;
+  // Parent pid (only set when called from a detached child of `serve --mode=background`).
+  // Used by cmdStop to SIGTERM both the parent and the child. Read from env so the
+  // foreground command (running in the spawned child) can pick it up without a CLI
+  // flag change, then passed to acquireLock + writePidFile so the pidfile carries
+  // pid:port:parentPid from the very first write — eliminating the post-HTTP overwrite
+  // race where a test could observe the pidfile before parentPid was filled in.
+  const parentPid = opts.parentPid ?? (process.env.OPENKAN_PARENT_PID ? Number(process.env.OPENKAN_PARENT_PID) : null);
 
   const dir = join(ctx.directory, ".ok");
 
@@ -2829,7 +2836,7 @@ export async function startOrAttach(
   const lockResult = acquireLock(dir, {
     pid: process.pid,
     port: basePort,
-    parentPid: null,
+    parentPid,
     force,
   });
 
@@ -2863,7 +2870,7 @@ export async function startOrAttach(
         const retryResult = acquireLock(dir, {
           pid: process.pid,
           port: basePort,
-          parentPid: null,
+          parentPid,
           force: false,
         });
         if (!retryResult.acquired) {
@@ -2880,7 +2887,7 @@ export async function startOrAttach(
   );
 
   const pid = process.pid;
-  writePidFile(dir, { pid, port, parentPid: null });
+  writePidFile(dir, { pid, port, parentPid });
   // Resolve and cache webRoot so the request handler can serve static files.
   // Default: <project>/web (one level up from .ok).
   webRoot = opts.webRoot ?? join(ctx.directory, "web");
