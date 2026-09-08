@@ -25,9 +25,9 @@ test("bin/openkan.mjs is gone (M2)", () => {
   assert.equal(existsSync("bin/openkan.mjs"), false);
 });
 
-test("package.json version is 0.6.2", () => {
+test("package.json version is 0.6.3", () => {
   const pkg = JSON.parse(readFileSync("package.json", "utf8")) as { version: string };
-  assert.equal(pkg.version, "0.6.2");
+  assert.equal(pkg.version, "0.6.3");
 });
 
 test("package.json bin field only publishes ok", () => {
