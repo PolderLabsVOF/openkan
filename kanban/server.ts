@@ -2290,7 +2290,13 @@ async function apiListImages(_ctx: BoardContext, taskId: string): Promise<Respon
 async function apiGetImage(_ctx: BoardContext, taskId: string, name: string): Promise<Response> {
   const result = readImage(taskId, KANBAN_DIR, name);
   if (!result) return errorResponse("Image not found", 404);
-  return new Response(result.buffer, {
+  // Copy the Buffer into a fresh Uint8Array backed by a plain ArrayBuffer
+  // so it satisfies BodyInit. Buffer's underlying ArrayBufferLike is not
+  // directly assignable to BodyInit (it can be SharedArrayBuffer-backed
+  // in some envs), so we copy into a fresh ArrayBuffer to be safe.
+  const bytes = new Uint8Array(result.buffer.byteLength);
+  bytes.set(result.buffer);
+  return new Response(bytes, {
     headers: {
       "Content-Type": result.contentType,
       "Cache-Control": "max-age=3600",
@@ -3189,7 +3195,14 @@ async function handleRequest(req: Request): Promise<Response> {
     const root = webRoot ?? join(KANBAN_DIR, "..", "web");
     const pathForStatic = path === "/" ? "/index.html" : path;
     const sf = serveStatic(root, pathForStatic);
-    if (sf) return new Response(sf.body, { headers: { "Content-Type": sf.contentType } });
+    if (sf) {
+      // Copy the Buffer into a fresh Uint8Array backed by a plain
+      // ArrayBuffer so it satisfies BodyInit (Buffer's underlying
+      // ArrayBufferLike may be SharedArrayBuffer in some envs).
+      const bytes = new Uint8Array(sf.body.byteLength);
+      bytes.set(sf.body);
+      return new Response(bytes, { headers: { "Content-Type": sf.contentType } });
+    }
     // If the explicit static match fails, fall through to other handlers (don't 404 here)
   }
 
