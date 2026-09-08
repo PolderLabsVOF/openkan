@@ -111,7 +111,9 @@ describe("ok/storage", () => {
     const got = await readTask(p, "tsk-rw000001");
     assert.ok(got);
     assert.strictEqual(got!.title, "round-trip");
-    assert.strictEqual(got!.priority, "p1");
+    // Phase 1 dual-write: writeTask stores the v2 form. The v1 TaskPriority
+    // "p1" is mapped to v2 Priority "high" by convertTaskV1ToV2.
+    assert.strictEqual(got!.priority, "high");
   });
 
   it("writes a v2 task into its task directory", async () => {
@@ -227,5 +229,61 @@ describe("ok/storage", () => {
     writeFileSync(bad, JSON.stringify({ schema: "wrong.schema" }), "utf-8");
     await assert.rejects(() => readTask(p, "tsk-wrongshape"));
     rmSync(bad);
+  });
+
+  // ─── Phase 1: dual-write (v1 flat + v2 directory) ─────────────────────
+
+  it("writeTask dual-writes: legacy flat file AND v2 directory", async () => {
+    const id = "tsk-dualwrite01";
+    await writeTask(p, makeTask(id, { title: "dual write" }));
+    const flat = join(p.tasksDir, `${id}.json`);
+    const dirFile = join(p.tasksDir, id, "task.json");
+    assert.ok(existsSync(flat), "v1 flat file written");
+    assert.ok(existsSync(dirFile), "v2 directory task.json written");
+    const v1Raw = JSON.parse(readFileSync(flat, "utf-8"));
+    const v2Raw = JSON.parse(readFileSync(dirFile, "utf-8"));
+    assert.strictEqual(v1Raw.schema, "ok.task.v1");
+    assert.strictEqual(v2Raw.schema, "ok.task.v2");
+    assert.strictEqual(v1Raw.title, "dual write");
+    assert.strictEqual(v2Raw.title, "dual write");
+  });
+
+  // ─── Phase 2: v2-primary read ──────────────────────────────────────────
+
+  it("readTask prefers v2 directory over v1 flat file", async () => {
+    const id = "tsk-v2primary01";
+    await writeTask(p, makeTask(id, { title: "v2 preferred" }));
+    // Overwrite the flat file with a sentinel that would fail validation
+    // if read first. v2-primary read must skip the flat file entirely.
+    const flat = join(p.tasksDir, `${id}.json`);
+    writeFileSync(flat, JSON.stringify({ schema: "wrong.schema" }), "utf-8");
+    const got = await readTask(p, id);
+    assert.ok(got, "v2 directory is read");
+    assert.strictEqual(got!.title, "v2 preferred");
+  });
+
+  it("readTask falls back to v1 flat file when v2 is missing", async () => {
+    const id = "tsk-v1fallback01";
+    // Write only the v1 flat file (no directory form).
+    const flat = join(p.tasksDir, `${id}.json`);
+    const task = makeTask(id, { title: "v1 only" });
+    writeFileSync(flat, JSON.stringify(task), "utf-8");
+    const got = await readTask(p, id);
+    assert.ok(got);
+    assert.strictEqual(got!.title, "v1 only");
+    // v1 TaskPriority "p2" maps to v2 Priority "normal".
+    assert.strictEqual(got!.priority, "normal");
+  });
+
+  it("listTasks merges v2 directories and v1 flat files, de-duplicating", async () => {
+    // After the prior tests, tsk-dualwrite01 has both forms; v2 wins.
+    const all = await listTasks(p);
+    const dual = all.find((t) => t.id === "tsk-dualwrite01");
+    const v1Only = all.find((t) => t.id === "tsk-v1fallback01");
+    assert.ok(dual, "dual-write task appears once in list");
+    assert.ok(v1Only, "v1-only task appears in list via fallback");
+    // No duplicates by id.
+    const ids = all.map((t) => t.id);
+    assert.strictEqual(new Set(ids).size, ids.length, "no duplicate ids");
   });
 });

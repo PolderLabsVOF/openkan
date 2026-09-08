@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import {
   type Task,
+  type TaskV2,
   type TaskStatus,
   type TaskPriority,
   type IndexEntry,
@@ -414,7 +415,7 @@ async function cmdTaskUpdate(args: string[]): Promise<number> {
     return 1;
   }
 
-  let next: Task = touch(existing);
+  let next: TaskV2 = touch(existing);
 
   const status = parseStatus(flagString(flags, "status"));
   if (status) {
@@ -430,7 +431,17 @@ async function cmdTaskUpdate(args: string[]): Promise<number> {
   const owner = flagString(flags, "owner");
   if (owner !== undefined) next.owner = owner;
   const priority = parsePriority(flagString(flags, "priority"));
-  if (priority) next.priority = priority;
+  if (priority) {
+    // Phase 1: v1 TaskPriority ("p0"|"p1"|"p2"|"p3") on the CLI surface,
+    // v2 Priority ("urgent"|"high"|"normal"|"low") in storage. Map at the
+    // boundary so the CLI stays on the v1 enum until Phase 10 finalisation.
+    const v2Priority: TaskV2["priority"] =
+      priority === "p0" ? "urgent" :
+      priority === "p1" ? "high" :
+      priority === "p2" ? "normal" :
+      "low";
+    next.priority = v2Priority;
+  }
   const evidence = flagString(flags, "evidence");
   if (evidence !== undefined) {
     next.evidence = [...(existing.evidence ?? []), evidence];
@@ -477,11 +488,11 @@ async function cmdTaskClaim(args: string[]): Promise<number> {
   }
   const task = await readTask(p, positionals[0]);
   if (task && task.status === "pending") {
-    const next: Task = touch({ ...task, status: "in_progress", startedAt: task.startedAt ?? nowIso(), owner });
+    const next: TaskV2 = touch({ ...task, status: "in_progress", startedAt: task.startedAt ?? nowIso(), owner });
     await writeTask(p, next);
     await refreshIndex(p);
   } else if (task) {
-    const next: Task = touch({ ...task, owner });
+    const next: TaskV2 = touch({ ...task, owner });
     await writeTask(p, next);
     await refreshIndex(p);
   }
@@ -579,7 +590,7 @@ async function cmdTaskComplete(args: string[]): Promise<number> {
     return 1;
   }
   const now = nowIso();
-  const next: Task = touch({
+  const next: TaskV2 = touch({
     ...task,
     status: "done",
     owner,
@@ -642,7 +653,7 @@ async function cmdTaskCancel(args: string[]): Promise<number> {
     process.stderr.write(`no such task: ${positionals[0]}\n`);
     return 1;
   }
-  const next: Task = touch({
+  const next: TaskV2 = touch({
     ...task,
     status: "cancelled",
     owner,
