@@ -92,7 +92,7 @@ export const AGENT_CAPABILITIES = Object.freeze({
   docs: ["GET /api/docs", "GET|PUT|DELETE /api/docs/:path", "POST /api/docs/render", "POST /api/docs/generate"],
   chat: ["POST /api/chat/send", "GET /api/chat/sessions", "GET /api/chat/sessions/:id", "POST /api/chat/sessions/:id/abort"],
   agents: ["GET /api/claude/snapshot", "GET /api/claude/agents|skills|commands|hooks|teams|workflows", "GET /api/claude/activity", "GET /api/claude/model-router"],
-  projects: ["GET|POST /api/projects", "PATCH /api/projects/:id/active", "POST /api/projects/auto-detect", "DELETE /api/projects/:id"],
+  projects: ["GET|POST /api/projects", "PATCH /api/projects/:id/active", "POST /api/projects/auto-detect", "DELETE /api/projects/:id", "ok project clean"],
   insight: ["GET /api/search", "GET /api/tags", "GET /api/changelog", "GET /api/changelog/summary", "GET /api/insights/velocity", "GET /api/contributors"],
   config: ["GET|PATCH /api/settings", "GET /api/config-sections", "PATCH /api/config-sections/:sectionId", "ok config list|get|set"],
 });
@@ -195,8 +195,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
 
 const HELP_MESSAGES: Record<string, string> = {
   init: "init                             Create .ok/ directory (idempotent)",
-  start: "start [--port N] [--host H] [--no-open] [--no-auto-detect] [--foreground] [--mode foreground|background|tray] [--project /abs/path]  Start the server",
-  serve: "serve [--mode foreground|background|tray] [--port N] [--host H] [--no-open]  Start the server and ask how to run it",
+  start: "start [--port N] [--host H] [--no-open] [--no-auto-detect] [--foreground] [--mode foreground|background|tray] [--project /abs/path] [--force]  Start the server",
+  serve: "serve [--mode foreground|background|tray] [--port N] [--host H] [--no-open] [--force] [--cleanup-orphans] [--yes]  Start the server and ask how to run it",
   import: "import [--path DIR] [--include PATTERN] [--exclude PATTERN]  Import checkboxes as tasks",
   stop: "stop                             Stop the running server",
   status: "status                          Show server status, port, pid, uptime",
@@ -208,7 +208,7 @@ const HELP_MESSAGES: Record<string, string> = {
   agent: "agent install|capabilities|context|call|start|abort  Agent-first command/control bridge",
   task: "task add|list|show|update|claim|heartbeat|complete|cancel|release  Durable offline tasks (same as ok task)",
   board: "board list|show|add|move|comment   Dashboard tasks (requires local server and matching project)",
-  project: "project list|use <id>             Inspect/select the dashboard project",
+  project: "project list|use <id>|clean      Inspect/select the dashboard project, or clean stale entries",
   plan: "plan add|list|show|update         Plans and phases (same as ok plan)",
   prd: "prd add|list|show|update           Long-horizon scope (same as ok prd)",
   goal: "goal list|add|show|update          Goals within PRDs; goal update <prd> <goal> --status met",
@@ -355,6 +355,65 @@ async function waitForHttpUp(url: string, timeoutMs: number): Promise<boolean> {
   return false;
 }
 
+// Pre-flight: read `.ok/server.pid` and decide whether an existing server is
+// already serving on the target port. Returns:
+//
+//   { existing: false }                                    — pidfile missing, stale, or dead PID
+//   { existing: true, pid, port }                         — live server, do not collide
+//   { existing: true, pid, port, tookOver: true }         — --force SIGTERMed the live one
+//
+// When `force === false` and an existing server is alive, this returns
+// existing: true so the caller can error out fast. When `force === true`
+// and the existing PID is alive, this SIGTERMs it (and waits up to 3s for
+// graceful shutdown) before returning. The caller is then expected to spawn
+// its own child which will bind the port cleanly.
+async function preflightExistingServer(
+  pidFile: string,
+  wantedPort: number,
+  force: boolean,
+): Promise<{ existing: boolean; pid?: number; port?: number; tookOver?: boolean }> {
+  if (!existsSync(pidFile)) return { existing: false };
+  let raw: string;
+  try {
+    raw = readFileSync(pidFile, "utf-8").trim();
+  } catch {
+    return { existing: false };
+  }
+  const parts = raw.split(":");
+  const pid = parseInt(parts[0], 10);
+  const pidPort = parts.length >= 2 && parts[1] ? parseInt(parts[1], 10) : NaN;
+  const port = Number.isFinite(pidPort) ? pidPort : wantedPort;
+  if (!Number.isFinite(pid)) return { existing: false };
+  let alive = false;
+  try { process.kill(pid, 0); alive = true; } catch { alive = false; }
+  if (!alive) {
+    // Stale pidfile — clear it so the child's acquireLock doesn't trip on it.
+    try {
+      const { unlinkSync } = await import("node:fs");
+      unlinkSync(pidFile);
+    } catch { /* ignore */ }
+    return { existing: false };
+  }
+  if (!force) {
+    return { existing: true, pid, port };
+  }
+  // --force: take over. SIGTERM, then SIGKILL after a short grace window.
+  try { process.kill(pid, "SIGTERM"); } catch { /* already gone */ }
+  for (let i = 0; i < 15; i++) {
+    await new Promise((r) => setTimeout(r, 200));
+    let stillAlive = false;
+    try { process.kill(pid, 0); stillAlive = true; } catch { stillAlive = false; }
+    if (!stillAlive) break;
+  }
+  try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
+  // Best-effort unlink so the child's acquireLock sees an empty directory.
+  try {
+    const { unlinkSync } = await import("node:fs");
+    unlinkSync(pidFile);
+  } catch { /* ignore */ }
+  return { existing: true, pid, port, tookOver: true };
+}
+
 // ─── cmdStart / cmdServe / cmdStartTray ────────────────────────────────────────
 
 export async function cmdStart(ctx: BoardContext, argv: string[]): Promise<void> {
@@ -369,6 +428,7 @@ export async function cmdStart(ctx: BoardContext, argv: string[]): Promise<void>
   const noOpen = args.flags["no-open"] === true || args.flags["no-open"] === "true";
   const foreground = args.flags["foreground"] === true || args.flags["foreground"] === "true";
   const noAutoDetect = args.flags["no-auto-detect"] === true || args.flags["no-auto-detect"] === "true";
+  const force = args.flags["force"] === true || args.flags["force"] === "true";
   const mode: StartMode = args.flags["mode"] !== undefined
     ? parseMode(args.flags["mode"])
     : (foreground ? "foreground" : "background");
@@ -392,13 +452,13 @@ export async function cmdStart(ctx: BoardContext, argv: string[]): Promise<void>
     // Foreground: bind the port in this process and stay alive so Ctrl+C and
     // SIGTERM hit us directly. The HTTP listener and the keepalive share the
     // same process, which is the simplest model for foreground.
-    const result = await startOrAttach(ctx, { host, port, webRoot: OPENKAN_WEB, _autoDetect: !noAutoDetect });
+    const result = await startOrAttach(ctx, { host, port, webRoot: OPENKAN_WEB, _autoDetect: !noAutoDetect, force });
     console.log(`OpenKan server running at ${result.url} (pid=${result.pid})\n`);
     // Keep process alive
     await new Promise(() => {});
   } else if (mode === "tray") {
     // Tray: same in-process model as foreground, plus a system tray icon.
-    const result = await startOrAttach(ctx, { host, port, webRoot: OPENKAN_WEB, _autoDetect: !noAutoDetect });
+    const result = await startOrAttach(ctx, { host, port, webRoot: OPENKAN_WEB, _autoDetect: !noAutoDetect, force });
     return cmdStartTray(ctx, result);
   } else {
     // Background mode: spawn a detached child process running the same serve
@@ -407,6 +467,27 @@ export async function cmdStart(ctx: BoardContext, argv: string[]): Promise<void>
     // pidfile points at the child PID, so `ok stop` correctly SIGTERMs it.
     // We deliberately do NOT call startOrAttach in the parent — the parent
     // never binds the port, so the child can bind it without collision.
+    //
+    // Preflight: if an existing pidfile points at a live server on this port,
+    // fail fast (or take it over when --force was passed). This avoids spawning
+    // a detached child that will collide with the live server and pollute the
+    // pidfile when its lock-acquire rejects it. The child runs `startOrAttach`
+    // which already enforces this, but its stdio is "ignore" so the parent
+    // would never see the error — we have to detect the collision here.
+    const pidFile = join(ctx.directory, ".ok", "server.pid");
+    const preflight = await preflightExistingServer(pidFile, port, force);
+    if (preflight.existing) {
+      if (force) {
+        // Wait for the take-over kill to settle.
+        await new Promise((r) => setTimeout(r, 300));
+      } else {
+        console.error(
+          `ok serve: server already running at http://${host}:${preflight.port ?? port} (pid=${preflight.pid}). ` +
+          `Stop it with 'ok stop', or pass --force to take over.\n`,
+        );
+        process.exit(1);
+      }
+    }
     const childPid = spawnBackgroundChild({ host, port, noOpen, noAutoDetect, projectRoot: projectFlag ?? null });
     const url = `http://${host}:${port}/`;
     const serverUp = await waitForHttpUp(url, 8_000);
@@ -418,12 +499,11 @@ export async function cmdStart(ctx: BoardContext, argv: string[]): Promise<void>
       console.error(`ok serve: background child failed to bind — is port ${port} already in use?\n`);
       process.exit(1);
     }
-    // The child has written the pidfile (with just its PID). Overwrite with
-    // "pid:port" format so cmdStatus / cmdOpen can read both values without
-    // a second probe. The child's startOrAttach wrote the pidfile before HTTP
-    // bound, so this overwrite happens after that and "wins".
-    const pidFile = join(ctx.directory, ".ok", "server.pid");
-    writeFileSync(pidFile, `${childPid}:${port}`, "utf-8");
+    // The child has written the pidfile (with pid:port:empty). Overwrite with
+    // "pid:port:parentPid" format so cmdStop can SIGTERM both parent and child.
+    // The child's startOrAttach wrote the pidfile before HTTP bound, so this
+    // overwrite happens after that and "wins".
+    writeFileSync(pidFile, `${childPid}:${port}:${process.pid}`, "utf-8");
     console.log(`OpenKan server at ${url} (pid=${childPid})\n`);
     if (!effectiveNoOpen) {
       openUrl(url);
@@ -515,6 +595,86 @@ async function cmdStartTray(
   });
 }
 
+// Find and clean up orphaned ok serve processes (detached children with PPID=1).
+// This is an escape hatch for operators when test runs or other processes leave
+// orphan servers running.
+async function cmdCleanupOrphans(autoYes: boolean): Promise<void> {
+  // Use pgrep to find detached ok serve processes (PPID=1 means orphaned)
+  const { spawnSync } = await import("node:child_process");
+
+  // Find processes: bin/ok.ts or bin/ok.mjs serve with PPID=1
+  const pgrepResult = spawnSync("pgrep", ["-f", "bin/ok.*serve", "-o", "-P", "1"], { encoding: "utf8" });
+  const pids: number[] = [];
+  if (pgrepResult.stdout) {
+    for (const line of pgrepResult.stdout.trim().split("\n")) {
+      const pid = parseInt(line.trim(), 10);
+      if (Number.isFinite(pid)) pids.push(pid);
+    }
+  }
+
+  if (pids.length === 0) {
+    console.log("No orphaned ok serve processes found.\n");
+    return;
+  }
+
+  // For each PID, get additional info (start time, cwd)
+  interface OrphanInfo { pid: number; startTime: string; cwd: string; }
+  const orphans: OrphanInfo[] = [];
+  for (const pid of pids) {
+    // Get start time
+    const psStartResult = spawnSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8" });
+    const startTime = psStartResult.stdout.trim() || "unknown";
+    // Get cwd
+    const psCwdResult = spawnSync("ps", ["-o", "cwd=", "-p", String(pid)], { encoding: "utf8" });
+    const cwd = psCwdResult.stdout.trim() || "unknown";
+    orphans.push({ pid, startTime, cwd });
+  }
+
+  console.log(`Found ${orphans.length} orphaned ok serve process(es):\n`);
+  for (const o of orphans) {
+    console.log(`  PID: ${o.pid}`);
+    console.log(`  Started: ${o.startTime}`);
+    console.log(`  CWD: ${o.cwd}`);
+    console.log("");
+  }
+
+  // Ask for confirmation unless --yes
+  if (!autoYes) {
+    const rl = createInterface({ input: process.stdin, output: process.stderr });
+    const answer = await new Promise<string>((resolve) => {
+      rl.question(`Kill ${orphans.length} process(es)? [y/N] `, (a) => resolve(a.trim().toLowerCase()));
+    });
+    rl.close();
+    if (answer !== "y" && answer !== "yes") {
+      console.log("Aborted.\n");
+      return;
+    }
+  }
+
+  // SIGTERM them, wait 2s, then SIGKILL survivors
+  console.log("Sending SIGTERM...\n");
+  for (const o of orphans) {
+    try { process.kill(o.pid, "SIGTERM"); } catch { /* already gone */ }
+  }
+
+  // Wait 2 seconds
+  await new Promise(r => setTimeout(r, 2000));
+
+  // SIGKILL survivors
+  let killed = 0;
+  for (const o of orphans) {
+    try {
+      process.kill(o.pid, 0); // check if still alive
+      try { process.kill(o.pid, "SIGKILL"); } catch { /* already gone */ }
+      killed++;
+    } catch {
+      // Process already exited
+    }
+  }
+
+  console.log(`Cleaned up ${killed} orphaned process(es).\n`);
+}
+
 export async function cmdServe(ctx: BoardContext, argv: string[]): Promise<void> {
   if (argv.includes("-h") || argv.includes("--help")) {
     printHelp("serve");
@@ -527,6 +687,16 @@ export async function cmdServe(ctx: BoardContext, argv: string[]): Promise<void>
   const noOpen = args.flags["no-open"] === true || args.flags["no-open"] === "true";
   const noAutoDetect = args.flags["no-auto-detect"] === true || args.flags["no-auto-detect"] === "true";
   const projectFlag = args.flags["project"] as string | undefined;
+  const force = args.flags["force"] === true || args.flags["force"] === "true";
+  const cleanupOrphans = args.flags["cleanup-orphans"] === true || args.flags["cleanup-orphans"] === "true";
+  const yesToAll = args.flags["yes"] === true || args.flags["yes"] === "true";
+
+  // Handle --cleanup-orphans: find and kill orphaned ok serve processes
+  if (cleanupOrphans) {
+    await cmdCleanupOrphans(yesToAll);
+    return;
+  }
+
   let mode: StartMode;
   if (args.flags["mode"] !== undefined) {
     // Explicit --mode always wins. Validate it here so an unknown value
@@ -552,6 +722,7 @@ export async function cmdServe(ctx: BoardContext, argv: string[]): Promise<void>
   if (noOpen) forwarded.push("--no-open");
   if (noAutoDetect) forwarded.push("--no-auto-detect");
   if (projectFlag) forwarded.push("--project", projectFlag);
+  if (force) forwarded.push("--force");
   await cmdStart(ctx, forwarded);
 }
 
@@ -564,8 +735,11 @@ export async function cmdStop(ctx: BoardContext): Promise<void> {
     process.exit(1);
   }
   const raw = readFileSync(pidFile, "utf-8").trim();
-  const [pidStr] = raw.split(":");
-  const pid = parseInt(pidStr, 10);
+  const parts = raw.split(":");
+  const pid = parseInt(parts[0], 10);
+  const port = parts.length >= 2 && parts[1] ? parseInt(parts[1], 10) : 7777;
+  const parentPid = parts.length >= 3 && parts[2] ? parseInt(parts[2], 10) : null;
+  
   if (isNaN(pid)) {
     console.error("Invalid PID in server.pid\n");
     process.exit(1);
@@ -585,12 +759,15 @@ export async function cmdStop(ctx: BoardContext): Promise<void> {
     // the SIGTERM-self path which Node executes alongside the rest of
     // this function synchronously until the runtime kills us.
   }
+  
+  // SIGTERM the child process
   try {
     process.kill(pid, "SIGTERM");
   } catch {
     // PID may already be dead
   }
-  // Wait up to 5s for graceful shutdown
+  
+  // Wait up to 5s for graceful shutdown of child
   let waited = 0;
   while (waited < 5000) {
     try {
@@ -601,6 +778,40 @@ export async function cmdStop(ctx: BoardContext): Promise<void> {
       break;
     }
   }
+  
+  // If there's a parent PID (background mode), SIGTERM it too
+  if (parentPid !== null && !isNaN(parentPid)) {
+    try {
+      process.kill(parentPid, "SIGTERM");
+    } catch {
+      // Parent may already be dead
+    }
+    // Wait up to 2s for parent to exit
+    let parentWaited = 0;
+    while (parentWaited < 2000) {
+      try {
+        process.kill(parentPid, 0);
+        await new Promise((r) => setTimeout(r, 200));
+        parentWaited += 200;
+      } catch {
+        break;
+      }
+    }
+    // If parent still alive, SIGKILL
+    try {
+      process.kill(parentPid, "SIGKILL");
+    } catch {
+      // Parent already dead
+    }
+  }
+  
+  // If child still alive, SIGKILL
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    // Child already dead
+  }
+  
   console.log("Server stopped.\n");
 }
 

@@ -28,7 +28,9 @@ export function setRegistryPathForTesting(p: string | null): void {
 
 export function registryPath(): string {
   if (_testingRegistryPath) return _testingRegistryPath;
-  const configDir = join(homedir(), ".config", "openkan");
+  const configDir = process.env.XDG_CONFIG_HOME
+    ? join(process.env.XDG_CONFIG_HOME, "openkan")
+    : join(homedir(), ".config", "openkan");
   return join(configDir, "projects.json");
 }
 
@@ -62,7 +64,7 @@ function slugify(name: string): string {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-function canonicalRoot(root: string): string {
+export function canonicalRoot(root: string): string {
   try { return realpathSync(resolve(root)); } catch { return resolve(root); }
 }
 
@@ -551,11 +553,13 @@ export interface CleanupResult {
  */
 export function cleanupRegistry(opts?: {
   pruneMissing?: boolean;
+  pruneInactive?: boolean;
   verbose?: boolean;
   persist?: boolean;
 }): CleanupResult {
   const verbose = opts?.verbose ?? false;
   const pruneMissing = opts?.pruneMissing ?? false;
+  const pruneInactive = opts?.pruneInactive ?? false;
   const persist = opts?.persist ?? false;
 
   const reg = loadRegistry();
@@ -626,6 +630,19 @@ export function cleanupRegistry(opts?: {
       return exists;
     });
     pruned = beforeCount - after.length;
+  }
+
+  // Phase 4: optional prune of inactive (non-active) entries
+  if (pruneInactive) {
+    const beforeCount = after.length;
+    const activeRoot = after.find(p => p.active)?.root;
+    after = after.filter(p => {
+      if (p.active) return true;  // always keep active
+      if (p.root === activeRoot) return true;  // also keep if matches active root
+      if (verbose) console.error(`[cleanupRegistry] prune inactive: ${p.root}`);
+      return false;
+    });
+    pruned += beforeCount - after.length;
   }
 
   if (verbose) {

@@ -2604,7 +2604,6 @@ export async function handleEvent(ctx: BoardContext, event: any): Promise<void> 
 async function _startServer(
   ctx: BoardContext,
   opts: { host?: string; port?: number; maxPortTries?: number; webRoot?: string },
-  extraServerOpts?: { writePidFile?: boolean; lockFd?: number },
 ): Promise<{ server: HttpServer; port: number; hostname: string }> {
   const host = opts.host ?? "127.0.0.1";
   const basePort = opts.port ?? 7777;
@@ -2647,27 +2646,128 @@ async function _startServer(
 // ─── PID + lock helpers ──────────────────────────────────────────────────────
 
 const PID_FILE = "server.pid";
-const LOCK_FILE = "server.lock";
 
-function readPidFile(dir: string): number | null {
+interface PidFileEntry {
+  pid: number;
+  port: number;
+  parentPid: number | null;
+}
+
+/**
+ * Read the pidfile and parse it as <pid>:<port>:<parentPid>.
+ * Returns null if the file doesn't exist or is malformed.
+ */
+function readPidFile(dir: string): PidFileEntry | null {
   const pidPath = join(dir, PID_FILE);
   if (!existsSync(pidPath)) return null;
   try {
-    const pid = parseInt(readFileSync(pidPath, "utf-8").trim(), 10);
-    return isNaN(pid) ? null : pid;
+    const content = readFileSync(pidPath, "utf-8").trim();
+    const parts = content.split(":");
+    if (parts.length < 2) return null;
+    const pid = parseInt(parts[0], 10);
+    const port = parseInt(parts[1], 10);
+    const parentPid = parts.length >= 3 && parts[2] ? parseInt(parts[2], 10) : null;
+    if (isNaN(pid) || isNaN(port)) return null;
+    return { pid, port, parentPid: isNaN(parentPid as number) ? null : parentPid };
   } catch { return null; }
 }
 
-function writePidFile(dir: string, pid: number): void {
+/**
+ * Write the pidfile with format <pid>:<port>:<parentPid>.
+ * parentPid is only non-empty for detached (background-mode) children.
+ */
+function writePidFile(dir: string, entry: PidFileEntry): void {
   const pidPath = join(dir, PID_FILE);
-  writeFileSync(pidPath, String(pid), "utf-8");
+  const parentStr = entry.parentPid !== null ? String(entry.parentPid) : "";
+  writeFileSync(pidPath, `${entry.pid}:${entry.port}:${parentStr}`, "utf-8");
 }
 
+/**
+ * Delete the pidfile. Idempotent - no error if already gone.
+ */
 function deletePidFile(dir: string): void {
   try {
     const pidPath = join(dir, PID_FILE);
     if (existsSync(pidPath)) unlinkSync(pidPath);
   } catch { /* ignore */ }
+}
+
+/**
+ * Error thrown when a foreign process is using the port that OpenKan wants.
+ */
+export class ForeignProcessOnPort extends Error {
+  pid: number;
+  port: number;
+  constructor(pid: number, port: number) {
+    super(`Foreign process (pid=${pid}) is using port ${port}. Stop it or use a different port.`);
+    this.name = "ForeignProcessOnPort";
+    this.pid = pid;
+    this.port = port;
+  }
+}
+
+interface AcquireLockResult {
+  acquired: boolean;
+  existingPid?: number;
+  existingPort?: number;
+}
+
+/**
+ * Acquire the server lock atomically using the pidfile.
+ * Uses writeFileSync with flag "wx" for atomic create-if-not-exists.
+ * 
+ * On success: writes <pid>:<port>:<parentPid> to the pidfile.
+ * On existing lock: checks if the existing process is alive and serving OpenKan.
+ * Returns { acquired: false } if we should attach to the existing server.
+ * Throws ForeignProcessOnPort if a foreign process is using the port.
+ */
+function acquireLock(
+  dir: string,
+  opts: { pid: number; port: number; parentPid?: number | null; force?: boolean },
+): AcquireLockResult {
+  const pidPath = join(dir, PID_FILE);
+  ensureDir(dir);
+  
+  const parentPid = opts.parentPid ?? null;
+  const content = `${opts.pid}:${opts.port}:${parentPid !== null ? String(parentPid) : ""}`;
+  
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      writeFileSync(pidPath, content, { flag: "wx" });
+      return { acquired: true };
+    } catch (e: any) {
+      if (e.code !== "EEXIST") {
+        throw e;
+      }
+      // Lock file exists - check if it's a live OpenKan server
+      const existing = readPidFile(dir);
+      if (!existing) {
+        // Race condition: file was deleted between our attempts
+        continue;
+      }
+      
+      // Check if the existing process is alive
+      if (isPidAlive(existing.pid)) {
+        // Check if it's an OpenKan server on the same port
+        if (existing.port === opts.port) {
+          // Same port - we can attach
+          return { acquired: false, existingPid: existing.pid, existingPort: existing.port };
+        }
+        // Different port - return existing info; let caller probe if needed
+        return { acquired: false, existingPid: existing.pid, existingPort: existing.port };
+      }
+      
+      // Existing process is dead - remove stale pidfile and retry
+      if (opts.force) {
+        try { unlinkSync(pidPath); } catch { /* ignore */ }
+        continue;
+      }
+      // Without force, we treat dead pid as reclaimable
+      try { unlinkSync(pidPath); } catch { /* ignore */ }
+    }
+  }
+  
+  throw new Error("Could not acquire server lock after 3 attempts");
 }
 
 function isPidAlive(pid: number): boolean {
@@ -2710,87 +2810,60 @@ export interface StartOrAttachResult {
 
 export async function startOrAttach(
   ctx: BoardContext,
-  opts: { host?: string; port?: number; maxPortTries?: number; webRoot?: string; _autoDetect?: boolean } = {},
+  opts: { host?: string; port?: number; maxPortTries?: number; webRoot?: string; _autoDetect?: boolean; force?: boolean } = {},
 ): Promise<StartOrAttachResult> {
   const host = opts.host ?? "127.0.0.1";
   const basePort = opts.port ?? 7777;
   const maxTries = opts.maxPortTries ?? 10;
+  const force = opts.force ?? false;
 
   const dir = join(ctx.directory, ".ok");
 
-  // 1. Check if existing server is alive
-  const existingPid = readPidFile(dir);
-  if (existingPid && isPidAlive(existingPid)) {
-    const alive = await probeServer(host, basePort);
-    if (alive) {
-      // Attach to existing server (not primary)
-      runningServer = {
-        port: basePort,
-        hostname: host,
-        url: `http://${host}:${basePort}`,
-        pid: existingPid,
-        isPrimary: false,
-        broadcast,
-        async stop() { /* no-op: not the primary */ },
-      };
-      return runningServer;
-    }
-  }
+  // 1. Try to acquire the lock atomically
+  const lockResult = acquireLock(dir, {
+    pid: process.pid,
+    port: basePort,
+    parentPid: null,
+    force,
+  });
 
-  // 2. Try to acquire the lock. We use a "create-if-not-exists" file lock:
-  //    writeFileSync with { flag: "wx" } fails if the file already exists.
-  //    This is sufficient for local single-user, single-server operation;
-  //    not race-free under heavy concurrent access (rare in practice), and
-  //    a stale lock is auto-cleared on the next start if the PID is dead.
-  //    On systems with `flock(2)` available, we layer it on top for safety.
-  //    TODO: switch to flock(2) on Node versions that expose `node:fs.flock`.
-  const lockPath = join(dir, LOCK_FILE);
-  ensureDir(dir);
-  let hasLock = false;
-  let lockFd: number | null = null;
-
-  try {
-    // Clean up a stale lock from a dead PID.
-    const existingPid = readPidFile(dir);
-    if (!existingPid || !isPidAlive(existingPid)) {
-      try { if (existsSync(lockPath)) unlinkSync(lockPath); } catch {}
-    }
-
-    lockFd = openSync(lockPath, "wx"); // "wx" = O_CREAT | O_EXCL, fails if exists
-    hasLock = true;
-  } catch {
-    hasLock = false;
-  }
-
-  if (!hasLock) {
-    // Could not acquire lock — wait and retry, then give up
-    for (let retry = 0; retry < 10; retry++) {
-      await new Promise(r => setTimeout(r, 200));
-      const pid2 = readPidFile(dir);
-      if (pid2 && isPidAlive(pid2)) {
-        const alive = await probeServer(host, basePort);
-        if (alive) {
-          runningServer = {
-            port: basePort, hostname: host,
-            url: `http://${host}:${basePort}`, pid: pid2, isPrimary: false,
-            broadcast,
-            async stop() {},
-          };
-          return runningServer;
+  // 2. If lock not acquired, check if we should attach to existing server
+  if (!lockResult.acquired) {
+    const existingPid = lockResult.existingPid;
+    const existingPort = lockResult.existingPort ?? basePort;
+    
+    if (existingPid && isPidAlive(existingPid)) {
+      const alive = await probeServer(host, existingPort);
+      if (alive) {
+        // There's a live server on that port - either attach or reject
+        if (!force) {
+          throw new Error(
+            `Server already running at http://${host}:${existingPort} (pid=${existingPid}). ` +
+            `Use --force to stop the existing server and start a new one.`,
+          );
+        }
+        // --force: stop the existing server first, then start fresh
+        try { process.kill(existingPid, "SIGTERM"); } catch { /* already gone */ }
+        // Wait for graceful shutdown
+        for (let i = 0; i < 15; i++) {
+          await new Promise(r => setTimeout(r, 200));
+          if (!isPidAlive(existingPid)) break;
+        }
+        // If still alive, SIGKILL
+        try { process.kill(existingPid, "SIGKILL"); } catch { /* already gone */ }
+        await new Promise(r => setTimeout(r, 500));
+        
+        // Retry acquireLock after killing existing
+        const retryResult = acquireLock(dir, {
+          pid: process.pid,
+          port: basePort,
+          parentPid: null,
+          force: false,
+        });
+        if (!retryResult.acquired) {
+          throw new Error("Could not acquire server lock after forcing existing server to stop");
         }
       }
-      // Re-attempt the lock; the holder may have died.
-      try {
-        if (existsSync(lockPath)) unlinkSync(lockPath);
-        lockFd = openSync(lockPath, "wx");
-        hasLock = true;
-        break;
-      } catch {
-        // still held
-      }
-    }
-    if (!hasLock) {
-      throw new Error("Could not acquire server lock; another process may be starting the server");
     }
   }
 
@@ -2798,11 +2871,10 @@ export async function startOrAttach(
   const { server, port, hostname } = await _startServer(
     ctx,
     { ...opts, host, port: basePort, maxPortTries: maxTries },
-    { writePidFile: true, lockFd: lockFd ?? undefined },
   );
 
   const pid = process.pid;
-  writePidFile(dir, pid);
+  writePidFile(dir, { pid, port, parentPid: null });
   // Resolve and cache webRoot so the request handler can serve static files.
   // Default: <project>/web (one level up from .ok).
   webRoot = opts.webRoot ?? join(ctx.directory, "web");
@@ -2841,10 +2913,6 @@ export async function startOrAttach(
           server.close((err) => (err ? reject(err) : resolve()));
         });
         deletePidFile(dir);
-        if (lockFd !== null) {
-          try { closeSync(lockFd); } catch { /* ignore */ }
-          try { unlinkSync(lockPath); } catch { /* ignore */ }
-        }
         watcherHandle?.close();
         watcherHandle = null;
         runningServer = null;
@@ -2863,7 +2931,7 @@ export async function startOrAttach(
     root: projectRoot,
     ignore: (p) => {
       const norm = p.replace(/\\/g, "/");
-      if (/server\.(lock|log|pid)$/.test(norm)) return true;
+      if (/server\.(log|pid)$/.test(norm)) return true;
       if (norm.endsWith(".tmp")) return true;
       if (norm.includes("/.ok/")) {
         // Engine-owned mirror writes — suppress; selfWriteUntil already

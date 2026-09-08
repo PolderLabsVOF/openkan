@@ -5,6 +5,39 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-09-08
+
+### Added
+- `ok project clean [--apply|--all|--dry-run]` subcommand to prune stale or
+  non-active entries from `~/.config/openkan/projects.json` (XDG-aware).
+
+### Changed
+- `XDG_CONFIG_HOME` is honored when resolving the registry path so tests
+  cannot pollute the user's global project list.
+- `kanban/server.ts:startOrAttach` uses an atomic pidfile write
+  (`<pid>:<port>:<parent>`) as the single-instance lock — the legacy
+  lockfile+pidfile pair is gone.
+- `ok serve --mode=background` preflights the pidfile before spawning the
+  detached child so the second invocation fails fast (or takes over with
+  `--force`) instead of silently spawning a child that collides with the
+  live server.
+
+### Fixed
+- `--force` now reliably takes over a live server: the parent CLI
+  SIGTERMs the existing PID, waits up to 3s, then SIGKILLs, before
+  spawning its own detached child.
+- Test hygiene in `tests/serve-background-keepalive.test.mts`: the
+  `--project=${tmpdir}` flag is removed (the cwd already scopes the
+  registry), and every spawn sets `XDG_CONFIG_HOME=${tmpdir}` so
+  integration tests cannot leak into the user's `~/.config/openkan/`.
+- Process-leak cleanup: detached children and orphan CLI processes are
+  SIGKILLed on `SIGINT`/`SIGTERM`/`beforeExit` in both
+  `tests/serve-background-keepalive.test.mts` and
+  `tests/ok-cli-task-reconcile.test.mts`. New
+  `tests/server-lockfile.test.mts` covers the atomic pidfile lock,
+  `--force` takeover, stale-pidfile reclamation, and the
+  `<pid>:<port>:<parent>` background-mode pidfile format.
+
 ## [0.6.0] - 2026-09-08
 
 ### Added
