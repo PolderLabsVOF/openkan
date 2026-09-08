@@ -5,6 +5,35 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.3] - 2026-09-08
+
+### Fixed
+- `pidfile contains pid:port:parent format in background mode` test
+  flaked under the full test runner: the parent's post-HTTP pidfile
+  overwrite (which added the parentPid section) raced behind a test
+  that detected HTTP-up via `fetch` and read the pidfile before the
+  overwrite landed. The detached child now writes
+  `<pid>:<port>:<parentPid>` from its very first pidfile write (via
+  `OPENKAN_PARENT_PID` env var passed to the spawn), so the pidfile
+  shape is durable from the moment the child locks the port.
+
+## [0.6.2] - 2026-09-08
+
+### Fixed
+- `tests/ok-cli-task-reconcile.test.mts` redirected the project registry
+  to a per-suite file so `getActiveProjectRoot()` resolves to the
+  test's tmpdir, not the developer's live dashboard. The integration
+  suite no longer loads the developer's `board.json` into the test
+  server's `_board`.
+- `kanban/board.ts:fromPlanningTask` now sets `offlineMirrorId` on the
+  board row it builds from `.ok/tasks/<id>.json`, closing the
+  watcher-vs-POST race where the watcher path produced a row without
+  the marker while the HTTP POST path produced one with it.
+- `kanban/server.ts` image and static-file handlers copy `Buffer` into
+  a `Uint8Array` (fresh `ArrayBuffer`) before passing to `new
+  Response(...)`, restoring `npm run build` under the current
+  `@types/node` + DOM lib combination.
+
 ## [0.6.1] - 2026-09-08
 
 ### Added
