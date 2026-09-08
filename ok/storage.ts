@@ -303,7 +303,11 @@ export async function listPrds(p: OkPaths): Promise<Prd[]> {
 
 /** Rebuild `.ok/index.json` from the filesystem. */
 export async function rebuildIndex(p: OkPaths): Promise<OkIndex> {
-  const [tasks, plans, prds] = await Promise.all([listTasks(p), listPlans(p), listPrds(p)]);
+  // Phase 4: index reads from the v2 directory form only. Legacy v1 flat
+  // files are excluded from the index; they remain readable via readTask's
+  // v2-primary → v1-fallback chain for backwards-compat consumers but are
+  // not enumerated in the index.
+  const [tasks, plans, prds] = await Promise.all([listTasksV2(p), listPlans(p), listPrds(p)]);
   const toEntry = (e: { id: string; status: string; title: string; updatedAt: string }): IndexEntry => ({
     id: e.id,
     status: e.status,

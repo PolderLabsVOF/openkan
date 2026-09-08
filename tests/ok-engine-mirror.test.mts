@@ -61,11 +61,14 @@ describe("OpenKan engine → .ok/ mirror", () => {
     await persist(board);
 
     const p = okPaths(root);
-    assert.ok(existsSync(join(p.tasksDir, "tsk-mirror1.json")), "mirror file exists");
+    // Phase 5: the engine mirror writes the v2 directory form directly.
+    assert.ok(existsSync(join(p.tasksDir, "tsk-mirror1", "task.json")), "v2 mirror file exists");
 
     const got = await readTask(p, "tsk-mirror1");
     assert.ok(got);
     assert.strictEqual(got!.title, "mirror me");
+    // Engine status "running" (state=running) maps to v1 status "in_progress"
+    // via mapColumnToStatus, which the v2 mirror preserves.
     assert.strictEqual(got!.status, "in_progress");
     assert.strictEqual(got!.owner, "karen");
     assert.deepStrictEqual(got!.scopes, ["smoke"]);

@@ -4,9 +4,9 @@ import { promises as fsPromises } from "node:fs";
 import { join } from "path";
 import { writeFileAtomic, ensureDir, cleanupStaleTmp, removeDir } from "./io.ts";
 import type { Priority, Effort, Category } from "./tags.ts";
-import { writeTask, readTask as readOkTask, readConfig, writeConfig, paths as okPaths, rebuildIndex } from "../ok/storage.ts";
+import { writeTask, readTask as readOkTask, writeTaskV2, readConfig, writeConfig, paths as okPaths, rebuildIndex } from "../ok/storage.ts";
 import { nowIso as okNowIso } from "../ok/ids.ts";
-import type { Task as OkTask } from "../ok/schemas.ts";
+import type { TaskV2 } from "../ok/schemas.ts";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -279,32 +279,69 @@ export async function withWrite<T>(fn: (board: Board) => Promise<T> | T): Promis
 // ─── Persist ─────────────────────────────────────────────────────────────────
 
 /**
- * Map an OpenKan engine `Task` onto the planning-system `ok.task.v1`
- * shape. Column placement (`backlog|todo|doing|review|done`) maps onto
- * the planning status enum (`pending|in_progress|review|done|cancelled`)
- * so a single field is the canonical lifecycle indicator.
+ * Map an OpenKan engine `Task` onto the planning-system `ok.task.v2`
+ * shape. Phase 5 of the unified-task-storage plan: the mirror writes
+ * the v2 directory form directly so the planning-system store is
+ * structurally aligned with the engine board (column, order, state,
+ * agent, assignees, etc. all preserved without round-tripping through
+ * the lossy v1 projection).
  */
-function toPlanningTask(task: Task): OkTask {
+function toTaskV2(task: Task): TaskV2 {
   const status = mapColumnToStatus(task.column, task.state, task.archived);
-  const ok: OkTask = {
-    schema: "ok.task.v1",
+  const now = okNowIso();
+  return {
+    schema: "ok.task.v2",
     id: task.id.startsWith("tsk-") ? task.id : `tsk-${task.id}`,
     title: task.title || "untitled",
+    description: task.description ?? "",
+    column: task.column,
+    order: task.order ?? 0,
+    sessionId: task.sessionId ?? null,
+    agent: task.agent ?? "",
+    model: task.model ?? null,
     status,
+    state: task.state,
+    lastError: task.lastError ?? null,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
+    artifact: task.artifact ?? "",
+    sessionArtifact: task.sessionArtifact ?? null,
+    artifacts: task.artifacts ?? { mdxPath: "", commentsPath: "", inputsPath: "", statePath: "" },
+    source: task.source,
+    sourceHash: task.sourceHash,
+    stale: task.stale,
+    lastSourceCheck: task.lastSourceCheck,
+    pendingInputs: task.pendingInputs ?? [],
+    tags: task.tags ?? [],
+    category: task.category ?? "task",
+    priority: task.priority ?? "normal",
+    effort: task.effort ?? null,
+    archived: task.archived ?? false,
+    assignees: task.assignees ?? (task.agent ? [task.agent] : []),
+    images: task.images ?? [],
+    parentId: task.parentId ?? null,
+    subtaskIds: task.subtaskIds ?? [],
+    offlineMirrorId: task.offlineMirrorId,
+    // v1 fields preserved for read-compat callers:
+    owner: task.agent ?? undefined,
+    scopes: task.tags && task.tags.length > 0 ? task.tags : undefined,
+    plan: undefined,
+    prd: undefined,
+    deps: undefined,
+    evidence: undefined,
+    acceptance: undefined,
+    startedAt: undefined,
+    completedAt: undefined,
+    mirrorStatus: undefined,
+    mirrorId: undefined,
   };
-  if (task.agent) ok.owner = task.agent;
-  if (task.description && task.description.trim().length > 0) ok.description = task.description;
-  if (task.tags && task.tags.length > 0) ok.scopes = task.tags;
-  return ok;
 }
 
 function mapColumnToStatus(
   column: Task["column"],
   state: Task["state"],
   archived: boolean,
-): OkTask["status"] {
+): TaskV2["status"] {
   if (archived) return "cancelled";
   if (state === "done") return "done";
   if (state === "cancelled" || state === "failed") return "cancelled";
@@ -342,67 +379,65 @@ async function mirrorToOkStore(board: Board): Promise<void> {
     const now = okNowIso();
     await writeConfig(p, { schema: "ok.config.v1", version: 1, createdAt: now, updatedAt: now });
   }
-  // Write one JSON per task, plus idempotent tasks.json index.
+  // Write one v2 task per card, plus idempotent tasks.json index. Phase 5:
+  // the mirror writes the v2 directory form directly. The legacy v1 flat
+  // file is no longer maintained from this path; legacy readers continue
+  // to work via readTask's v2-primary → v1-fallback chain.
   const seen = new Set<string>();
   const indexEntries: { id: string; status: string; title: string; updatedAt: string }[] = [];
   for (const t of board.tasks) {
-    const okTask = toPlanningTask(t);
-    await writeTask(p, okTask);
-    seen.add(okTask.id);
-    indexEntries.push({ id: okTask.id, status: okTask.status, title: okTask.title, updatedAt: okTask.updatedAt });
+    const v2 = toTaskV2(t);
+    await writeTaskV2(p, v2);
+    seen.add(v2.id);
+    indexEntries.push({ id: v2.id, status: v2.status, title: v2.title, updatedAt: v2.updatedAt });
   }
   // Best-effort index rebuild (non-fatal if it fails).
   try { await rebuildIndex(p); } catch { /* swallow */ }
 }
 
 /**
- * Map a planning-system `ok.task.v1` entry onto the engine Task schema.
- * Used when the source of truth for a task lives in `.ok/tasks/<id>.json`
- * (e.g. an agent invoked `ok task add` directly). The reverse direction
- * is `toPlanningTask` above; together they keep both stores coherent.
+ * Map a planning-system `ok.task.v2` entry onto the engine Task schema.
+ * Phase 5: the planning-system store is the v2 directory form now, so
+ * the projection reads v2 fields directly (column, order, state,
+ * agent, assignees, tags, priority, archived, artifact, etc.). Most
+ * v2 fields map 1:1 onto the engine Task — the only synthesised
+ * defaults are the ones a v2 record might leave null when the
+ * offline write arrived without a full kanban view.
  */
-function fromPlanningTask(ok: OkTask): Task | null {
+function fromPlanningTask(ok: TaskV2): Task | null {
   if (!ok.id || !/^tsk-[A-Za-z0-9_-]+$/.test(ok.id)) return null;
-  const column: Task["column"] =
-    ok.status === "done" ? "done" :
-    ok.status === "review" ? "review" :
-    ok.status === "in_progress" ? "doing" :
-    ok.status === "cancelled" ? "backlog" :
-    ok.status === "pending" ? "todo" :
-    "todo";
-  const state: Task["state"] =
-    ok.status === "done" ? "done" :
-    ok.status === "cancelled" ? "cancelled" :
-    ok.status === "in_progress" ? "running" :
-    "idle";
-  const arts = taskArtifacts(ok.id);
+  const arts = ok.artifacts ?? taskArtifacts(ok.id);
   return {
     id: ok.id,
-    title: ok.title ?? "untitled",
+    title: ok.title || "untitled",
     description: ok.description ?? "",
-    column,
-    order: 0,
-    sessionId: null,
-    agent: ok.owner ?? "",
-    model: null,
-    status: state,
-    state,
-    lastError: null,
+    column: ok.column,
+    order: ok.order ?? 0,
+    sessionId: ok.sessionId ?? null,
+    agent: ok.agent ?? ok.owner ?? "",
+    model: ok.model ?? null,
+    status: ok.state,
+    state: ok.state,
+    lastError: ok.lastError ?? null,
     createdAt: ok.createdAt,
     updatedAt: ok.updatedAt,
-    artifact: arts.mdxPath,
-    sessionArtifact: null,
-    pendingInputs: [],
+    artifact: ok.artifact || arts.mdxPath,
+    sessionArtifact: ok.sessionArtifact ?? null,
     artifacts: arts,
-    tags: ok.scopes ? [...ok.scopes] : [],
-    category: "task",
-    priority: (ok.priority ?? "p3") as Task["priority"],
-    effort: null,
-    archived: ok.status === "cancelled",
-    assignees: ok.owner ? [ok.owner] : [],
-    images: [],
-    parentId: null,
-    subtaskIds: [],
+    source: ok.source,
+    sourceHash: ok.sourceHash,
+    stale: ok.stale,
+    lastSourceCheck: ok.lastSourceCheck,
+    pendingInputs: ok.pendingInputs ?? [],
+    tags: ok.tags ?? ok.scopes ?? [],
+    category: ok.category ?? "task",
+    priority: ok.priority ?? "normal",
+    effort: ok.effort ?? null,
+    archived: ok.archived === true || ok.state === "cancelled" || ok.state === "failed",
+    assignees: ok.assignees ?? (ok.agent ? [ok.agent] : ok.owner ? [ok.owner] : []),
+    images: ok.images ?? [],
+    parentId: ok.parentId ?? null,
+    subtaskIds: ok.subtaskIds ?? [],
     // The planning-system task id is the offline mirror; setting it on
     // the planning→board path closes a race where the file watcher
     // creates the board row before the HTTP POST lands, so a later
@@ -410,7 +445,7 @@ function fromPlanningTask(ok: OkTask): Task | null {
     // it without the marker. With this, both creation paths produce
     // equivalent rows and `ok task add`'s post-write contract (id
     // visible on the board, mirror marked synced) holds in either order.
-    offlineMirrorId: ok.id,
+    offlineMirrorId: ok.offlineMirrorId ?? ok.id,
   };
 }
 
@@ -455,7 +490,7 @@ export async function reconcileOkTask(taskId: string, kanbanDir: string = KANBAN
     await markOkMirrorSynced(p, ok.id, ok.id);
     return null;
   }
-  const task = fromPlanningTask(ok as unknown as OkTask);
+  const task = fromPlanningTask(ok);
   if (!task) return null;
   let inserted: Task | undefined;
   await withWrite(async (board) => {
