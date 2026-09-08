@@ -21,7 +21,22 @@ import { initBoard, getBoard, reconcileOkTask, taskArtifacts, KANBAN_DIR } from 
 import { writeTask, paths as okPaths, readTask as readOkTask } from "../ok/storage.ts";
 import type { Task as OkTask } from "../ok/schemas.ts";
 import { runTask } from "../ok/commands/task.ts";
-import { startOrAttach } from "../kanban/server.ts";
+import { startOrAttach, type StartOrAttachResult } from "../kanban/server.ts";
+
+// Module-scoped server reference for signal handler cleanup.
+// This ensures that if npm test is interrupted, the in-process server is stopped.
+let serverRef: Awaited<ReturnType<typeof startOrAttach>> | null = null;
+
+function cleanupServer(): void {
+  if (serverRef) {
+    serverRef.stop().catch(() => { /* best effort */ });
+    serverRef = null;
+  }
+}
+
+process.on("SIGINT", cleanupServer);
+process.on("SIGTERM", cleanupServer);
+process.on("beforeExit", cleanupServer);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
@@ -228,11 +243,13 @@ describe("ok task add → dashboard (integration)", () => {
       { directory: root, client: null, log: async () => undefined },
       { port, host: "127.0.0.1", _autoDetect: false },
     );
+    serverRef = server;
     baseUrl = `http://127.0.0.1:${port}`;
     writeFileSync(join(root, ".ok", "openkan.json"), JSON.stringify({ host: "127.0.0.1", port }));
   });
 
   after(async () => {
+    if (serverRef === server) serverRef = null;
     if (server) await server.stop();
     rmSync(root, { recursive: true, force: true });
   });
@@ -363,4 +380,12 @@ describe("ok task add → dashboard (integration)", () => {
     const board = await (await fetch(`${baseUrl}/api/board`)).json() as { tasks: Array<{ id: string; column: string }> };
     assert.strictEqual(board.tasks.find((task) => task.id === created.id)?.column, "doing");
   });
+});
+
+// Smoke test: verify that signal handlers for server cleanup are registered.
+// This ensures that if npm test is interrupted, the in-process server is stopped.
+test("signal handlers are registered for server cleanup", () => {
+  const handlers = process.listeners("SIGINT");
+  const hasCleanupHandler = handlers.some((h) => h.name === "cleanupServer");
+  assert.equal(hasCleanupHandler, true, "SIGINT handler should be registered");
 });

@@ -14,7 +14,7 @@
 // Each test spawns the CLI in its own tmpdir so the real `.ok/` workspace is
 // not touched.
 
-import { test } from "node:test";
+import { test, it } from "node:test";
 import { strict as assert } from "node:assert";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync, rmSync, mkdtempSync } from "node:fs";
@@ -23,6 +23,41 @@ import { join } from "node:path";
 
 const PROJECT_ROOT = new URL("../", import.meta.url).pathname;
 const CLI_ARGS = ["--experimental-strip-types", join(PROJECT_ROOT, "bin", "ok.ts")];
+
+// Module-scoped set to track detached child PIDs across all tests for cleanup.
+// This ensures that even if npm test is interrupted (SIGTERM/SIGINT), all
+// spawned children are properly cleaned up.
+const detachedPids = new Set<number>();
+// Track the current in-test child process handle for cleanup.
+let currentChild: ChildProcess | null = null;
+
+// Signal handlers to clean up detached children when npm test is interrupted.
+// This prevents orphan processes from accumulating across test runs.
+function cleanupHandler(signal: string): void {
+  for (const pid of detachedPids) {
+    try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
+  }
+  detachedPids.clear();
+  if (currentChild && currentChild.exitCode === null && currentChild.signalCode === null) {
+    try { currentChild.kill("SIGKILL"); } catch { /* already gone */ }
+  }
+  // Re-raise the signal so Node's default handler runs
+  if (signal === "SIGINT" || signal === "SIGTERM") {
+    process.exit(128 + (signal === "SIGINT" ? 2 : 15));
+  }
+}
+
+process.on("SIGINT", cleanupHandler);
+process.on("SIGTERM", cleanupHandler);
+process.on("beforeExit", () => {
+  for (const pid of detachedPids) {
+    try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
+  }
+  detachedPids.clear();
+  if (currentChild && currentChild.exitCode === null && currentChild.signalCode === null) {
+    try { currentChild.kill("SIGKILL"); } catch { /* already gone */ }
+  }
+});
 
 function tmpDir(): string {
   return mkdtempSync(join(tmpdir(), "ok-serve-bg-"));
@@ -81,7 +116,7 @@ function spawnCli(args: string[], cwd: string, env: Record<string, string> = {})
   return spawn(process.execPath, [...CLI_ARGS, ...args], {
     cwd,
     stdio: ["pipe", "pipe", "pipe"],
-    env: { ...process.env, OPENKAN_SKIP_AGENT_INSTALL: "1", ...env },
+    env: { ...process.env, OPENKAN_SKIP_AGENT_INSTALL: "1", XDG_CONFIG_HOME: cwd, ...env },
   });
 }
 
@@ -101,6 +136,8 @@ test("ok serve --mode=background spawns a detached child and exits 0", async (t)
   const port = 41000 + Math.floor(Math.random() * 1000);
 
   t.after(() => {
+    if (currentChild === child) currentChild = null;
+    if (pid) detachedPids.delete(pid);
     if (pid && isPidAlive(pid)) {
       try { process.kill(pid, "SIGTERM"); } catch { /* already gone */ }
     }
@@ -114,9 +151,10 @@ test("ok serve --mode=background spawns a detached child and exits 0", async (t)
     initProject(projectRoot);
 
     child = spawnCli(
-      ["serve", "--mode=background", "--no-open", `--port=${port}`, `--project=${projectRoot}`],
+      ["serve", "--mode=background", "--no-open", `--port=${port}`],
       projectRoot,
     );
+    currentChild = child;
 
     // 1. Wait for the HTTP server to come up (up to 8s — the parent spawns
     //    a detached child, then polls the port until it responds).
@@ -156,6 +194,8 @@ test("ok serve --mode=background spawns a detached child and exits 0", async (t)
 
     pid = readPidFile(projectRoot);
     assert.ok(pid !== null, `pidfile not written: ${join(projectRoot, ".ok", "server.pid")}`);
+    // Register the detached child PID for cleanup on process signals.
+    if (pid) detachedPids.add(pid);
     assert.equal(
       isPidAlive(pid!),
       true,
@@ -198,6 +238,8 @@ test("ok start --mode=tray keeps the HTTP server up (working tray or fallback)",
   const port = 42000 + Math.floor(Math.random() * 1000);
 
   t.after(() => {
+    if (currentChild === child) currentChild = null;
+    if (pid) detachedPids.delete(pid);
     if (pid && isPidAlive(pid)) {
       try { process.kill(pid, "SIGTERM"); } catch { /* already gone */ }
     }
@@ -211,9 +253,10 @@ test("ok start --mode=tray keeps the HTTP server up (working tray or fallback)",
     initProject(projectRoot);
 
     child = spawnCli(
-      ["start", "--mode=tray", "--no-open", `--port=${port}`, `--project=${projectRoot}`],
+      ["start", "--mode=tray", "--no-open", `--port=${port}`],
       projectRoot,
     );
+    currentChild = child;
     child.stdout?.on("data", (d) => { stdout += d.toString(); });
     child.stderr?.on("data", (d) => { stderr += d.toString(); });
 
@@ -260,11 +303,21 @@ test("ok start --mode=tray keeps the HTTP server up (working tray or fallback)",
     //    Node's default handler exits cleanly.
     pid = readPidFile(projectRoot);
     assert.ok(pid !== null, `pidfile not written: ${join(projectRoot, ".ok", "server.pid")}`);
+    if (pid) detachedPids.add(pid);
     assert.equal(isPidAlive(pid!), true, `pidfile points at dead PID ${pid}`);
   } finally {
+    if (pid) detachedPids.delete(pid);
     if (pid && isPidAlive(pid)) {
       try { process.kill(pid, "SIGTERM"); } catch { /* already gone */ }
       await waitForExit(pid!, 3000);
     }
   }
+});
+
+// Smoke test: verify that signal handlers for cleanup are registered.
+// This ensures that if npm test is interrupted, orphan processes are cleaned up.
+test("signal handlers are registered for cleanup", () => {
+  const handlers = process.listeners("SIGINT");
+  const hasCleanupHandler = handlers.some((h) => h.name === "cleanupHandler");
+  assert.equal(hasCleanupHandler, true, "SIGINT handler should be registered");
 });
