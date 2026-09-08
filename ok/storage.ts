@@ -14,11 +14,13 @@ import * as fsSync from "node:fs";
 import * as path from "node:path";
 import {
   type Task,
+  type TaskV2,
   type Plan,
   type Prd,
   type OkConfig,
   type OkIndex,
   isTask,
+  isTaskV2,
   isPlan,
   isPrd,
   isOkConfig,
@@ -158,6 +160,46 @@ export async function listTasks(p: OkPaths): Promise<Task[]> {
   const out: Task[] = [];
   for (const f of files) {
     const v = await readJsonOptional(path.join(p.tasksDir, f), isTask);
+    if (v) out.push(v);
+  }
+  return out;
+}
+
+/**
+ * Compute the v2 storage path for a task id: `<tasksDir>/<id>/task.json`.
+ * Used by both `readTaskV2`/`writeTaskV2` and the migration that
+ * promotes legacy flat files into per-task directories.
+ */
+export function taskV2File(p: OkPaths, id: string): string {
+  if (!/^tsk-[A-Za-z0-9_-]+$/.test(id)) throw new Error(`invalid task id: ${id}`);
+  return path.join(p.tasksDir, id, "task.json");
+}
+
+export async function readTaskV2(p: OkPaths, id: string): Promise<TaskV2 | undefined> {
+  if (!/^tsk-[A-Za-z0-9_-]+$/.test(id)) throw new Error(`invalid task id: ${id}`);
+  return readJsonOptional(taskV2File(p, id), isTaskV2);
+}
+
+export async function writeTaskV2(p: OkPaths, task: TaskV2): Promise<void> {
+  if (!/^tsk-[A-Za-z0-9_-]+$/.test(task.id)) throw new Error(`invalid task id: ${task.id}`);
+  const dir = path.join(p.tasksDir, task.id);
+  await fs.mkdir(dir, { recursive: true });
+  await writeJson(path.join(dir, "task.json"), task);
+}
+
+export async function listTasksV2(p: OkPaths): Promise<TaskV2[]> {
+  const out: TaskV2[] = [];
+  let names: string[];
+  try {
+    names = await fs.readdir(p.tasksDir);
+  } catch (e: any) {
+    if (e?.code === "ENOENT") return out;
+    throw e;
+  }
+  for (const name of names) {
+    if (!/^tsk-[A-Za-z0-9_-]+$/.test(name)) continue;
+    const file = path.join(p.tasksDir, name, "task.json");
+    const v = await readJsonOptional(file, isTaskV2);
     if (v) out.push(v);
   }
   return out;

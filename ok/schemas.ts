@@ -81,6 +81,65 @@ export interface Task {
   mirrorId?: string;
 }
 
+/** Canonical task record shared by the planning CLI and Kanban board. */
+export interface TaskV2 extends Omit<Task, "schema" | "description" | "priority" | "archived"> {
+  schema: "ok.task.v2";
+  description: string;
+  column: "backlog" | "todo" | "doing" | "review" | "done";
+  order: number;
+  sessionId: string | null;
+  agent: string;
+  model: string | null;
+  state: "idle" | "running" | "waiting-for-input" | "done" | "failed" | "cancelled";
+  lastError: string | null;
+  artifact: string;
+  sessionArtifact: string | null;
+  artifacts: { mdxPath: string; commentsPath: string; inputsPath: string; statePath: string };
+  source?: { path: string; line: number; slug: string };
+  sourceHash?: string;
+  stale?: boolean;
+  lastSourceCheck?: string;
+  pendingInputs: string[];
+  tags: string[];
+  category: "frontend" | "backend" | "infra" | "docs" | "test" | "design" | "data" | "security" | "task";
+  priority: "low" | "normal" | "high" | "urgent";
+  effort: "xs" | "s" | "m" | "l" | "xl" | null;
+  archived: boolean;
+  assignees: string[];
+  images: string[];
+  parentId: string | null;
+  subtaskIds: string[];
+  offlineMirrorId?: string;
+}
+
+export function isTaskV2(obj: unknown): obj is TaskV2 {
+  if (typeof obj !== "object" || obj === null) return false;
+  const task = obj as Record<string, unknown>;
+  if (task.schema !== "ok.task.v2") return false;
+  if (typeof task.id !== "string" || !/^tsk-[A-Za-z0-9_-]+$/.test(task.id)) return false;
+  if (typeof task.title !== "string" || task.title.length === 0 || task.title.length > 200) return false;
+  if (typeof task.description !== "string") return false;
+  if (!(["backlog", "todo", "doing", "review", "done"] as string[]).includes(task.column as string)) return false;
+  if (typeof task.order !== "number" || !Number.isFinite(task.order)) return false;
+  if (typeof task.sessionId !== "string" && task.sessionId !== null) return false;
+  if (typeof task.agent !== "string" || (typeof task.model !== "string" && task.model !== null)) return false;
+  if (!(["idle", "running", "waiting-for-input", "done", "failed", "cancelled"] as string[]).includes(task.state as string)) return false;
+  if (typeof task.lastError !== "string" && task.lastError !== null) return false;
+  if (!isIso(task.createdAt) || !isIso(task.updatedAt)) return false;
+  if (typeof task.artifact !== "string" || (typeof task.sessionArtifact !== "string" && task.sessionArtifact !== null)) return false;
+  if (!isStringArray(task.pendingInputs) || !isStringArray(task.tags) || !isStringArray(task.assignees) || !isStringArray(task.images) || !isStringArray(task.subtaskIds)) return false;
+  if (typeof task.archived !== "boolean" || (typeof task.parentId !== "string" && task.parentId !== null)) return false;
+  return true;
+}
+
+export function validateTaskV2(obj: unknown): TaskValidationError | null {
+  if (isTaskV2(obj)) return null;
+  const id = typeof obj === "object" && obj !== null && typeof (obj as Record<string, unknown>).id === "string"
+    ? (obj as Record<string, unknown>).id as string
+    : undefined;
+  return { id, reason: "invalid ok.task.v2 shape" };
+}
+
 export function isTask(obj: unknown): obj is Task {
   if (typeof obj !== "object" || obj === null) return false;
   const t = obj as Record<string, unknown>;
