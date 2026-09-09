@@ -616,6 +616,7 @@ section {
 }
 .stat-label {
   font-size: 0.85rem;
+  line-height: 1.35;
   color: var(--fg-muted);
 }
 
@@ -960,7 +961,7 @@ section {
 }
 .stack-num {
   font-family: var(--mono);
-  font-size: 0.85rem;
+  font-size: 0.86rem;
   color: var(--accent);
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -976,6 +977,7 @@ section {
   font-family: var(--mono);
   font-size: 0.86rem;
   color: var(--fg-soft);
+  line-height: 1.5;
 }
 .stack-layer code {
   background: var(--bg-inset);
@@ -1410,6 +1412,9 @@ section {
   .terminal-window { transform: none; }
   .t-row { grid-template-columns: 110px 60px 1fr; font-size: 0.72rem; }
   .cta-card { padding: 2rem 1.2rem; }
+  /* On narrow viewports the forced <br> makes "and your agents."
+     spill to a 3rd line; let the phrase flow naturally instead. */
+  .break-wide { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
