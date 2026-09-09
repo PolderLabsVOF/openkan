@@ -42,11 +42,11 @@
   --bg-inset:   var(--slate-100);
   --fg:         var(--slate-900);
   --fg-soft:    var(--slate-700);
-  --fg-muted:   var(--slate-600);
+  --fg-muted:   var(--slate-500);
   --border:     var(--slate-200);
   --border-strong: var(--slate-300);
   --accent:     var(--teal-700);
-  --accent-soft: var(--teal-600);
+  --accent-soft: var(--teal-700);
   --accent-bg:  var(--teal-50);
 
   --code-bg:    var(--slate-900);
@@ -228,8 +228,14 @@ section {
   padding: 0.4rem 0.8rem;
   border-radius: 6px;
   z-index: 1000;
+  transition: left 80ms ease;
 }
-.skip-link:focus { left: 1rem; }
+.skip-link:focus,
+.skip-link:focus-visible {
+  left: 1rem;
+  outline: 2px solid white;
+  outline-offset: 2px;
+}
 
 /* ─── Topbar ─────────────────────────────────────────────────────────── */
 .topbar {
@@ -1386,6 +1392,7 @@ section {
 .footer-links { display: inline-flex; gap: 1.25rem; font-size: 0.9rem; }
 .footer-links a { color: var(--fg-soft); }
 .footer-links a:hover { color: var(--fg); }
+.footer-links a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
 
 /* ─── Responsive niceties ─────────────────────────────────────────────── */
 @media (max-width: 720px) {
