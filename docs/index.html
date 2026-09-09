@@ -51,7 +51,7 @@
       <svg viewBox="0 0 16 16" fill="currentColor" width="16" height="16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.075.547-.172.547-.385 0-.19-.007-.693-.01-1.36-2.226.484-2.695-1.073-2.695-1.073-.364-.924-.89-1.17-.89-1.17-.727-.497.055-.487.055-.487.804.056 1.227.825 1.227.825.714 1.223 1.873.87 2.33.665.072-.517.279-.87.508-1.07-1.777-.2-3.644-.888-3.644-3.953 0-.874.31-1.588.823-2.148-.083-.202-.357-1.015.077-2.117 0 0 .672-.215 2.2.823a7.674 7.674 0 0 1 4.004 0c1.528-1.038 2.2-.823 2.2-.823.434 1.102.16 1.915.077 2.117.512.56.823 1.274.823 2.148 0 3.073-1.87 3.75-3.653 3.947.288.246.543.735.543 1.48 0 1.07-.01 1.933-.01 2.195 0 .215.144.465.55.385A8.014 8.014 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
       GitHub
     </a>
-    <button id="theme-toggle" type="button" class="theme-toggle" aria-label="Toggle color theme">
+    <button id="theme-toggle" type="button" class="theme-toggle" aria-label="Toggle color theme" aria-pressed="false">
       <span class="theme-icon-sun" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
       </span>
@@ -754,9 +754,12 @@ the canonical v2 directory form <span class="md-code">`.ok/tasks/&lt;id&gt;/task
       root.setAttribute("data-theme", next);
       try { localStorage.setItem("openkan-theme", next); } catch (e) {}
       btn.setAttribute("data-active", next);
+      btn.setAttribute("aria-pressed", next !== "auto");
     }
     btn.addEventListener("click", cycle);
-    btn.setAttribute("data-active", root.getAttribute("data-theme") || "auto");
+    var initial = root.getAttribute("data-theme") || "auto";
+    btn.setAttribute("data-active", initial);
+    btn.setAttribute("aria-pressed", initial !== "auto");
   })();
 
   // Tab switcher.
@@ -818,21 +821,6 @@ the canonical v2 directory form <span class="md-code">`.ok/tasks/&lt;id&gt;/task
       });
     }, { threshold: 0 });
     observer.observe(hero);
-  })();
-
-  // Scroll reveal for sections.
-  (function () {
-    if (typeof IntersectionObserver === "undefined") return;
-    var els = document.querySelectorAll(".reveal");
-    var obs = new IntersectionObserver(function (entries) {
-      entries.forEach(function (e) {
-        if (e.isIntersecting) {
-          e.target.classList.add("is-revealed");
-          obs.unobserve(e.target);
-        }
-      });
-    }, { threshold: 0.12 });
-    els.forEach(function (el) { obs.observe(el); });
   })();
 </script>
 
