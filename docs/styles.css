@@ -189,7 +189,7 @@ h2 { font-size: clamp(1.7rem, 3vw, 2.4rem); line-height: 1.18; }
 h3 { font-size: 1.2rem; line-height: 1.3; }
 
 p { margin: 0 0 1rem; color: var(--fg-soft); }
-p.section-lede { color: var(--fg-muted); font-size: 1.05rem; max-width: 60ch; }
+p.section-lede { color: var(--fg-muted); font-size: 1.05rem; max-width: 60ch; margin-inline: auto; text-wrap: balance; }
 
 a { color: var(--accent); text-decoration: none; transition: color 120ms ease; }
 a:hover { color: var(--accent-soft); }
@@ -223,7 +223,7 @@ section {
   background: var(--accent-bg);
   border-radius: 999px;
 }
-.section-head h2 { max-width: 22ch; margin-inline: auto; }
+.section-head h2 { max-width: 32ch; margin-inline: auto; }
 
 .skip-link {
   position: absolute;
