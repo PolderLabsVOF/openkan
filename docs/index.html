@@ -1,9 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="auto">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#0f766e">
+<meta name="theme-color" content="#0f766e" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)">
 <meta name="description" content="OpenKan — a local-first kanban board with a native Claude Code control plane. Tasks, goals, and agent activity live inside your repository as plain files.">
 <meta property="og:title" content="OpenKan — local-first kanban for humans and coding agents">
 <meta property="og:description" content="A five-column kanban, a chat sidebar, and a .ok/ workspace that both you and Claude Code read and write. No hosted service.">
@@ -11,6 +12,22 @@
 <title>OpenKan — local-first kanban for humans and coding agents</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="styles.css">
+
+<!-- Apply theme before paint to avoid FOUC. Default: system pref. -->
+<script>
+  (function () {
+    try {
+      var saved = localStorage.getItem("openkan-theme");
+      if (saved === "light" || saved === "dark") {
+        document.documentElement.setAttribute("data-theme", saved);
+      } else {
+        document.documentElement.setAttribute("data-theme", "auto");
+      }
+    } catch (e) {
+      document.documentElement.setAttribute("data-theme", "auto");
+    }
+  })();
+</script>
 </head>
 <body>
 
@@ -21,9 +38,18 @@
   </a>
   <nav class="topnav" aria-label="Primary">
     <a href="#features">Features</a>
-    <a href="#how-it-works">How it works</a>
+    <a href="#examples">Examples</a>
+    <a href="#workflow">Workflow</a>
     <a href="#install">Install</a>
     <a href="https://github.com/PolderLabsVOF/openkan" rel="noopener">GitHub ↗</a>
+    <button id="theme-toggle" type="button" class="theme-toggle" aria-label="Toggle color theme">
+      <span class="theme-icon-sun" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      </span>
+      <span class="theme-icon-moon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </span>
+    </button>
   </nav>
 </header>
 
@@ -40,7 +66,7 @@
   </p>
 
   <div class="install-card" id="install">
-    <p class="install-label">Install</p>
+    <p class="install-label">Install OpenKan</p>
 <pre><code><span class="prompt">$</span> npm install -g @polderlabs/openkan
 <span class="prompt">$</span> cd /path/to/your/project
 <span class="prompt">$</span> ok init
@@ -68,7 +94,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="4" height="16" rx="1"/><rect x="10" y="4" width="4" height="11" rx="1"/><rect x="17" y="4" width="4" height="8" rx="1"/></svg>
       </div>
       <h3>Five-column board</h3>
-      <p>Backlog, To&nbsp;Do, In&nbsp;Progress, Review, Done. Drag-and-drop, keyboard shortcuts, right-click menus. Subtasks and archived items handled out of the way.</p>
+      <p>Backlog, To&nbsp;Do, In&nbsp;Progress, Review, Done. Drag-and-drop, keyboard shortcuts, right-click menus. Subtasks are nested; archived items are out of the way.</p>
     </article>
 
     <article class="card">
@@ -76,7 +102,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h16"/><circle cx="18" cy="12" r="2"/></svg>
       </div>
       <h3>Tasks are plain files</h3>
-      <p>Each task lives at <code>.ok/tasks/&lt;id&gt;/task.mdx</code>. Frontmatter drives the dashboard. You can read, edit, and diff them in any tool — your editor, your <code>git</code> history, your editor's quick-open.</p>
+      <p>Each task lives at <code>.ok/tasks/&lt;id&gt;/task.mdx</code>. Frontmatter drives the dashboard. Read, edit, and diff them in any tool — your editor, <code>git</code>, or your editor's quick-open.</p>
     </article>
 
     <article class="card">
@@ -92,7 +118,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
       </div>
       <h3>Chat sidebar with tabs</h3>
-      <p>An embedded chat panel beside the board. Discuss a task, attach a screenshot, link a session. Tabs keep multiple conversations open while you work.</p>
+      <p>An embedded chat panel beside the board. Discuss a task, attach a screenshot, link a session. Multiple conversations stay open in tabs while you work.</p>
     </article>
 
     <article class="card">
@@ -100,7 +126,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
       </div>
       <h3>Local-only, no telemetry</h3>
-      <p>Binds to <code>127.0.0.1</code>. Nothing leaves your machine. Drop the project in a private network and the dashboard keeps working. Audit-friendly by construction.</p>
+      <p>Binds to <code>127.0.0.1</code>. Nothing leaves your machine. Audit-friendly by construction: every change is a file write you can <code>git diff</code>.</p>
     </article>
 
     <article class="card">
@@ -114,7 +140,165 @@
   </div>
 </section>
 
-<section id="how-it-works" class="how">
+<section id="examples" class="examples">
+  <h2>See it in action</h2>
+  <p class="section-lede">
+    Every artefact below is a real file you have on disk after <code>ok init</code>. No magic — open the
+    repo in any editor and these exist as you see them.
+  </p>
+
+  <div class="example-block">
+    <div class="example-header">
+      <span class="example-tag">task.mdx</span>
+      <span class="example-path">.ok/tasks/tsk-LtHF-Xev/task.mdx</span>
+    </div>
+<pre class="example-code"><code><span class="yaml-key">---</span>
+<span class="yaml-key">id:</span>        <span class="yaml-str">tsk-LtHF-Xev</span>
+<span class="yaml-key">title:</span>     <span class="yaml-str">Migrate OkStore to v2 directory form</span>
+<span class="yaml-key">status:</span>    <span class="yaml-val">review</span>
+<span class="yaml-key">priority:</span>  <span class="yaml-val">high</span>
+<span class="yaml-key">owner:</span>     <span class="yaml-str">karen</span>
+<span class="yaml-key">scopes:</span>    <span class="yaml-arr">[storage, refactor]</span>
+<span class="yaml-key">source:</span>    <span class="yaml-obj">{ path: docs/specs/unified-task-storage.md, line: 196 }</span>
+<span class="yaml-key">createdAt:</span> <span class="yaml-str">2026-08-19T11:42:00Z</span>
+<span class="yaml-key">updatedAt:</span> <span class="yaml-str">2026-08-19T15:08:00Z</span>
+<span class="yaml-key">---</span>
+
+<span class="md-heading"># Migrate OkStore to v2 directory form</span>
+
+Tasks move from <span class="md-code">`board.tasks[]`</span> and the legacy flat files
+into the canonical v2 directory form <span class="md-code">`.ok/tasks/&lt;id&gt;/task.json`</span>.
+
+<span class="md-h2">## Acceptance</span>
+
+- <span class="md-li">[x]</span> v2 read is primary, v1 is deprecated
+- <span class="md-li">[x]</span> Migration script <span class="md-code">`scripts/migrate-tasks-to-v2.ts`</span> is idempotent
+- <span class="md-li">[ ]</span> Cleanup script removes <span class="md-code">`*.v1.json`</span> backups
+- <span class="md-li">[ ]</span> All 890 tests pass on the new layout</code></pre>
+  </div>
+
+  <div class="example-tabs" role="tablist">
+    <div class="tabs" role="tablist" aria-label="CLI examples">
+      <button role="tab" class="tab is-active" data-tab="cli" aria-selected="true" id="tab-cli">CLI</button>
+      <button role="tab" class="tab" data-tab="agent" aria-selected="false" id="tab-agent">Claude Code</button>
+      <button role="tab" class="tab" data-tab="watch" aria-selected="false" id="tab-watch">File watcher</button>
+    </div>
+
+    <div role="tabpanel" id="panel-cli" aria-labelledby="tab-cli" class="tabpanel is-active">
+<pre class="example-code"><code><span class="comment"># add a task from the terminal</span>
+<span class="prompt">$</span> ok task add \
+    --title <span class="string">"Rebase feature/auth onto main"</span> \
+    --column <span class="arg">todo</span> \
+    --priority <span class="arg">p1</span> \
+    --tags <span class="arg">git,backend</span>
+<span class="output">added tsk-7pQ3nXk9 to column 'todo'</span>
+
+<span class="comment"># list open work, filtered by priority</span>
+<span class="prompt">$</span> ok task list --status in_progress --json
+<span class="output">[
+  { "id": "tsk-LtHF-Xev", "title": "Migrate OkStore...", "priority": "high" },
+  { "id": "tsk-kncJx1da", "title": "Watcher reconciles v2 events", "priority": "normal" }
+]</span>
+
+<span class="comment"># move it forward, with a reason that lands in the changelog</span>
+<span class="prompt">$</span> ok task move tsk-7pQ3nXk9 --to doing --note <span class="string">"investigation phase"</span>
+<span class="output">tsk-7pQ3nXk9 moved backlog → doing</span>
+
+<span class="comment"># hand it to a specific agent, or let the runner pick one</span>
+<span class="prompt">$</span> ok task claim tsk-7pQ3nXk9 --agent karen
+<span class="prompt">$</span> ok task heartbeat tsk-7pQ3nXk9    <span class="comment"># keeps the runner from timing out</span>
+<span class="prompt">$</span> ok task complete tsk-7pQ3nXk9 --summary <span class="string">"rebased, retested, no regressions"</span></span></code></pre>
+    </div>
+
+    <div role="tabpanel" id="panel-agent" aria-labelledby="tab-agent" class="tabpanel" hidden>
+<pre class="example-code"><code><span class="comment"># inside Claude Code</span>
+<span class="user">&gt;</span> <span class="input">what's blocking the v0.7.0 release?</span>
+
+<span class="assistant">[karen] Running <span class="md-code">`ok task list --status review --priority high`</span>...
+
+  • tsk-kncJx1da  Watcher reconciles v2 directory task.json events
+    assigned: todd · created 4d ago · 3 of 4 acceptance criteria met
+    <span class="status">blocker:</span> integration test flakes when the watcher fires before
+    the v2 file is fully written; one-line fix in
+    <span class="md-code">`kanban/watcher.ts`</span>.
+
+Shall I claim that one and ship the fix? I can branch
+<span class="md-code">`fix/watcher-v2-debounce`</span> off <span class="md-code">`main`</span> and run
+<span class="md-code">`make check`</span> before pushing.</span>
+
+<span class="user">&gt;</span> <span class="input">yes, but update the docstring first</span>
+
+<span class="assistant">Claimed tsk-kncJx1da. Working on it now.</span></code></pre>
+    </div>
+
+    <div role="tabpanel" id="panel-watch" aria-labelledby="tab-watch" class="tabpanel" hidden>
+<pre class="example-code"><code><span class="comment"># the dashboard watches .ok/ and reconciles automatically</span>
+<span class="term-section">[19:42:03]</span> <span class="path">.ok/tasks/tsk-LtHF-Xev/task.json</span> <span class="chg">CHANGED</span>
+<span class="term-section">[19:42:03]</span>   → status: in_progress → review
+<span class="term-section">[19:42:03]</span>   → broadcast <span class="md-code">`task.updated`</span> over SSE to dashboard
+<span class="term-section">[19:42:04]</span>   → changelog appended: <span class="md-code">`task.updated`</span> by <span class="md-code">`karen`</span>
+<span class="term-section">[19:42:04]</span>   → index rebuilt: <span class="md-code">`.ok/index.json`</span> now lists tsk-LtHF-Xev
+
+<span class="comment"># dashboard client sees the change within ~80 ms</span>
+<span class="term-section">[19:42:04.083]</span> <span class="md-code">`board.updated`</span> received · 7 cards · 1 changed
+<span class="term-section">[19:42:04.084]</span> → <span class="md-code">renderCard(tsk-LtHF-Xev)</span> in <span class="md-code">`doing`</span> column</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<section id="workflow" class="workflow">
+  <h2>Built for the actual workflow</h2>
+  <p class="section-lede">
+    OpenKan is shaped by three different kinds of users hitting the same repo at the same time. The
+    control plane makes every action legible without giving anyone a special seat.
+  </p>
+
+  <div class="grid personas">
+
+    <article class="card persona">
+      <h3><span class="persona-emoji" aria-hidden="true">👤</span> The maintainer</h3>
+      <p>
+        Owns the project, reviews pull requests, decides priorities. Reads the board on Monday, skims
+        the changelog, and asks Claude Code to "triage the review column".
+      </p>
+      <ul>
+        <li>Sees source drift on stale tasks</li>
+        <li>Right-clicks a card to reopen, archive, or change owner</li>
+        <li>Drags a card to <em>done</em>; the agent's note auto-attaches</li>
+      </ul>
+    </article>
+
+    <article class="card persona">
+      <h3><span class="persona-emoji" aria-hidden="true">🤖</span> The coding agent</h3>
+      <p>
+        Claude Code has a single, durable source of what is in flight. It claims work with
+        <code>ok task claim</code>, emits heartbeats, and writes the changelog entries you'd
+        write by hand.
+      </p>
+      <ul>
+        <li>Pulls context from the task MDX (acceptance, source link, owner)</li>
+        <li>Writes a session artifact under <code>.ok/tasks/&lt;id&gt;/session/</code></li>
+        <li>Marks the task <em>done</em> only after <code>make check</code> passes</li>
+      </ul>
+    </article>
+
+    <article class="card persona">
+      <h3><span class="persona-emoji" aria-hidden="true">📝</span> The reviewer</h3>
+      <p>
+        Joins the project to give feedback. Opens the dashboard, leaves an inline comment on the
+        rendered MDX, tags the task, and moves on. No account needed.
+      </p>
+      <ul>
+        <li>Inline comments attach to a task and survive restarts</li>
+        <li>Tagged threads resolve back to "open" or "done"</li>
+        <li>No login: the git user name is the identity</li>
+      </ul>
+    </article>
+
+  </div>
+</section>
+
+<section id="how" class="how">
   <h2>How it fits together</h2>
   <ol class="steps">
     <li>
@@ -128,14 +312,14 @@
       <span class="step-num">2</span>
       <div>
         <h3>Initialize the project</h3>
-        <p><code>ok init</code> creates <code>.ok/</code> in your repo with a config file, an index, and an empty tasks directory. Safe to run twice.</p>
+        <p><code>ok init</code> creates <code>.ok/</code> in your repo with a config file, an index, and an empty tasks directory. Safe to run twice; idempotent.</p>
       </div>
     </li>
     <li>
       <span class="step-num">3</span>
       <div>
         <h3>Start the dashboard</h3>
-        <p><code>ok start</code> binds the server on <code>127.0.0.1:7777</code> and broadcasts board changes over Server-Sent Events. Closing the terminal stops it.</p>
+        <p><code>ok start</code> binds the server on <code>127.0.0.1:7777</code> and broadcasts board changes over Server-Sent Events. Closing the terminal stops it; <code>ok stop</code> does the same from another shell.</p>
       </div>
     </li>
     <li>
@@ -150,17 +334,18 @@
 
 <section class="quote">
   <blockquote>
-    <p>"The .ok/ folder is the source of truth. The dashboard, the CLI, and Claude Code are three views over the same plain files."</p>
+    <p>"The <code>.ok/</code> folder is the source of truth. The dashboard, the CLI, and Claude Code are three views over the same plain files."</p>
   </blockquote>
 </section>
 
 <section class="cta">
   <h2>Try it in your project</h2>
-  <p>Local install. No signup. Works offline.</p>
+  <p>Local install. No signup. Works offline. Last published 12 minutes ago.</p>
 <pre><code><span class="prompt">$</span> npm install -g @polderlabs/openkan</code></pre>
   <p>
     <a class="btn btn-primary" href="https://github.com/PolderLabsVOF/openkan">View on GitHub</a>
     <a class="btn btn-ghost" href="https://www.npmjs.com/package/@polderlabs/openkan">npm package</a>
+    <a class="btn btn-ghost" href="https://github.com/PolderLabsVOF/openkan/blob/main/CHANGELOG.md">Changelog</a>
   </p>
 </section>
 
@@ -178,21 +363,60 @@
 </footer>
 
 <script>
-  // Copy install command button
-  document.addEventListener("click", async (e) => {
-    const btn = e.target.closest(".copy-btn");
+  // Theme toggle: cycle light → dark → auto. Persisted in localStorage.
+  (function () {
+    var btn = document.getElementById("theme-toggle");
     if (!btn) return;
-    const text = btn.dataset.copy ?? "";
+    var root = document.documentElement;
+    function cycle() {
+      var current = root.getAttribute("data-theme") || "auto";
+      var next = current === "light" ? "dark" : current === "dark" ? "auto" : "light";
+      root.setAttribute("data-theme", next);
+      try { localStorage.setItem("openkan-theme", next); } catch (e) {}
+      btn.setAttribute("data-active", next);
+    }
+    btn.addEventListener("click", cycle);
+    btn.setAttribute("data-active", root.getAttribute("data-theme") || "auto");
+  })();
+
+  // Tabs: switch panels on click, keep aria attributes in sync.
+  (function () {
+    var tabs = document.querySelectorAll(".tabs .tab");
+    var panels = document.querySelectorAll(".tabpanel");
+    if (!tabs.length) return;
+    tabs.forEach(function (tab) {
+      tab.addEventListener("click", function () {
+        var target = tab.getAttribute("data-tab");
+        tabs.forEach(function (t) {
+          var active = t === tab;
+          t.classList.toggle("is-active", active);
+          t.setAttribute("aria-selected", active ? "true" : "false");
+        });
+        panels.forEach(function (p) {
+          var show = p.id === "panel-" + target;
+          p.classList.toggle("is-active", show);
+          if (show) p.removeAttribute("hidden");
+          else p.setAttribute("hidden", "");
+        });
+      });
+    });
+  })();
+
+  // Copy install command button.
+  document.addEventListener("click", async function (e) {
+    var btn = e.target.closest(".copy-btn");
+    if (!btn) return;
+    var text = btn.dataset.copy || "";
     try {
       await navigator.clipboard.writeText(text);
-      const label = btn.querySelector(".copy-label");
+      var label = btn.querySelector(".copy-label");
       if (label) {
-        const prev = label.textContent;
+        var prev = label.textContent;
         label.textContent = "Copied";
-        setTimeout(() => { label.textContent = prev; }, 1400);
+        setTimeout(function () { label.textContent = prev; }, 1400);
       }
-    } catch {
-      // Clipboard rejected — leave the text selectable instead.
+    } catch (e) {
+      // Clipboard rejected — leave the text selectable.
     }
   });
 </script>
