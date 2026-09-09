@@ -165,6 +165,9 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* Reserve space so the sticky-install banner never overlaps the last
+     section's content when scrolled to the bottom. */
+  padding-bottom: 5rem;
   background-image:
     radial-gradient(60vw 50vh at 80% -10%, var(--bg-tint), transparent 60%),
     radial-gradient(50vw 40vh at -10% 10%, var(--bg-tint), transparent 60%);
@@ -177,6 +180,9 @@ h1, h2, h3, h4 {
   letter-spacing: -0.018em;
   margin: 0 0 0.5em;
   font-weight: 600;
+  /* Balance line-wrap so headings don't end with a single short
+     orphan word ("browser." alone on the second line, etc.). */
+  text-wrap: balance;
 }
 h1 { font-size: clamp(2.4rem, 5vw, 4.1rem); line-height: 1.04; letter-spacing: -0.028em; }
 h2 { font-size: clamp(1.7rem, 3vw, 2.4rem); line-height: 1.18; }
