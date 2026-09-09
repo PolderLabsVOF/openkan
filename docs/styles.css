@@ -284,6 +284,7 @@ section {
   color: var(--fg-soft);
   font-size: 0.95rem;
   font-weight: 500;
+  transition: color 120ms ease;
 }
 .topnav a:hover { color: var(--fg); }
 .topnav .gh-link {
@@ -294,6 +295,7 @@ section {
   border: 1px solid var(--border-strong);
   border-radius: 6px;
   color: var(--fg);
+  transition: background 120ms ease, border-color 120ms ease;
 }
 .topnav .gh-link:hover { background: var(--bg-inset); }
 .topnav .gh-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -499,6 +501,7 @@ section {
   border: 1px solid color-mix(in srgb, white 8%, transparent);
   overflow: hidden;
   transform: rotateY(-3deg) rotateX(2deg);
+  transform-origin: left center;
   transition: transform 280ms ease;
 }
 .terminal-window:hover { transform: rotateY(-1deg) rotateX(1deg); }
@@ -637,6 +640,7 @@ section {
   transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
   position: relative;
   overflow: hidden;
+  min-height: 0;
 }
 .feature:hover {
   transform: translateY(-2px);
@@ -655,6 +659,9 @@ section {
   font-size: 0.78rem;
   letter-spacing: 0.1em;
   color: var(--accent);
+}
+.feature-content {
+  flex-grow: 1;
 }
 .feature-content h3 {
   margin: 0 0 0.5rem;
@@ -1015,6 +1022,7 @@ section {
   border-radius: 6px 6px 0 0;
   position: relative;
   top: 1px;
+  transition: color 120ms ease, background 120ms ease;
 }
 .ex-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ex-tab.is-active {
@@ -1390,7 +1398,7 @@ section {
   color: var(--fg-muted);
 }
 .footer-links { display: inline-flex; gap: 1.25rem; font-size: 0.9rem; }
-.footer-links a { color: var(--fg-soft); }
+.footer-links a { color: var(--fg-soft); transition: color 120ms ease; }
 .footer-links a:hover { color: var(--fg); }
 .footer-links a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
 
